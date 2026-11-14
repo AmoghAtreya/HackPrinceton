@@ -4,8 +4,12 @@ import { destinations } from '../../shared/destinations.ts'
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 /** Google's alias for the current Flash model, so retired versions never break voice. */
 export const GEMINI_TRANSCRIBE_MODEL = 'gemini-flash-latest'
-/** Gemini must answer within this time, or Triage keeps Apple's transcript. */
-export const GEMINI_TRANSCRIBE_TIMEOUT_MS = 6000
+/** Lighter, faster Flash model tried when the main one is busy or slow. */
+export const GEMINI_TRANSCRIBE_FALLBACK_MODEL = 'gemini-flash-lite-latest'
+/** Gemini must answer within this time overall, or Triage keeps Apple's transcript. */
+export const GEMINI_TRANSCRIBE_TIMEOUT_MS = 8000
+/** Time the main model gets before Triage tries the lighter one. */
+export const GEMINI_TRANSCRIBE_FIRST_ATTEMPT_MS = 5000
 
 export interface GeminiTranscript {
   text: string
@@ -60,41 +64,71 @@ const responseSchema = z.object({
  */
 export class GeminiTranscriber {
   private readonly fetcher: typeof globalThis.fetch
-  private readonly model: string
+  private readonly models: string[]
   private readonly timeoutMs: number
+  private readonly firstAttemptMs: number
 
-  constructor(options: { fetcher?: typeof globalThis.fetch; model?: string; timeoutMs?: number } = {}) {
+  constructor(options: { fetcher?: typeof globalThis.fetch; model?: string; fallbackModel?: string | null; timeoutMs?: number; firstAttemptMs?: number } = {}) {
     this.fetcher = options.fetcher ?? globalThis.fetch
-    this.model = options.model ?? process.env.TRIAGE_GEMINI_TRANSCRIBE_MODEL ?? GEMINI_TRANSCRIBE_MODEL
+    const model = options.model ?? process.env.TRIAGE_GEMINI_TRANSCRIBE_MODEL ?? GEMINI_TRANSCRIBE_MODEL
+    const fallback = options.fallbackModel === undefined ? GEMINI_TRANSCRIBE_FALLBACK_MODEL : options.fallbackModel
+    this.models = fallback && fallback !== model ? [model, fallback] : [model]
     this.timeoutMs = options.timeoutMs ?? GEMINI_TRANSCRIBE_TIMEOUT_MS
+    this.firstAttemptMs = options.firstAttemptMs ?? GEMINI_TRANSCRIBE_FIRST_ATTEMPT_MS
   }
 
+  /**
+   * Tries the main model, then (if it was busy, slow or missing) the lighter
+   * one, all within the overall time limit. Returns null to keep the on-device
+   * transcript: a bad key, no network, or nothing usable in time.
+   */
   async transcribe(key: string, chunks: readonly Uint8Array[], sampleRate: number, signal: AbortSignal): Promise<GeminiTranscript | null> {
     if (!chunks.length) return null
-    const wav = pcmToWav(chunks, sampleRate)
+    const audio = pcmToWav(chunks, sampleRate).toString('base64')
+    const deadline = Date.now() + this.timeoutMs
+    for (const [index, model] of this.models.entries()) {
+      const remaining = deadline - Date.now()
+      if (remaining < 750 || signal.aborted) break
+      const budget = index === 0 && this.models.length > 1 ? Math.min(remaining, this.firstAttemptMs) : remaining
+      const outcome = await this.attempt(key, model, audio, signal, budget)
+      if (outcome.kind === 'ok') return outcome.transcript
+      if (outcome.kind === 'stop') return null
+      if (index < this.models.length - 1) console.warn(`Gemini ${model} was ${outcome.reason}; trying ${this.models[index + 1]}.`)
+    }
+    if (!signal.aborted) console.warn('Gemini transcription unavailable in time; using the on-device transcript.')
+    return null
+  }
+
+  private async attempt(key: string, model: string, audio: string, signal: AbortSignal, budgetMs: number):
+    Promise<{ kind: 'ok'; transcript: GeminiTranscript } | { kind: 'retry'; reason: string } | { kind: 'stop' }> {
+    const timer = AbortSignal.timeout(budgetMs)
     try {
-      const response = await this.fetcher(`${BASE_URL}/models/${encodeURIComponent(this.model)}:generateContent`, {
+      const response = await this.fetcher(`${BASE_URL}/models/${encodeURIComponent(model)}:generateContent`, {
         method: 'POST',
         // The key goes in a header, never in the URL.
         headers: { 'x-goog-api-key': key, 'content-type': 'application/json' },
         body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ inline_data: { mime_type: 'audio/wav', data: wav.toString('base64') } }, { text: PROMPT }] }],
+          contents: [{ role: 'user', parts: [{ inline_data: { mime_type: 'audio/wav', data: audio } }, { text: PROMPT }] }],
           generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1024, temperature: 0 }
         }),
-        signal: AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)])
+        signal: AbortSignal.any([signal, timer])
       })
       if (!response.ok) {
-        console.warn(`Gemini transcription unavailable (HTTP ${response.status}); using the on-device transcript.`)
-        return null
+        // Busy, rate-limited, retired or failing: worth trying the other model. A rejected key is not.
+        if ([404, 408, 429].includes(response.status) || response.status >= 500) return { kind: 'retry', reason: `unavailable (HTTP ${response.status})` }
+        console.warn(`Gemini transcription refused (HTTP ${response.status}); using the on-device transcript.`)
+        return { kind: 'stop' }
       }
       const parsed = responseSchema.safeParse(await response.json())
       const text = parsed.success ? (parsed.data.candidates?.[0]?.content?.parts ?? []).map((part) => part.text ?? '').join('').trim() : ''
-      const answer = answerSchema.safeParse(JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')))
-      if (!answer.success) return null
-      return { text: answer.data.text.trim(), clarity: answer.data.clarity ?? 'clear' }
+      let answer
+      try { answer = answerSchema.safeParse(JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''))) }
+      catch { return { kind: 'retry', reason: 'unreadable' } }
+      if (!answer.success) return { kind: 'retry', reason: 'unreadable' }
+      return { kind: 'ok', transcript: { text: answer.data.text.trim(), clarity: answer.data.clarity ?? 'clear' } }
     } catch {
-      if (!signal.aborted) console.warn('Gemini transcription failed or timed out; using the on-device transcript.')
-      return null
+      if (signal.aborted) return { kind: 'stop' }
+      return { kind: 'retry', reason: timer.aborted ? 'too slow' : 'unreachable' }
     }
   }
 }
