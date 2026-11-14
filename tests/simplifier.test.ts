@@ -104,6 +104,11 @@ test('new users start from the population model (cold start)', () => {
   assert.equal(policy.choose(banditInput('newcomer', true)).armId, 'a09')
 })
 
+test('a brand-new user gets the default layout, not a random one', () => {
+  const policy = new ThompsonPolicy({}, () => { throw new Error('random must not be used during warmup') })
+  assert.deepEqual(policy.choose(banditInput('first-timer')), { armId: 'a06', propensity: 1, mode: 'exploit' })
+})
+
 test('exploration finds the best arm for at least 9 of 10 random seeds', () => {
   let converged = 0
   for (let seed = 1; seed <= 10; seed++) {
