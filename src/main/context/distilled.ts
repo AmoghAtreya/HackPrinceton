@@ -26,6 +26,8 @@ function containerRegion(el: ContextElement): PageRegion | null {
     : Object.hasOwn(LANDMARKS, el.role) ? LANDMARKS[el.role] : null
   return region === 'dialog' && OVERLAY_TOPIC.test(el.label) ? 'promo' : region
 }
+// A block that announces itself as an ad, as in distill.ts. Class names are invisible to accessibility, the label is not.
+const PROMO_LABEL = /^\s*(sponsored|advertisement|ad|promoted)\b/i
 const isOverlay = (region: PageRegion | null) => region === 'dialog' || region === 'promo'
 
 interface Scope {
@@ -38,7 +40,11 @@ interface Scope {
   navDepth: number
 }
 
-export function toDistilledPage(snapshot: ContextSnapshot): DistilledPage {
+/**
+ * `webOnly` leaves out everything outside the web area when the window has one
+ * (the browser's own toolbar and tabs), for callers that want just the page.
+ */
+export function toDistilledPage(snapshot: ContextSnapshot, options: { webOnly?: boolean } = {}): DistilledPage {
   const windowFrame = snapshot.window.frame
   const windowArea = windowFrame.width * windowFrame.height
   const elements: PageElement[] = []
@@ -50,6 +56,9 @@ export function toDistilledPage(snapshot: ContextSnapshot): DistilledPage {
   const scopes: Scope[] = []
   // When the page marks its main content, the rest of the web area (side columns, tickers) is not 'main'.
   const hasMain = snapshot.elements.some((el) => el.subrole === 'AXLandmarkMain')
+  const pageOnly = Boolean(options.webOnly) && snapshot.elements.some((el) => el.role === 'AXWebArea')
+  // An open ad block: its label was just seen at this depth; short text and one call to action follow.
+  let ad: { depth: number; texts: number } | null = null
 
   for (const el of snapshot.elements) {
     while (scopes.length && scopes[scopes.length - 1].depth >= el.depth) scopes.pop()
@@ -64,6 +73,17 @@ export function toDistilledPage(snapshot: ContextSnapshot): DistilledPage {
     }
     scopes.push(scope)
 
+    if (pageOnly && !scope.web) continue
+    let promoted = false
+    if (el.role === 'AXStaticText' && el.value && PROMO_LABEL.test(el.value)) { ad = { depth: el.depth, texts: 0 }; continue }
+    if (ad) {
+      const open: { depth: number; texts: number } = ad
+      ad = null
+      if (el.depth === open.depth) {
+        if (el.role === 'AXStaticText' && (el.value?.length ?? 0) < 80 && open.texts < 2) { ad = { depth: open.depth, texts: open.texts + 1 }; continue }
+        promoted = el.kind === 'button' || el.kind === 'link'
+      }
+    }
     // A secure field never has a value (the schema rejects one); the extra check keeps that true here too.
     if (el.role === 'AXStaticText' && !el.secure && el.value) prose.push(el.value)
     if (!el.kind || el.kind === 'text') continue
@@ -72,7 +92,7 @@ export function toDistilledPage(snapshot: ContextSnapshot): DistilledPage {
     const label = el.label || (el.kind === 'heading' && !el.secure && level === undefined ? el.value ?? '' : '')
     if (!label && el.kind !== 'input' && el.kind !== 'textarea' && el.kind !== 'select') continue
     if (el.kind !== 'heading') interactive++
-    const region: PageRegion = scope.overlay ?? scope.landmark ?? (scope.web && !hasMain ? 'main' : 'other')
+    const region: PageRegion = promoted ? 'promo' : scope.overlay ?? scope.landmark ?? (scope.web && !hasMain ? 'main' : 'other')
     if (region === 'nav' && scope.navDepth >= 0) maxNavDepth = Math.max(maxNavDepth, el.depth - scope.navDepth)
 
     const item: PageElement = {
