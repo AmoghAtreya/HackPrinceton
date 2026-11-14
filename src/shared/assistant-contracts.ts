@@ -61,7 +61,7 @@ export interface LearningSummary {
 }
 export interface AssistantBridge {
   getShakeSettings(): Promise<Result<ShakeSettings>>
-  saveShakeSettings(input: { enabled: boolean; instruction: string; mode?: 'explain' | 'highlight' }): Promise<Result<ShakeSettings>>
+  saveShakeSettings(input: { enabled: boolean; instruction: string; mode?: 'explain' | 'highlight' | 'simplify' }): Promise<Result<ShakeSettings>>
   getAssistantState(): Promise<Result<AssistantState>>
   onAssistantState(listener: (state: AssistantState) => void): () => void
   connectKey(input: { key: string; remember: boolean }): Promise<Result<PublicConfig>>
