@@ -34,6 +34,7 @@ const bridge: DesktopBridge = {
   connectKey: (input) => ipcRenderer.invoke(assistantChannels.connect, input),
   removeKey: () => ipcRenderer.invoke(assistantChannels.removeKey),
   selectModel: (model) => ipcRenderer.invoke(assistantChannels.selectModel, model),
+  setFastModel: (enabled) => ipcRenderer.invoke(assistantChannels.setFastModel, enabled),
   sendMessage: (input) => ipcRenderer.invoke(assistantChannels.send, input),
   closeBrowser: () => ipcRenderer.invoke(assistantChannels.closeBrowser),
   stopRequest: (id) => ipcRenderer.invoke(assistantChannels.stop, id),

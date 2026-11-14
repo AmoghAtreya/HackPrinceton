@@ -36,6 +36,7 @@ export function installAssistantIpc(
   register(assistantChannels.connect, (input) => assistant.connect(input))
   register(assistantChannels.removeKey, () => assistant.removeKey())
   register(assistantChannels.selectModel, (input) => assistant.selectModel(input))
+  register(assistantChannels.setFastModel, (input) => assistant.setFastModel(input))
   register(assistantChannels.send, (input) => assistant.send(input))
   register(assistantChannels.closeBrowser, () => assistant.closeBrowser())
   register(assistantChannels.stop, (input) => assistant.stop(input))

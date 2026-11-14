@@ -30,6 +30,13 @@ export function SettingsPanel({ bridge, config, active }: {
     finally { setBusy(false) }
   }
 
+  async function setFast(enabled: boolean) {
+    setBusy(true); setError('')
+    try { unwrap(await bridge.setFastModel(enabled)) }
+    catch (problem) { setError(displayError(problem)) }
+    finally { setBusy(false) }
+  }
+
   async function remove() {
     setBusy(true); setError(''); setNotice('')
     try { unwrap(await bridge.removeKey()); setNotice('Your key has been removed from Triage.') }
@@ -67,6 +74,9 @@ export function SettingsPanel({ bridge, config, active }: {
         {config.models.map((model) => <option value={model.id} key={model.id}>{model.label}</option>)}
       </select>
       <p className="field-hint">Models are loaded from Anthropic for your key. API usage may incur charges; check your account’s pricing.</p>
+      <label className="checkbox-label"><input type="checkbox" checked={config.fastModel} disabled={busy || active}
+        onChange={(event) => void setFast(event.target.checked)} />Use faster model for simple requests</label>
+      <p className="field-hint">On: ordinary chat replies and routing use a Haiku model when your key has one. Screenshots, “show me where” and page simplifying use the model chosen above, or a Sonnet model if you chose Haiku.</p>
     </div>
     {(config.configured || config.keyStorage === 'locked') &&
       <button className="text-button danger" disabled={busy || active} onClick={() => void remove()}>Remove key from Triage</button>}
@@ -74,7 +84,7 @@ export function SettingsPanel({ bridge, config, active }: {
     <div className="privacy-note">
       <strong>Your data</strong>
       <p>Messages and recent context go to Anthropic for replies. Conversations are saved unencrypted on this Mac. Recognized keys and tokens are redacted, but avoid sharing secrets.</p>
-      <p>Triage uses a bounded recent context, not your entire saved history. Screen capture is available from Chat: preview locally, then explicitly send it for explanation. With Shake to Help enabled, a shake sends a screen capture automatically using your saved instruction. Images are not saved. Alaska flight searches run in a separate visible browser; Triage never selects a fare or purchases a ticket.</p>
+      <p>Each chat message also carries a short text description of the app in front: its name, window title, website name and the labels of visible buttons and fields, never what you typed into them. If that is not enough to answer, Triage may take one screenshot, with password and card fields blacked out, and send it. Triage uses a bounded recent context, not your entire saved history. Screen capture is available from Chat: preview locally, then explicitly send it for explanation. With Shake to Help enabled, a shake sends a screen capture automatically using your saved instruction. Images are not saved. Alaska flight searches run in a separate visible browser; Triage never selects a fare or purchases a ticket.</p>
     </div>
   </section>
 }
