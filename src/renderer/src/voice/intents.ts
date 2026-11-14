@@ -40,3 +40,25 @@ export function matchVoiceIntent(text: string): VoiceIntent {
   if (SHOW_ME_WHERE.test(normalized)) return { kind: 'show_me_where' }
   return { kind: 'chat' }
 }
+
+/** Below this mean word confidence (0–1), a spoken message is shown for checking instead of sent. */
+export const VOICE_CONFIDENCE_THRESHOLD = 0.6
+
+/**
+ * True when a transcript should be checked by the user before it reaches the
+ * chatbot: Transcribe was unsure of the words, or it is a single word (often a
+ * fragment or a mishearing). Shortcut commands are matched before this check.
+ */
+export function needsConfirmation(record: { text: string; segments: { confidence: number | null; text: string }[] }): boolean {
+  if (normalizeUtterance(record.text).split(' ').filter(Boolean).length < 2) return true
+  // Weight each segment's confidence by its word count.
+  let words = 0
+  let total = 0
+  for (const segment of record.segments) {
+    if (segment.confidence === null) continue
+    const count = segment.text.split(/\s+/).filter(Boolean).length
+    words += count
+    total += segment.confidence * count
+  }
+  return words > 0 && total / words < VOICE_CONFIDENCE_THRESHOLD
+}
