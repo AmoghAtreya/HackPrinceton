@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { GuideSession } from '../src/main/assistant/guide.ts'
-import { GUIDE_IDLE_MS, GUIDE_MAX_STEPS, isNextStep } from '../src/shared/guide-contracts.ts'
+import { GUIDE_IDLE_MS, GUIDE_MAX_STEPS, guideGoal, isNextStep } from '../src/shared/guide-contracts.ts'
 
 test('a guide remembers its steps in order and which request is on screen', () => {
   const guide = new GuideSession({ conversationId: 'c1', goal: 'attach a photo', spoken: true })
@@ -35,4 +35,13 @@ test('"next", "done" and "what now" ask for the next step; real requests do not'
     assert.equal(isNextStep(text), true, text)
   for (const text of ['next week is my birthday', 'done with this, open my email', 'what is next to the button', 'stop', 'help me print', ''])
     assert.equal(isNextStep(text), false, text)
+})
+
+test('plain requests for step-by-step help start a guide; explanations and vague asks do not', () => {
+  assert.equal(guideGoal('Help me attach a photo to this email'), 'attach a photo to this email')
+  assert.equal(guideGoal('Can you walk me through sending this?'), 'sending this')
+  assert.equal(guideGoal('show me how to reply to this message please'), 'reply to this message')
+  assert.equal(guideGoal('Okay help me to change my password'), 'change my password')
+  for (const text of ['help me', 'help me with this', 'help me understand this page', 'how do I print this', 'help me print', 'what is this'])
+    assert.equal(guideGoal(text), null, text)
 })

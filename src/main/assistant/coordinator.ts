@@ -2,7 +2,7 @@ import type { BrowserRunner } from '../browser/supervisor.ts'
 import { validateFlight } from '../browser/validation.ts'
 import { HIGHLIGHT_LOST_MESSAGE, highlightSource, type HighlightController, type HighlightPlan } from '../screen/highlight.ts'
 import type { ElementAnchor, HighlightReply } from '../../shared/highlight-contracts.ts'
-import { GUIDE_CLICK_DELAY_MS, isNextStep } from '../../shared/guide-contracts.ts'
+import { GUIDE_CLICK_DELAY_MS, guideGoal, isNextStep } from '../../shared/guide-contracts.ts'
 import { GuideSession } from './guide.ts'
 import { locateElements } from '../context/locate.ts'
 import type { ContextLookup } from '../context/paired-capture.ts'
@@ -56,6 +56,8 @@ interface RunningRequest extends ActiveRequest {
   escalated?: boolean
   /** This request is the next step of the running guide, not a new question. */
   guideStep?: boolean
+  /** A plain "help me …" request: start a guide towards this goal without asking the router. */
+  guideGoal?: string
   /** The user's own words for this request, exactly as typed or spoken. */
   text: string
 }
@@ -353,7 +355,8 @@ export class AssistantCoordinator {
       return this.start(request, key, model, undefined, undefined, undefined, request.source ?? 'chat', undefined, false, undefined, true)
     const simplify = !image && this.simplifier ? parseSimplifyCommand(request.text) : null
     const local = !image && !simplify ? this.localCommand(request.text, request.conversationId) : undefined
-    return this.start(request, key, model, image, undefined, undefined, request.source ?? 'chat', simplify ?? undefined, false, local)
+    const goal = !image && !simplify && !local ? guideGoal(request.text) : null
+    return this.start({ ...request, ...(goal ? { guideGoal: goal } : {}) }, key, model, image, undefined, undefined, request.source ?? 'chat', simplify ?? undefined, false, local)
   }
 
   /**
@@ -438,7 +441,7 @@ export class AssistantCoordinator {
     return this.start({ text: gesture.instruction, mode }, key, model, undefined, gesture, capture)
   }
 
-  private start(request: { text: string; conversationId?: string; mode?: 'explain' | 'highlight' }, key: string, model: string,
+  private start(request: { text: string; conversationId?: string; mode?: 'explain' | 'highlight'; guideGoal?: string }, key: string, model: string,
     image?: ScreenImage, gesture?: ShakeTrigger & { instruction: string }, capture?: () => Promise<ScreenPreview>, source: 'chat' | 'voice' = 'chat',
     simplify?: SimplifyCommand, simplifyScreen = false, local?: LocalCommand, guideStep = false): SendReceipt {
     // Anything other than "next" is a new request, so a running guide is over.
@@ -461,7 +464,7 @@ export class AssistantCoordinator {
       expectedDisplayId: gesture?.displayId, highlight: request.mode === 'highlight', highlightRevision: this.highlights?.revision,
       logText, source: gesture ? 'shake' : source,
       ...(simplify ? { simplify } : {}), ...(simplifyScreen ? { simplifyScreen } : {}),
-      ...(local ? { local } : {}), ...(guideStep ? { guideStep } : {})
+      ...(local ? { local } : {}), ...(guideStep ? { guideStep } : {}), ...(request.guideGoal ? { guideGoal: request.guideGoal } : {})
     }
     this.active = active
     if (gesture) this.gestureRequest = receipt
@@ -495,7 +498,7 @@ export class AssistantCoordinator {
       let used = pick(image ? 'vision' : 'reply')
       let escalated = false
       let local = false
-      const plainChat = !image && !capture && !request.highlight && !request.simplify && !request.simplifyScreen && !request.guideStep
+      const plainChat = !image && !capture && !request.highlight && !request.simplify && !request.simplifyScreen && !request.guideStep && !request.guideGoal
       // A yes/no to "Should I remember this?" is read by code, not by the model.
       const answered = plainChat ? this.trust?.answer(request.conversationId, request.text) ?? null : null
       // Facts from the user's own list: sent as trusted context, apart from anything read off the screen.
@@ -514,6 +517,9 @@ export class AssistantCoordinator {
         return true
       }
       if (request.guideStep) {
+        if (!await guideStep()) return
+      } else if (request.guideGoal) {
+        this.guide = new GuideSession({ conversationId: request.conversationId, goal: request.guideGoal, spoken: request.source === 'voice' })
         if (!await guideStep()) return
       } else if (request.highlight) {
         request.route = 'highlight'

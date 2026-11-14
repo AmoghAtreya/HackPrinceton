@@ -19,6 +19,22 @@ export const GUIDE_CLICK_DELAY_MS = 1500
 
 const NEXT_STEP = /^(?:next|next step|next one|done|i(?:'m| am) done|i did it|i did that|did it|ok|okay|okay done|ok done|got it|what now|what next|what's next|what is next|now what|and then|then what|continue|keep going|go on|ready)$/
 
+const GUIDE_REQUEST = /^(?:(?:hey|hi|ok|okay|so|please|triage|can you|could you|would you|will you)\s+)*(?:help me(?: to| how to)?|walk me through(?: how to)?|show me how to|guide me through|guide me to|teach me how to)\s+(.+?)$/
+/** Asking for an explanation of the screen, not a task: handled by Explain screen and the chatbot. */
+const NOT_A_TASK = /^(?:with (?:this|that|it|my screen|this (?:page|screen))|understand\b|out\b|please\b)/
+
+/**
+ * The goal of a plain request for step-by-step help ("help me attach a photo",
+ * "walk me through sending this"), or null. These start a guide without asking
+ * the router, so a fast model can't answer them with a long list instead.
+ */
+export function guideGoal(text: string): string | null {
+  const normalized = text.toLowerCase().replace(/[’‘]/g, "'").replace(/[?!.]+$/, '').replace(/\s+/g, ' ').trim()
+  const goal = GUIDE_REQUEST.exec(normalized)?.[1]?.replace(/\s+(?:please|for me|thanks|thank you)$/, '').trim()
+  if (!goal || goal.split(' ').length < 2 || NOT_A_TASK.test(goal) || goal.length > 200) return null
+  return goal
+}
+
 /** True when a whole message only means "show me the next step" ("next", "done", "what now"). */
 export function isNextStep(text: string): boolean {
   const normalized = text.toLowerCase().replace(/[’‘]/g, "'").replace(/[^\p{L}\p{N}'\s]/gu, ' ').replace(/\s+/g, ' ').trim()

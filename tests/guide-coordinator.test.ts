@@ -117,3 +117,13 @@ test('a step with nothing to point at is still shown, and Next step looks again'
     assert.equal(f.coordinator.snapshot().guide?.step, 2)
   } finally { f.close() }
 })
+
+test('"help me …" starts a guide without asking the router, so a long answer cannot replace it', async () => {
+  const f = await fixture([{ explanation: 'Click Compose.', target }], { kind: 'reply', text: 'Step 1… Step 2… Step 3… (a long list)' })
+  try {
+    const receipt = f.coordinator.send({ text: 'Help me attach a photo to this email', source: 'voice' })
+    await f.settle()
+    assert.equal(f.coordinator.snapshot().guide?.goal, 'attach a photo to this email')
+    assert.deepEqual(f.replies(receipt.conversationId), ['Step 1: Click Compose.'])
+  } finally { f.close() }
+})
