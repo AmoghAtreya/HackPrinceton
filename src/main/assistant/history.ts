@@ -141,7 +141,9 @@ export class HistoryStore {
     })
   }
 
-  complete(taskId: string, content: string, highlight?: Omit<HighlightReply, 'explanation' | 'elementId'> & { outcome: string; source?: HighlightSource }): boolean {
+  complete(taskId: string, content: string, highlight?: Omit<HighlightReply, 'explanation' | 'elementId'> & { outcome: string; source?: HighlightSource },
+    /** Which model tier answered and whether a screenshot was taken to do it. Never any content. */
+    usage?: { tier: 'fast' | 'strong'; model: string; screenshotEscalation: boolean }): boolean {
     return this.transaction(() => {
       const task = this.db.prepare("SELECT conversation_id FROM tasks WHERE id=? AND status='running'").get(taskId) as { conversation_id: string } | undefined
       if (!task) return false
@@ -151,7 +153,7 @@ export class HistoryStore {
       this.db.prepare("UPDATE tasks SET status='completed',finished_at=? WHERE id=?").run(now, taskId)
       this.db.prepare('UPDATE conversations SET updated_at=? WHERE id=?').run(now, task.conversation_id)
       this.unknownActions(taskId, task.conversation_id)
-      this.event(task.conversation_id, taskId, 'reply_completed', highlight ? { highlight } : {})
+      this.event(task.conversation_id, taskId, 'reply_completed', { ...(highlight ? { highlight } : {}), ...(usage ? { usage } : {}) })
       return true
     })
   }
