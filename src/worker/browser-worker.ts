@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { flightDraftSchema, type WorkerCommand, type WorkerMessage, type FlightStep } from '../shared/flight-contracts.ts'
 import { validateFlight } from '../main/browser/validation.ts'
 import { alaskaSearch, failedSearch } from './alaska.ts'
+import { channelLaunchOptions, isBrowserChannel } from '../shared/browser-config.ts'
 
 const port = process.parentPort!
 let context: BrowserContext | undefined
@@ -55,7 +56,8 @@ async function start(command: Extract<WorkerCommand, { type: 'start' }>): Promis
     if (!input) throw new Error('Invalid flight input.')
     await action('open_browser', async () => {
       if (!context) {
-        context = await chromium.launchPersistentContext(command.profile, { headless: false, viewport: null, timeout: 30000 })
+        // Chrome by default (channel from the main process); Triage's own profile directory, never the user's.
+        context = await chromium.launchPersistentContext(command.profile, { ...channelLaunchOptions(command.channel), headless: false, viewport: null, timeout: 30000 })
         context.on('close', () => { context = undefined })
       }
       check(job)
@@ -90,7 +92,7 @@ port.on('message', ({ data }: { data: unknown }) => {
   if (!data || typeof data !== 'object' || !('type' in data)) return
   const command = data as WorkerCommand
   if (command.type === 'start') {
-    if (!z.string().uuid().safeParse(command.taskId).success || typeof command.profile !== 'string') return
+    if (!z.string().uuid().safeParse(command.taskId).success || typeof command.profile !== 'string' || !isBrowserChannel(command.channel)) return
     void start(command)
   } else if (command.type === 'cancel' && command.taskId === active?.id) cancel()
   else if ((command.type === 'action_authorized' || command.type === 'result_saved') && command.taskId === active?.id) {

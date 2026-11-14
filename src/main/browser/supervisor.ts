@@ -1,5 +1,6 @@
 import { workerMessageSchema, steps, stepLabels, type FlightSearchInput, type FlightOutcome, type WorkerCommand, type FlightStep } from '../../shared/flight-contracts.ts'
 import { AppProblem } from '../assistant/errors.ts'
+import { DEFAULT_BROWSER_CHANNEL, browserMissingMessage, type BrowserChannel } from '../../shared/browser-config.ts'
 
 export interface BrowserRunner {
   run(taskId: string, input: FlightSearchInput, signal: AbortSignal, record: (type: string, detail: string, data?: object) => void, progress: (text: string) => void): Promise<FlightOutcome>
@@ -25,7 +26,10 @@ export class BrowserSupervisor implements BrowserRunner {
   private spawn: () => WorkerTransport
   private profile: string
   private navigated: () => void
-  constructor(spawn: () => WorkerTransport, profile: string, navigated = () => {}) { this.spawn = spawn; this.profile = profile; this.navigated = navigated }
+  private channel: BrowserChannel
+  constructor(spawn: () => WorkerTransport, profile: string, navigated = () => {}, channel: BrowserChannel = DEFAULT_BROWSER_CHANNEL) {
+    this.spawn = spawn; this.profile = profile; this.navigated = navigated; this.channel = channel
+  }
 
   private ensure(): WorkerTransport {
     if (this.worker) return this.worker
@@ -52,9 +56,9 @@ export class BrowserSupervisor implements BrowserRunner {
       job.timer = setTimeout(() => {
         this.cancel(id)
       }, 180000)
-      try { this.ensure().postMessage({ type: 'start', taskId: id, input, profile: this.profile }) }
+      try { this.ensure().postMessage({ type: 'start', taskId: id, input, profile: this.profile, channel: this.channel }) }
       catch {
-        this.settle(new AppProblem('browser_start', 'Could not start the browser worker. Install Chromium with npm run browser:install.'))
+        this.settle(new AppProblem('browser_start', 'Could not start the browser worker. ' + browserMissingMessage(this.channel)))
         this.terminate()
       }
     })

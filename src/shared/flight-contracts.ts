@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { BrowserChannel } from './browser-config.ts'
 import { destinationIds } from './destinations.ts'
 
 export const flightDraftSchema = z.object({
@@ -35,7 +36,7 @@ export const workerMessageSchema = z.discriminatedUnion('type', [
 ])
 export type WorkerMessage = z.infer<typeof workerMessageSchema>
 export type WorkerCommand =
-  | { type: 'start'; taskId: string; input: FlightSearchInput; profile: string }
+  | { type: 'start'; taskId: string; input: FlightSearchInput; profile: string; channel: BrowserChannel }
   | { type: 'action_authorized' | 'result_saved'; taskId: string; actionId: string }
   | { type: 'cancel'; taskId: string }
   | { type: 'close' }

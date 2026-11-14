@@ -4,17 +4,21 @@ import type { HighlightController, HighlightPlan } from '../screen/highlight.ts'
 import type { HighlightReply } from '../../shared/highlight-contracts.ts'
 import type { ShakeTrigger } from '../../shared/shake-contracts.ts'
 import type { ScreenAccess, ScreenImage, ScreenPreview } from '../../shared/screen-contracts.ts'
-import type { ActiveRequest, AssistantState, SendReceipt } from '../../shared/assistant-contracts.ts'
+import type { ActiveRequest, AssistantState, LearningSummary, SendReceipt } from '../../shared/assistant-contracts.ts'
 import { Credentials } from './credentials.ts'
 import { HistoryStore } from './history.ts'
 import type { ModelGateway } from './model.ts'
 import { AppProblem, publicProblem } from './errors.ts'
-import { analyzeSchema, connectSchema, idSchema, modelSchema, sendSchema, validated } from './schemas.ts'
+import { analyzeSchema, connectSchema, idSchema, modelSchema, rateSchema, sendSchema, validated } from './schemas.ts'
 import { parseScreenAnalysis, type ScreenAnalysis } from '../../shared/screen-analysis-contracts.ts'
 import { redact } from './redaction.ts'
 import { resolveDestination } from '../../shared/destinations.ts'
 import type { RequestLog } from '../logging/request-log.ts'
 import type { RequestOutcome, RequestRoute } from '../../shared/request-log-contracts.ts'
+import { describeResult, parseSimplifyCommand, type SimplifierService, type SimplifyCommand } from '../simplifier/service.ts'
+
+// Triage is single-user on this Mac; the simplifier keys its learning by this ID.
+const LOCAL_USER = 'local-user'
 
 interface RunningRequest extends ActiveRequest {
   highlight?: boolean
@@ -27,6 +31,7 @@ interface RunningRequest extends ActiveRequest {
   source: 'chat' | 'voice' | 'shake'
   route?: RequestRoute
   destination?: string
+  simplify?: SimplifyCommand
 }
 
 export class AssistantCoordinator {
@@ -48,15 +53,18 @@ export class AssistantCoordinator {
   private requestLog?: RequestLog
   private analyzing: AbortController | null = null
   private screens?: ScreenAccess
+  private simplifier?: SimplifierService
 
   constructor(options: {
     history: HistoryStore; credentials: Credentials; gateway: ModelGateway
     changed: (state: AssistantState) => void; browser?: BrowserRunner; requestTimeout?: number; screens?: ScreenAccess; highlights?: HighlightController
+    simplifier?: SimplifierService
     /** Opens a vetted https URL in the user's own browser. */
     openPage?: (url: string) => Promise<void>
     /** Receives every finished request; it decides (consent) whether to keep it. */
     requestLog?: RequestLog
   }) {
+    this.simplifier = options.simplifier
     this.browser = options.browser
     this.openPage = options.openPage
     this.requestLog = options.requestLog
@@ -174,6 +182,19 @@ export class AssistantCoordinator {
     }
   }
 
+  learning(): LearningSummary {
+    if (!this.simplifier) return { entries: [], rated: 0, averageReward: null, locked: [] }
+    return this.simplifier.learning(LOCAL_USER)
+  }
+
+  rateSimplification(input: unknown): LearningSummary {
+    const { decisionId, helpful } = validated(rateSchema, input)
+    if (!this.simplifier) throw new AppProblem('simplifier_unavailable', 'Page simplification is unavailable in this build.')
+    const summary = this.simplifier.rate(LOCAL_USER, decisionId, helpful)
+    this.emit()
+    return summary
+  }
+
   send(input: unknown): SendReceipt { return this.accept(input) }
 
   private accept(input: unknown): SendReceipt {
@@ -188,7 +209,10 @@ export class AssistantCoordinator {
       if (!this.screens) throw new AppProblem('screen_unavailable', 'Screen capture is unavailable.')
       image = this.screens.take(request.captureId)
     }
-    return this.start(request, key, model, image, undefined, undefined, request.source ?? 'chat')
+    // Local command, handled without asking Claude to route it. Parsed here so a
+    // bad address is reported immediately instead of after a model call.
+    const simplify = !image && this.simplifier ? parseSimplifyCommand(request.text) : null
+    return this.start(request, key, model, image, undefined, undefined, request.source ?? 'chat', simplify ?? undefined)
   }
 
   shake(trigger: ShakeTrigger, instruction: string, capture: () => Promise<ScreenPreview>, mode: 'explain' | 'highlight' = 'explain'): SendReceipt | null {
@@ -213,7 +237,8 @@ export class AssistantCoordinator {
   }
 
   private start(request: { text: string; conversationId?: string; mode?: 'explain' | 'highlight' }, key: string, model: string,
-    image?: ScreenImage, gesture?: ShakeTrigger & { instruction: string }, capture?: () => Promise<ScreenPreview>, source: 'chat' | 'voice' = 'chat'): SendReceipt {
+    image?: ScreenImage, gesture?: ShakeTrigger & { instruction: string }, capture?: () => Promise<ScreenPreview>, source: 'chat' | 'voice' = 'chat',
+    simplify?: SimplifyCommand): SendReceipt {
     this.highlights?.clear()
     let receipt: SendReceipt
     const logText = redact((gesture ? '[Shake to Help] ' : request.mode === 'highlight' ? '[Show me where] ' : image ? '[Screen explanation] ' : '') + request.text, [key])
@@ -229,7 +254,8 @@ export class AssistantCoordinator {
       id: receipt.taskId, conversationId: receipt.conversationId,
       startedAt: Date.now(), stage: capture ? 'capturing' : 'thinking', controller: new AbortController(),
       expectedDisplayId: gesture?.displayId, highlight: request.mode === 'highlight', highlightRevision: this.highlights?.revision,
-      logText, source: gesture ? 'shake' : source
+      logText, source: gesture ? 'shake' : source,
+      ...(simplify ? { simplify } : {})
     }
     this.active = active
     if (gesture) this.gestureRequest = receipt
@@ -275,6 +301,13 @@ export class AssistantCoordinator {
           outcome = error.code
           reply += '\n\n' + error.message
         }
+      } else if (request.simplify && this.simplifier) {
+        request.progress = request.simplify.url ? 'Opening and simplifying the page…' : 'Simplifying the demo page…'
+        this.emit()
+        const simplified = await this.simplifier.simplify(request.simplify, LOCAL_USER, { key, model }, request.controller.signal)
+        if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
+        this.history.activity(request.id, 'page_simplified', 'Simplified a page.', {})
+        reply = describeResult(simplified)
       } else if (!image && !capture && this.gateway.route) {
         const route = await this.gateway.route(key, model, context, request.controller.signal)
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return

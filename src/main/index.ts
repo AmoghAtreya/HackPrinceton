@@ -12,6 +12,11 @@ import { SpeechPreferences } from './speech/settings'
 import { installSpeechIpc } from './speech/ipc'
 import { LocalRequestLog } from './logging/request-log'
 import { installRequestLogIpc } from './logging/ipc'
+import { createSimplifier } from './simplifier/index'
+import { SimplifierService } from './simplifier/service'
+import { SimplifiedWindow } from './simplifier/window'
+import { ThompsonPolicy } from './simplifier/thompson'
+import demoPageHtml from '../../demo/sites/cluttered-news.html?raw'
 import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -35,6 +40,13 @@ import { ShakePreferences } from './gestures/settings'
 import { ShakeMonitor } from './gestures/monitor'
 import { redact } from './assistant/redaction'
 import { AppProblem } from './assistant/errors'
+import { DEFAULT_BROWSER_CHANNEL, browserChannelFrom, type BrowserChannel } from '../shared/browser-config'
+
+// A typo in TRIAGE_BROWSER_CHANNEL should not stop the app from launching.
+function configuredBrowserChannel(): BrowserChannel {
+  try { return browserChannelFrom(process.env) }
+  catch (error) { console.warn(String(error)); return DEFAULT_BROWSER_CHANNEL }
+}
 
 app.setName('Triage')
 // Allows authorized acceptance testing without touching the user's normal history.
@@ -52,6 +64,9 @@ let highlights: HighlightController | undefined
 let overlay: OverlayWindow | undefined
 let assistant: AssistantCoordinator | undefined
 let browser: BrowserSupervisor | undefined
+let simplifier: SimplifierService | undefined
+let simplifiedWindow: SimplifiedWindow | undefined
+let closeSimplifierLog: (() => void) | undefined
 let shutdownReady = false
 let removeAssistantIpc: (() => void) | undefined
 let shakeMonitor: ShakeMonitor | undefined
@@ -165,7 +180,7 @@ if (!app.requestSingleInstanceLock()) {
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(),
       () => highlights?.dispose(), () => overlay?.dispose(),
-      () => desktop?.dispose(), () => tray?.destroy(),
+      () => desktop?.dispose(), () => tray?.destroy(), () => simplifiedWindow?.dispose(),
       () => {
         ipcMain.removeHandler(channels.getState)
         for (const channel of Object.values(channels)) ipcMain.removeAllListeners(channel)
@@ -174,9 +189,12 @@ if (!app.requestSingleInstanceLock()) {
     for (const close of cleanup) {
       try { close() } catch { console.warn('A Triage resource could not finish closing.') }
     }
-    void Promise.resolve(browser?.close()).catch(() => {
+    void Promise.all([browser?.close(), simplifier?.close()]).catch(() => {
       console.warn('Triage browser shutdown failed.')
-    }).finally(() => { shutdownReady = true; app.quit() })
+    }).finally(() => {
+      try { closeSimplifierLog?.() } catch { /* The log may already be closed. */ }
+      shutdownReady = true; app.quit()
+    })
   })
 
   app.whenReady().then(async () => {
@@ -224,12 +242,20 @@ if (!app.requestSingleInstanceLock()) {
     browser = new BrowserSupervisor(() => utilityProcess.fork(join(__dirname, 'browser-worker.js'), [], {
       serviceName: 'Triage flight search', stdio: 'ignore',
       env: Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'LANG'].flatMap((name) => process.env[name] ? [[name, process.env[name]!]] : []))
-    }), join(directory, 'browser-profile'), () => highlights?.clear())
+    }), join(directory, 'browser-profile'), () => highlights?.clear(), configuredBrowserChannel())
+    const simplifierParts = createSimplifier(directory)
+    closeSimplifierLog = simplifierParts.close
+    simplifiedWindow = new SimplifiedWindow((url) => { void simplifier?.open(url) }, () => simplifier?.viewClosed())
+    const policy = simplifierParts.policy
+    simplifier = new SimplifierService({
+      engine: simplifierParts.engine, presenter: simplifiedWindow, channel: configuredBrowserChannel(), demoHtml: demoPageHtml,
+      log: simplifierParts.log, lockedLayouts: (userId) => (policy instanceof ThompsonPolicy ? policy.frozenArms(userId) : {})
+    })
     const requestLog = new LocalRequestLog(directory, app.getVersion())
     assistant = new AssistantCoordinator({
       requestLog,
       history: new HistoryStore(join(directory, 'history.sqlite')),
-      credentials, gateway: new ProviderGateway(new ClaudeGateway(), new GeminiGateway()), screens, highlights, browser,
+      credentials, gateway: new ProviderGateway(new ClaudeGateway(), new GeminiGateway()), screens, highlights, browser, simplifier,
       // The coordinator only passes URLs already checked against the destination allowlist.
       openPage: (url) => shell.openExternal(url, { activate: true }),
       changed: (state) => {

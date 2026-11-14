@@ -18,7 +18,9 @@
     "prestart": "install-electron",
     "start": "electron-vite preview",
     "browser:install": "playwright install chromium",
-    "test": "node --experimental-strip-types --test tests/*.test.ts"
+    "test": "npm run test:unit && npm run test:browser",
+    "test:unit": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:browser": "node --experimental-strip-types --test tests/browser/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.7.0",

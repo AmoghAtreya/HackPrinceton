@@ -50,6 +50,8 @@ const bridge: DesktopBridge = {
   analyzeScreen: (input) => ipcRenderer.invoke(assistantChannels.analyze, input),
   deleteConversation: (id) => ipcRenderer.invoke(assistantChannels.delete, id),
   clearHistory: () => ipcRenderer.invoke(assistantChannels.clear),
+  getLearning: () => ipcRenderer.invoke(assistantChannels.learning),
+  rateSimplification: (input) => ipcRenderer.invoke(assistantChannels.rate, input),
   getState: () => ipcRenderer.invoke(channels.getState),
   onState: (listener) => {
     const receive = (_event: Electron.IpcRendererEvent, state: DesktopState): void => listener(state)

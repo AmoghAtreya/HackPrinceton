@@ -432,16 +432,17 @@ Define these project scripts as implementation deliverables (some belong to late
 
 ```text
 npm ci                   Install locked dependencies
-npm run browser:install  Install the Playwright Chromium matching the pinned package
+npm run browser:install  Optional: install Playwright's bundled Chromium (only for TRIAGE_BROWSER_CHANNEL=chromium)
 npm run dev              Start Electron and the React development build together
 npm run typecheck        Check main, preload, worker, renderer, and shared contracts
 npm run lint             Check source conventions
-npm test                 Run meaningful unit and persistence tests
-npm run test:browser     Run controlled browser workflow fixtures
+npm test                 Run test:unit, then test:browser
+npm run test:unit        Run unit and persistence tests (no browser)
+npm run test:browser     Run controlled browser workflow fixtures in headless Google Chrome
 npm run build            Compile main/preload/worker and renderer assets
 ```
 
-The current repository provides `dev`, `browser:install`, `typecheck`, `test`, `build`, and `start`. The remaining specialized script names above are proposed; `npm test` currently includes the controlled browser fixtures. Native Phase 6 acceptance is explicitly invoked with `node scripts/check-native-browser.mjs` after a build. Tests and live automation require owner authorization under AGENTS.md. The browser installation script should wrap the pinned Playwright CLI. Ensure worker entry paths resolve in both development and compiled builds; keep native modules external to the bundler as required by the toolchain.
+The current repository provides `dev`, `browser:install`, `typecheck`, `test`, `test:unit`, `test:browser`, `build`, and `start`; `lint` is still proposed. Triage drives the installed Google Chrome by default (Playwright channel `chrome`, with Triage's own profile directory). Set `TRIAGE_BROWSER_CHANNEL` to `chrome-beta`, `chrome-dev`, `msedge`, or `chromium` to use another desktop browser; tests honour the same variable. On slow machines, `TRIAGE_TEST_TIMEOUT_SCALE` (e.g. `4`) lengthens browser-fixture waits for content that should appear. Native Phase 6 acceptance is explicitly invoked with `node scripts/check-native-browser.mjs` after a build. Tests and live automation require owner authorization under AGENTS.md. The browser installation script should wrap the pinned Playwright CLI. Ensure worker entry paths resolve in both development and compiled builds; keep native modules external to the bundler as required by the toolchain.
 
 First run: initialize schema → recover interrupted tasks → load settings → verify credential availability → show setup → test capture permission → launch companion. Prove database writes, Chromium launch, and a Claude image response on the demo Mac before polishing animations.
 

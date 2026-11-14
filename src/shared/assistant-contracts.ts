@@ -40,6 +40,26 @@ export interface ConversationDetail {
   nextBefore: number | null
 }
 export interface SendReceipt { taskId: string; conversationId: string }
+
+/** One simplified page as shown in the History tab's learning section. */
+export interface LearningEntry {
+  decisionId: string
+  createdAt: number
+  site: string
+  pageType: string
+  layout: string
+  source: 'llm' | 'rules'
+  mode: string
+  /** 0..1 once rated, null while waiting for the person's rating. */
+  reward: number | null
+}
+export interface LearningSummary {
+  entries: LearningEntry[]
+  rated: number
+  averageReward: number | null
+  /** Layouts the bandit has settled on, per page type. */
+  locked: Array<{ pageType: string; layout: string }>
+}
 export interface AssistantBridge {
   getShakeSettings(): Promise<Result<ShakeSettings>>
   saveShakeSettings(input: { enabled: boolean; instruction: string; mode?: 'explain' | 'highlight' }): Promise<Result<ShakeSettings>>
@@ -60,6 +80,8 @@ export interface AssistantBridge {
   clearHistory(): Promise<Result<void>>
   /** Simplified view or safety check for a captured screenshot (not saved to history). */
   analyzeScreen(input: { captureId: string; kind: ScreenAnalysisKind; source?: 'chat' | 'voice' }): Promise<Result<ScreenAnalysis>>
+  getLearning(): Promise<Result<LearningSummary>>
+  rateSimplification(input: { decisionId: string; helpful: boolean }): Promise<Result<LearningSummary>>
 }
 export const assistantChannels = {
   getShake: 'assistant:get-shake', saveShake: 'assistant:save-shake',
@@ -69,5 +91,6 @@ export const assistantChannels = {
   closeBrowser: 'assistant:close-browser',
   send: 'assistant:send', stop: 'assistant:stop', list: 'assistant:list',
   detail: 'assistant:detail', delete: 'assistant:delete', clear: 'assistant:clear',
-  analyze: 'assistant:analyze'
+  analyze: 'assistant:analyze',
+  learning: 'assistant:learning', rate: 'assistant:rate'
 } as const

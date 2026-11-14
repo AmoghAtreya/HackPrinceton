@@ -245,3 +245,17 @@ button:disabled { opacity: .55; cursor: default; }
 .link-warning span { position: absolute; left: -2px; top: 100%; padding: 2px 5px; border-radius: 3px; background: #873f00; color: white; font: 600 11px/1.25 system-ui; white-space: nowrap; }
 .link-warning[data-warning="Potential phishing"] { border-color: #bb253b; }
 .link-warning[data-warning="Potential phishing"] span { background: #a71931; }
+
+/* Simplifier learning history (History tab) */
+.learning-history { margin: 22px 0 18px; padding-top: 18px; border-top: 1px solid #e7dccd; }
+.learning-history h3 { font: 19px/1.2 Georgia, serif; margin: 8px 0 8px; color: #4f3b2c; }
+.learning-history code { font-size: 10.5px; background: #f1e8da; border-radius: 4px; padding: 1px 4px; }
+.learning-stats { font-size: 11px; color: #72553e; margin: 0 0 9px; }
+.learning-locked { font-size: 10.5px; color: #72553e; margin: 0 0 11px; padding-left: 16px; }
+.learning-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 13px; }
+.learning-body { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 10px; color: #8d7d6e; }
+.learning-body strong { font-size: 11.5px; font-weight: 550; color: #6b513d; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.learning-body time { font-size: 9px; color: #a18e7a; }
+.learning-rate { display: flex; flex-direction: column; align-items: stretch; gap: 4px; flex-shrink: 0; }
+.learning-rate .secondary-button { padding: 7px 10px; }
+.learning-score { flex-shrink: 0; font-size: 11px; font-weight: 600; color: #4f6b3d; background: #eaf2e2; border-radius: 999px; padding: 4px 10px; }

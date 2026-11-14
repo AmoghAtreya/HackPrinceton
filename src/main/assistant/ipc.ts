@@ -47,6 +47,8 @@ export function installAssistantIpc(
   register(assistantChannels.delete, (input) => assistant.deleteConversation(input))
   register(assistantChannels.clear, () => assistant.clearHistory())
   register(assistantChannels.analyze, (input) => assistant.analyzeScreen(input))
+  register(assistantChannels.learning, () => assistant.learning())
+  register(assistantChannels.rate, (input) => assistant.rateSimplification(input))
   return () => {
     for (const channel of Object.values(assistantChannels)) ipcMain.removeHandler(channel)
   }

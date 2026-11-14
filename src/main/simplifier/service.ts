@@ -1,0 +1,182 @@
+import { chromium, type Browser, type Page } from 'playwright'
+import { browserMissingMessage, channelLaunchOptions, type BrowserChannel } from '../../shared/browser-config.ts'
+import type { SimplifyResult } from './engine.ts'
+import type { SimplificationEngine } from './engine.ts'
+import { distillPage } from './distill.ts'
+import { renderSimplifiedView } from './render.ts'
+import { AppProblem } from '../assistant/errors.ts'
+import type { LearningSummary } from '../../shared/assistant-contracts.ts'
+import type { PageType } from '../../shared/simplifier-contracts.ts'
+import { armById } from './arms.ts'
+import type { DecisionLog } from './decision-log.ts'
+import { EXPECTED_MS } from './reward.ts'
+
+/** Where to show the simplified page. Implemented in index.ts with a locked-down BrowserWindow. */
+export interface SimplifiedPresenter {
+  /** Links clicked in the simplified view are passed to SimplifierService.open, never followed in place. */
+  show(html: string, title: string): void
+}
+
+export interface SimplifyCommand {
+  /** An http(s) URL, or null for the built-in demo page. */
+  url: string | null
+}
+
+/** Parse "/simplify <url>" or "/simplify demo". Returns null when the text is not a simplify command. */
+export function parseSimplifyCommand(text: string): SimplifyCommand | null {
+  const match = /^\/simplify(?:\s+(\S+))?\s*$/i.exec(text.trim())
+  if (!match) return null
+  const target = match[1]
+  if (!target || target.toLowerCase() === 'demo') return { url: null }
+  let url: URL
+  try { url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(target) ? target : 'https://' + target) }
+  catch { throw new AppProblem('invalid_url', 'That does not look like a web address. Try /simplify example.com or /simplify demo.') }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new AppProblem('invalid_url', 'Only http and https pages can be simplified.')
+  return { url: url.href }
+}
+
+/** Implicit signals gathered while a simplified page is on screen. */
+interface ViewSession { decisionId: string; shownAt: number; closedAt?: number; linksFollowed: number }
+
+export function describeLayout(armId: string): string {
+  try {
+    const arm = armById(armId)
+    return `${arm.fontScale}× text, up to ${arm.maxActions} buttons${arm.plainLanguage ? ', plain language' : ''}${arm.voiceNarration ? ', read aloud' : ''}`
+  } catch { return 'Retired layout ' + armId }
+}
+
+/**
+ * Opens the original page in Chrome (the "before" view), distils it, runs the
+ * simplification engine, and hands the rendered "after" page to the presenter.
+ */
+export class SimplifierService {
+  private browser?: Browser
+  private before?: Page
+  private readonly engine: SimplificationEngine
+  private readonly presenter: SimplifiedPresenter
+  private readonly channel: BrowserChannel
+  private readonly demoHtml: string
+  private readonly log: DecisionLog
+  private readonly lockedLayouts: (userId: string) => Partial<Record<PageType, string>>
+  private readonly now: () => number
+  private readonly sessions = new Map<string, ViewSession>()
+  private current?: ViewSession
+
+  constructor(options: {
+    engine: SimplificationEngine; presenter: SimplifiedPresenter; channel: BrowserChannel; demoHtml: string
+    log: DecisionLog; lockedLayouts?: (userId: string) => Partial<Record<PageType, string>>; now?: () => number
+  }) {
+    this.log = options.log
+    this.lockedLayouts = options.lockedLayouts ?? (() => ({}))
+    this.now = options.now ?? Date.now
+    this.engine = options.engine
+    this.presenter = options.presenter
+    this.channel = options.channel
+    this.demoHtml = options.demoHtml
+  }
+
+  private async page(): Promise<Page> {
+    if (!this.browser?.isConnected()) {
+      try {
+        this.browser = await chromium.launch({ ...channelLaunchOptions(this.channel), headless: false, args: ['--no-first-run', '--no-default-browser-check'] })
+      } catch {
+        throw new AppProblem('browser_start', browserMissingMessage(this.channel))
+      }
+      this.browser.on('disconnected', () => { this.browser = undefined; this.before = undefined })
+    }
+    if (!this.before || this.before.isClosed()) {
+      const context = await this.browser.newContext({ viewport: null })
+      this.before = await context.newPage()
+      this.before.setDefaultNavigationTimeout(30000)
+      this.before.on('dialog', (dialog) => { void dialog.dismiss().catch(() => {}) })
+    }
+    return this.before
+  }
+
+  async simplify(command: SimplifyCommand, userId: string, credentials: { key: string; model: string } | undefined, signal: AbortSignal): Promise<SimplifyResult> {
+    const page = await this.page()
+    if (command.url) await page.goto(command.url, { waitUntil: 'load' })
+    else await page.setContent(this.demoHtml, { waitUntil: 'load' })
+    if (signal.aborted) throw new AppProblem('stopped', 'Simplification stopped.')
+    await page.bringToFront().catch(() => {})
+    const distilled = await distillPage(page)
+    const result = await this.engine.simplify({ page: distilled, userId, voiceEnabled: false, credentials, signal })
+    const html = renderSimplifiedView(result.view, result.arm, distilled, {
+      pageType: result.pageType, policyMode: result.mode, hiddenRemoved: distilled.stats.hiddenRemoved,
+      originalElements: distilled.stats.interactiveElements
+    })
+    this.presenter.show(html, result.view.title)
+    if (this.current && !this.current.closedAt) this.current.closedAt = this.now()
+    this.current = { decisionId: result.decisionId, shownAt: this.now(), linksFollowed: 0 }
+    this.sessions.set(result.decisionId, this.current)
+    return result
+  }
+
+  /** Called by the presenter when the simplified window closes. */
+  viewClosed(): void {
+    if (this.current && !this.current.closedAt) this.current.closedAt = this.now()
+  }
+
+  /** Recent simplifications and what the policy has learned, for the History tab. */
+  learning(userId: string): LearningSummary {
+    const entries = this.log.recent(userId, 20).map((decision) => {
+      let site = decision.pageHost
+      if (!site) site = 'Demo page'
+      return {
+        decisionId: decision.id, createdAt: decision.createdAt, site, pageType: decision.pageType,
+        layout: describeLayout(decision.armId), source: decision.viewSource, mode: decision.mode, reward: decision.reward
+      }
+    })
+    const locked = Object.entries(this.lockedLayouts(userId)).map(([pageType, armId]) => ({ pageType, layout: describeLayout(armId!) }))
+    return { entries, ...this.log.ratingStats(userId), locked }
+  }
+
+  /**
+   * The person's rating closes the loop: it is combined with the implicit
+   * signals seen while the page was on screen into one reward, which trains the
+   * policy. Ratings are write-once per simplified page.
+   */
+  rate(userId: string, decisionId: string, helpful: boolean): LearningSummary {
+    const decision = this.log.get(decisionId)
+    if (!decision || decision.userId !== userId) throw new AppProblem('not_found', 'That simplified page is no longer in the learning history.')
+    if (decision.reward !== null) throw new AppProblem('already_rated', 'This simplified page was already rated.')
+    const session = this.sessions.get(decisionId)
+    // Without a session (e.g. rated after a restart), assume a typical visit length.
+    const durationMs = session ? (session.closedAt ?? this.now()) - session.shownAt : EXPECTED_MS[decision.pageType]
+    this.engine.reportOutcome(decisionId, {
+      // "Helpful" is the closest available proxy for having finished what the person came to do.
+      taskCompleted: helpful, durationMs: Math.max(0, Math.min(durationMs, 24 * 3600 * 1000)),
+      backtracks: Math.min(session?.linksFollowed ?? 0, 1000), thumbsUp: helpful, showedOriginal: false, repeatRequests: 0
+    })
+    this.sessions.delete(decisionId)
+    if (this.current?.decisionId === decisionId) this.current = undefined
+    return this.learning(userId)
+  }
+
+  /** Follow a link from the simplified view in the Chrome window. */
+  async open(url: string): Promise<void> {
+    if (this.current && !this.current.closedAt) this.current.linksFollowed++
+    const page = await this.page()
+    await page.goto(url, { waitUntil: 'load' }).catch(() => {})
+    await page.bringToFront().catch(() => {})
+  }
+
+  async close(): Promise<void> {
+    await this.browser?.close().catch(() => {})
+    this.browser = undefined
+  }
+}
+
+export function describeResult(result: SimplifyResult): string {
+  const view = result.view
+  const lines = [
+    `Simplified: ${view.title}`,
+    view.purpose,
+    '',
+    `Layout ${result.arm.id} (${result.arm.fontScale}× text, up to ${result.arm.maxActions} buttons${result.arm.plainLanguage ? ', plain language' : ''}) · page type ${result.pageType} · written by ${view.source === 'llm' ? 'Claude' : 'rules (no AI)'}`,
+    ...view.actions.map((action) => `• ${action.label}`)
+  ]
+  if (view.concerns.length) lines.push('', 'Be careful: ' + view.concerns.join(' '))
+  lines.push('', 'The original is open in Chrome; the simplified page is in its own Triage window.')
+  return lines.join('\n')
+}
