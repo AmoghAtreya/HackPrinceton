@@ -39,6 +39,8 @@ export function parseSimplifyCommand(text: string): SimplifyCommand | null {
   if (!match) return null
   const target = match[1]
   if (!target) return { kind: 'current' }
+  // The old spelling of /examplesimplify, kept so it never tries to open https://demo/.
+  if (target.toLowerCase() === 'demo') return { kind: 'demo' }
   let url: URL
   try { url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(target) ? target : 'https://' + target) }
   catch { throw new AppProblem('invalid_url', 'That does not look like a web address. Type /simplify on its own for the page you have open, /simplify example.com, or /examplesimplify for the example page.') }
