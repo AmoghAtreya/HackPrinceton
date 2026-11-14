@@ -65,23 +65,94 @@ test('voice arms are shielded off when voice is disabled', () => {
   assert.ok(allowedArms(false).every((arm) => !arm.voiceNarration))
 })
 
-test('Thompson policy learns a persona preference and never explores on sensitive pages', () => {
-  const policy = new ThompsonPolicy({ freezeAfter: 1e9, propensitySamples: 50 }, seededRandom(7))
+// ---- Bandit tests -----------------------------------------------------------
+// Thompson Sampling is random by design, so these tests avoid depending on one
+// lucky random sequence:
+//   1. Learning maths is tested with NO sampling (sensitive pages act greedily
+//      on the posterior mean, which is fully deterministic given the data).
+//   2. Exploration behaviour is tested across many seeds with a pass-rate
+//      threshold, so a single unlucky seed cannot fail the build.
+//   3. Freezing uses tiny thresholds so it triggers in a handful of steps.
+// None of them read the wall clock: `now` is a fixed timestamp.
+
+const FIXED_NOW = Date.UTC(2026, 10, 13, 15, 0, 0)
+function banditInput(userId = 'u', sensitive = false) {
   const p = page([el(0, {})], { mainText: 'x'.repeat(2000) })
   const traits = { visionSupport: 0.9, readingSupport: 0.5, voicePreference: 0.5, techConfidence: 0.5 }
-  const x = contextVector(p, 'article', { userId: 'u', now: 0, voiceEnabled: false, recentErrorRate: 0 }, traits)
-  assert.equal(x.length, FEATURE_DIM)
-  const input = { userId: 'u', x, arms: allowedArms(false), pageType: 'article' as const, sensitive: false }
-  for (let i = 0; i < 300; i++) {
-    const { armId } = policy.choose(input)
-    policy.learn(input, armId, armId === 'a08' ? 0.9 : 0.3)
+  const x = contextVector(p, 'article', { userId, now: FIXED_NOW, voiceEnabled: false, recentErrorRate: 0 }, traits)
+  return { userId, x, arms: allowedArms(false), pageType: 'article' as const, sensitive }
+}
+
+test('bandit posterior learns the best arm from fixed data (no sampling involved)', () => {
+  const policy = new ThompsonPolicy({}, () => { throw new Error('random must not be used') })
+  const input = banditInput('u', true)
+  assert.equal(input.x.length, FEATURE_DIM)
+  // Same data every run: every arm tried 10 times, a08 is clearly better.
+  for (let i = 0; i < 10; i++) for (const arm of input.arms) policy.learn(input, arm.id, arm.id === 'a08' ? 0.9 : 0.3)
+  const decision = policy.choose(input)
+  assert.deepEqual(decision, { armId: 'a08', propensity: 1, mode: 'shielded' })
+  assert.equal(policy.probability(input, 'a08'), 1)
+  // Learning survives a save/restore round trip.
+  const restored = new ThompsonPolicy({}, () => { throw new Error('random must not be used') }, policy.serialize())
+  assert.equal(restored.choose(input).armId, 'a08')
+})
+
+test('new users start from the population model (cold start)', () => {
+  const policy = new ThompsonPolicy({}, () => { throw new Error('random must not be used') })
+  const veteran = banditInput('veteran', true)
+  for (let i = 0; i < 20; i++) for (const arm of veteran.arms) policy.learn(veteran, arm.id, arm.id === 'a09' ? 0.95 : 0.2)
+  assert.equal(policy.choose(banditInput('newcomer', true)).armId, 'a09')
+})
+
+test('exploration finds the best arm for at least 9 of 10 random seeds', () => {
+  let converged = 0
+  for (let seed = 1; seed <= 10; seed++) {
+    const policy = new ThompsonPolicy({ freezeAfter: 1e9, propensitySamples: 20 }, seededRandom(seed))
+    const input = banditInput()
+    for (let i = 0; i < 150; i++) {
+      const { armId } = policy.choose(input)
+      policy.learn(input, armId, armId === 'a08' ? 0.9 : 0.3)
+    }
+    if (policy.choose({ ...input, sensitive: true }).armId === 'a08') converged++
   }
-  assert.ok(policy.probability(input, 'a08') > 0.8)
-  const sensitive = policy.choose({ ...input, sensitive: true })
-  assert.equal(sensitive.mode, 'shielded')
-  assert.equal(sensitive.propensity, 1)
-  const restored = new ThompsonPolicy({ freezeAfter: 1e9 }, seededRandom(1), policy.serialize())
-  assert.ok(restored.probability(input, 'a08') > 0.8)
+  assert.ok(converged >= 9, `only ${converged}/10 seeds converged`)
+})
+
+test('logged propensities are always valid probabilities', () => {
+  for (let seed = 1; seed <= 5; seed++) {
+    const policy = new ThompsonPolicy({ propensitySamples: 20 }, seededRandom(seed))
+    const input = banditInput()
+    for (let i = 0; i < 20; i++) {
+      const decision = policy.choose(input)
+      assert.ok(decision.propensity > 0 && decision.propensity <= 1)
+      assert.ok(input.arms.some((arm) => arm.id === decision.armId))
+      policy.learn(input, decision.armId, 0.5)
+    }
+  }
+})
+
+test('layout freezes once confident and can be unfrozen', () => {
+  const policy = new ThompsonPolicy({ freezeAfter: 5, freezeConfidence: 0.5, propensitySamples: 20 }, seededRandom(3))
+  const input = banditInput()
+  for (let i = 0; i < 10; i++) for (const arm of input.arms) policy.learn(input, arm.id, arm.id === 'a08' ? 0.95 : 0.1)
+  policy.choose(input)
+  assert.equal(policy.frozenArms('u').article, 'a08')
+  assert.deepEqual(policy.choose(input), { armId: 'a08', propensity: 1, mode: 'frozen' })
+  policy.unfreeze('u', 'article')
+  assert.equal(policy.frozenArms('u').article, undefined)
+})
+
+test('a slow LLM falls back to the rules view without waiting for a real timeout', async () => {
+  const log = new DecisionLog(':memory:')
+  const deadline = new AbortController()
+  const hanging = { simplify: (request: { signal: AbortSignal }) => new Promise<never>((_, reject) => {
+    request.signal.addEventListener('abort', () => reject(new Error('timed out')), { once: true })
+  }) }
+  const engine = new SimplificationEngine({ log, policy: new RulesPolicy(), model: hanging, now: () => FIXED_NOW, timeoutSignal: () => deadline.signal })
+  const pending = engine.simplify({ page: page([el(0, { label: 'Continue' })]), userId: 'u', voiceEnabled: false, credentials: { key: 'k', model: 'm' } })
+  deadline.abort() // "20 seconds pass" instantly.
+  assert.equal((await pending).view.source, 'rules')
+  log.close()
 })
 
 test('engine falls back to rules, logs the decision and rewards it once', async () => {
