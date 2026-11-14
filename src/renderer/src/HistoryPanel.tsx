@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { AssistantBridge, ConversationPage } from '../../shared/assistant-contracts'
 import { LearningHistory } from './LearningHistory'
+import { MemoryHistory } from './MemoryHistory'
 
 export function HistoryPanel({ bridge, revision, page, active, busy, open, loadMore, remove, clear }: {
   bridge: AssistantBridge; revision: number
@@ -28,6 +29,7 @@ export function HistoryPanel({ bridge, revision, page, active, busy, open, loadM
       </div>)}
     </div>
     {page.next && <button className="secondary-button" disabled={busy} onClick={loadMore}>Load older conversations</button>}
+    <MemoryHistory bridge={bridge} revision={revision} open={open} />
     <LearningHistory bridge={bridge} revision={revision} />
     {page.items.length > 0 && <div className="clear-history">
       {confirm === 'all' ? <>
