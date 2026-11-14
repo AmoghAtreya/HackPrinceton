@@ -1,3 +1,4 @@
+import { PhishingMonitor } from './phishing/monitor'
 import { BrowserSupervisor } from './browser/supervisor'
 import { VoiceController, type VoiceEvent } from './voice/controller'
 import { TranscribeService, transcribeConfigFromEnv } from './voice/transcribe'
@@ -11,7 +12,7 @@ import { installSpeechIpc } from './speech/ipc'
 import { LocalRequestLog } from './logging/request-log'
 import { installRequestLogIpc } from './logging/ipc'
 import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import { mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
 import { channels, type DesktopPoint } from '../shared/contracts'
@@ -56,6 +57,8 @@ let shakeMonitor: ShakeMonitor | undefined
 let removeShakeListeners: (() => void) | undefined
 let presentedGesture: string | undefined
 let voice: VoiceController | undefined
+let phishing: PhishingMonitor | undefined
+let phishingEnabled = false
 let removeVoiceIpc: (() => void) | undefined
 let polly: PollyService | undefined
 let removeSpeechIpc: (() => void) | undefined
@@ -82,6 +85,15 @@ function buildControls(): Electron.Menu {
     { label: 'Open chat', click: () => desktop?.openChat() },
     { label: 'Hide Triage', click: () => desktop?.hide() },
     { label: 'Stop current task', click: () => assistant?.stopActive() },
+    {
+      label: 'Chrome Link Warnings (Preview)', type: 'checkbox', checked: phishingEnabled,
+      enabled: Boolean(phishing), click: (item) => {
+        phishingEnabled = item.checked
+        if (phishingEnabled) phishing?.start(true)
+        else phishing?.stop()
+        tray?.setContextMenu(buildControls())
+      }
+    },
     { type: 'separator' },
     { label: 'Quit Triage', accelerator: 'CommandOrControl+Q', click: () => app.quit() }
   ])
@@ -146,7 +158,7 @@ if (!app.requestSingleInstanceLock()) {
     // Reject input and stop native timers immediately, before waiting for Chromium.
     // Each cleanup runs even when another resource has already failed.
     const cleanup = [
-      () => removeVoiceIpc?.(), () => voice?.dispose(),
+      () => removeVoiceIpc?.(), () => voice?.dispose(), () => phishing?.stop(),
       () => removeSpeechIpc?.(), () => polly?.dispose(), () => removeRequestLogIpc?.(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
@@ -183,6 +195,19 @@ if (!app.requestSingleInstanceLock()) {
       return { x: x + 16, y: y + 16 }
     })
     await overlay.initialize()
+    if (process.platform === 'darwin') {
+      const bundledScanner = join(process.resourcesPath, '../Helpers/TriageLinkScanner.node')
+      const helper = app.isPackaged || existsSync(bundledScanner)
+        ? bundledScanner : join(app.getAppPath(), 'release/TriageLinkScanner.node')
+      phishing = new PhishingMonitor(helper, () => Boolean(quitting || desktop?.isCapturing),
+        (state) => overlay?.drawWarnings(state), (permissionDenied) => {
+          phishingEnabled = false
+          tray?.setContextMenu(buildControls())
+          dialog.showErrorBox('Chrome Link Warnings paused', permissionDenied
+            ? 'In System Settings → Privacy & Security → Accessibility, enable Triage, then turn Link Warnings back on.'
+            : 'Run npm run phishing:build. If using Triage.app, rebuild the bundle before turning Link Warnings back on.')
+        })
+    }
     highlights = new HighlightController({
       display: (id) => overlay!.display(id), draw: (state) => overlay!.draw(state), hide: () => overlay!.hide(),
       blocked: (target) => desktop!.coversTarget(target), observeClick: observeTargetClick
@@ -194,7 +219,7 @@ if (!app.requestSingleInstanceLock()) {
       window.on('show', () => overlay?.refreshArrow())
       window.on('hide', () => overlay?.refreshArrow())
     }
-    screens = new ScreenService(electronCapture(desktop))
+    screens = new ScreenService(electronCapture(desktop, () => phishing?.clear()))
     browser = new BrowserSupervisor(() => utilityProcess.fork(join(__dirname, 'browser-worker.js'), [], {
       serviceName: 'Triage flight search', stdio: 'ignore',
       env: Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'LANG'].flatMap((name) => process.env[name] ? [[name, process.env[name]!]] : []))
@@ -262,12 +287,12 @@ if (!app.requestSingleInstanceLock()) {
       screens?.clear()
       highlights?.clear()
     }
-    const reset = () => { shakeMonitor?.reset(); interrupt('Interrupted because the display configuration changed.') }
+    const reset = () => { phishing?.clear(); shakeMonitor?.reset(); interrupt('Interrupted because the display configuration changed.') }
     const paused = new Set<string>()
-    const sleep = () => { paused.add('sleep'); voice?.interrupt(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac went to sleep.') }
-    const lock = () => { paused.add('lock'); voice?.interrupt(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac was locked.') }
-    const wake = () => { paused.delete('sleep'); if (!paused.size) { shakeMonitor?.resume(); } }
-    const unlock = () => { paused.delete('lock'); if (!paused.size) { shakeMonitor?.resume(); } }
+    const sleep = () => { paused.add('sleep'); phishing?.stop(); voice?.interrupt(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac went to sleep.') }
+    const lock = () => { paused.add('lock'); phishing?.stop(); voice?.interrupt(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac was locked.') }
+    const wake = () => { paused.delete('sleep'); if (!paused.size) { if (phishingEnabled) phishing?.start(); shakeMonitor?.resume() } }
+    const unlock = () => { paused.delete('lock'); if (!paused.size) { if (phishingEnabled) phishing?.start(); shakeMonitor?.resume() } }
     powerMonitor.on('suspend', sleep)
     powerMonitor.on('resume', wake)
     powerMonitor.on('lock-screen', lock)

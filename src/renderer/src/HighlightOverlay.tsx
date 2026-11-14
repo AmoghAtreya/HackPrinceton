@@ -22,6 +22,13 @@ export function HighlightOverlay() {
     return () => { cancelAnimationFrame(first); cancelAnimationFrame(second) }
   }, [state?.id, bridge])
   if (!state || (state.expiresAt !== null && state.expiresAt <= Date.now())) return null
+  if (state.warnings) return <div className="highlight-surface" aria-hidden="true">
+    {state.warnings.map(({ rectangle, label }, index) => <div key={index}
+      className="link-warning" data-warning={label}
+      style={{ left: rectangle.x, top: rectangle.y, width: rectangle.width, height: rectangle.height }}>
+      <span>{label}</span>
+    </div>)}
+  </div>
   const viewport = state.overlayBounds ?? state.bounds
   const offsetX = state.bounds.x - viewport.x
   const offsetY = state.bounds.y - viewport.y
