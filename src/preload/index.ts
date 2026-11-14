@@ -1,0 +1,69 @@
+import { voiceChannels, type VoiceState } from '../shared/voice-contracts'
+import { contextBridge, ipcRenderer } from 'electron'
+import { highlightChannels, type OverlayBridge, type HighlightState } from '../shared/highlight-contracts'
+import { channels, type DesktopBridge, type DesktopState } from '../shared/contracts'
+import { assistantChannels, type AssistantState } from '../shared/assistant-contracts'
+
+const bridge: DesktopBridge = {
+  stopVoice: () => ipcRenderer.invoke(voiceChannels.stop),
+  setVoiceContext: (input) => ipcRenderer.invoke(voiceChannels.context, input),
+  getVoiceState: () => ipcRenderer.invoke(voiceChannels.get),
+  saveVoiceSettings: (input) => ipcRenderer.invoke(voiceChannels.save, input),
+  setupVoice: () => ipcRenderer.invoke(voiceChannels.setup),
+  startVoice: () => ipcRenderer.invoke(voiceChannels.start),
+  finishVoice: (id) => ipcRenderer.invoke(voiceChannels.finish, id),
+  cancelVoice: (id) => ipcRenderer.invoke(voiceChannels.cancel, id),
+  onVoiceState: (listener) => {
+    const receive = (_event: Electron.IpcRendererEvent, state: VoiceState): void => listener(state)
+    ipcRenderer.on(voiceChannels.state, receive)
+    return () => { ipcRenderer.removeListener(voiceChannels.state, receive) }
+  },
+  getShakeSettings: () => ipcRenderer.invoke(assistantChannels.getShake),
+  saveShakeSettings: (input) => ipcRenderer.invoke(assistantChannels.saveShake, input),
+  captureScreen: () => ipcRenderer.invoke(assistantChannels.capture),
+  discardScreen: () => ipcRenderer.invoke(assistantChannels.discard),
+  dismissHighlight: () => ipcRenderer.invoke(assistantChannels.dismissHighlight),
+  getAssistantState: () => ipcRenderer.invoke(assistantChannels.getState),
+  onAssistantState: (listener) => {
+    const receive = (_event: Electron.IpcRendererEvent, state: AssistantState): void => listener(state)
+    ipcRenderer.on(assistantChannels.state, receive)
+    return () => { ipcRenderer.removeListener(assistantChannels.state, receive) }
+  },
+  connectKey: (input) => ipcRenderer.invoke(assistantChannels.connect, input),
+  removeKey: () => ipcRenderer.invoke(assistantChannels.removeKey),
+  selectModel: (model) => ipcRenderer.invoke(assistantChannels.selectModel, model),
+  sendMessage: (input) => ipcRenderer.invoke(assistantChannels.send, input),
+  closeBrowser: () => ipcRenderer.invoke(assistantChannels.closeBrowser),
+  stopRequest: (id) => ipcRenderer.invoke(assistantChannels.stop, id),
+  listConversations: (input) => ipcRenderer.invoke(assistantChannels.list, input),
+  getConversation: (input) => ipcRenderer.invoke(assistantChannels.detail, input),
+  deleteConversation: (id) => ipcRenderer.invoke(assistantChannels.delete, id),
+  clearHistory: () => ipcRenderer.invoke(assistantChannels.clear),
+  getState: () => ipcRenderer.invoke(channels.getState),
+  onState: (listener) => {
+    const receive = (_event: Electron.IpcRendererEvent, state: DesktopState): void => listener(state)
+    ipcRenderer.on(channels.state, receive)
+    return () => { ipcRenderer.removeListener(channels.state, receive) }
+  },
+  toggleChat: () => ipcRenderer.send(channels.toggleChat),
+  closeChat: () => ipcRenderer.send(channels.closeChat),
+  hide: () => ipcRenderer.send(channels.hide),
+  quit: () => ipcRenderer.send(channels.quit),
+  openMenu: () => ipcRenderer.send(channels.menu),
+  beginDrag: (point) => ipcRenderer.send(channels.dragStart, point),
+  endDrag: (allowClick = true, point) => ipcRenderer.send(channels.dragEnd, allowClick, point),
+  setPointerInteractive: (interactive) => ipcRenderer.send(channels.pointer, interactive)
+}
+
+if (process.argv.includes('--triage-overlay')) {
+  const overlay: OverlayBridge = {
+    getHighlight: () => ipcRenderer.invoke(highlightChannels.get),
+    onHighlight: (listener) => {
+      const receive = (_event: Electron.IpcRendererEvent, state: HighlightState | null): void => listener(state)
+      ipcRenderer.on(highlightChannels.state, receive)
+      return () => { ipcRenderer.removeListener(highlightChannels.state, receive) }
+    },
+    highlightReady: (id) => ipcRenderer.send(highlightChannels.ready, id)
+  }
+  contextBridge.exposeInMainWorld('triageOverlay', overlay)
+} else contextBridge.exposeInMainWorld('triage', bridge)
