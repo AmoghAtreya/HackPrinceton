@@ -1,5 +1,7 @@
 import type { ContextElement, ContextSnapshot } from '../../shared/context-contracts.ts'
 import type { ScreenCaptureOptions, ScreenPreview } from '../../shared/screen-contracts.ts'
+import type { ContextFrame } from '../../shared/context-contracts.ts'
+import { privateFrames } from '../screen/redact.ts'
 import type { ContextService } from './service.ts'
 
 /** What the assistant needs to turn a model-chosen element id back into a real element. */
@@ -34,6 +36,15 @@ export class PairedCapture implements ContextLookup {
     this.pending = undefined
     if (!this.contexts) return
     try { this.pending = await this.contexts.capture({ cursor }) } catch { /* Pixel-box fallback. */ }
+  }
+
+  /**
+   * Takes the snapshot for this capture and returns the frames to black out of
+   * the screenshot, or null if the screen could not be read. Never rejects.
+   */
+  async privateFields(cursor: { x: number; y: number }): Promise<ContextFrame[] | null> {
+    await this.snapshotContext(cursor)
+    return privateFrames(this.pending)
   }
 
   async capture(options?: ScreenCaptureOptions): Promise<ScreenPreview> {
