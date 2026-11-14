@@ -8,6 +8,7 @@ import { BrowserSupervisor } from './browser/supervisor'
 import { createSimplifier } from './simplifier/index'
 import { SimplifierService } from './simplifier/service'
 import { SimplifiedWindow } from './simplifier/window'
+import { ThompsonPolicy } from './simplifier/thompson'
 import demoPageHtml from '../../demo/sites/cluttered-news.html?raw'
 import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, mkdirSync } from 'node:fs'
@@ -210,9 +211,11 @@ if (!app.requestSingleInstanceLock()) {
     }), join(directory, 'browser-profile'), () => highlights?.clear(), configuredBrowserChannel())
     const simplifierParts = createSimplifier(directory)
     closeSimplifierLog = simplifierParts.close
-    simplifiedWindow = new SimplifiedWindow((url) => { void simplifier?.open(url) })
+    simplifiedWindow = new SimplifiedWindow((url) => { void simplifier?.open(url) }, () => simplifier?.viewClosed())
+    const policy = simplifierParts.policy
     simplifier = new SimplifierService({
-      engine: simplifierParts.engine, presenter: simplifiedWindow, channel: configuredBrowserChannel(), demoHtml: demoPageHtml
+      engine: simplifierParts.engine, presenter: simplifiedWindow, channel: configuredBrowserChannel(), demoHtml: demoPageHtml,
+      log: simplifierParts.log, lockedLayouts: (userId) => (policy instanceof ThompsonPolicy ? policy.frozenArms(userId) : {})
     })
     assistant = new AssistantCoordinator({
       history: new HistoryStore(join(directory, 'history.sqlite')),

@@ -5,6 +5,11 @@ import type { SimplificationEngine } from './engine.ts'
 import { distillPage } from './distill.ts'
 import { renderSimplifiedView } from './render.ts'
 import { AppProblem } from '../assistant/errors.ts'
+import type { LearningSummary } from '../../shared/assistant-contracts.ts'
+import type { PageType } from '../../shared/simplifier-contracts.ts'
+import { armById } from './arms.ts'
+import type { DecisionLog } from './decision-log.ts'
+import { EXPECTED_MS } from './reward.ts'
 
 /** Where to show the simplified page. Implemented in index.ts with a locked-down BrowserWindow. */
 export interface SimplifiedPresenter {
@@ -30,6 +35,16 @@ export function parseSimplifyCommand(text: string): SimplifyCommand | null {
   return { url: url.href }
 }
 
+/** Implicit signals gathered while a simplified page is on screen. */
+interface ViewSession { decisionId: string; shownAt: number; closedAt?: number; linksFollowed: number }
+
+export function describeLayout(armId: string): string {
+  try {
+    const arm = armById(armId)
+    return `${arm.fontScale}× text, up to ${arm.maxActions} buttons${arm.plainLanguage ? ', plain language' : ''}${arm.voiceNarration ? ', read aloud' : ''}`
+  } catch { return 'Retired layout ' + armId }
+}
+
 /**
  * Opens the original page in Chrome (the "before" view), distils it, runs the
  * simplification engine, and hands the rendered "after" page to the presenter.
@@ -41,8 +56,19 @@ export class SimplifierService {
   private readonly presenter: SimplifiedPresenter
   private readonly channel: BrowserChannel
   private readonly demoHtml: string
+  private readonly log: DecisionLog
+  private readonly lockedLayouts: (userId: string) => Partial<Record<PageType, string>>
+  private readonly now: () => number
+  private readonly sessions = new Map<string, ViewSession>()
+  private current?: ViewSession
 
-  constructor(options: { engine: SimplificationEngine; presenter: SimplifiedPresenter; channel: BrowserChannel; demoHtml: string }) {
+  constructor(options: {
+    engine: SimplificationEngine; presenter: SimplifiedPresenter; channel: BrowserChannel; demoHtml: string
+    log: DecisionLog; lockedLayouts?: (userId: string) => Partial<Record<PageType, string>>; now?: () => number
+  }) {
+    this.log = options.log
+    this.lockedLayouts = options.lockedLayouts ?? (() => ({}))
+    this.now = options.now ?? Date.now
     this.engine = options.engine
     this.presenter = options.presenter
     this.channel = options.channel
@@ -80,11 +106,56 @@ export class SimplifierService {
       originalElements: distilled.stats.interactiveElements
     })
     this.presenter.show(html, result.view.title)
+    if (this.current && !this.current.closedAt) this.current.closedAt = this.now()
+    this.current = { decisionId: result.decisionId, shownAt: this.now(), linksFollowed: 0 }
+    this.sessions.set(result.decisionId, this.current)
     return result
+  }
+
+  /** Called by the presenter when the simplified window closes. */
+  viewClosed(): void {
+    if (this.current && !this.current.closedAt) this.current.closedAt = this.now()
+  }
+
+  /** Recent simplifications and what the policy has learned, for the History tab. */
+  learning(userId: string): LearningSummary {
+    const entries = this.log.recent(userId, 20).map((decision) => {
+      let site = decision.pageHost
+      if (!site) site = 'Demo page'
+      return {
+        decisionId: decision.id, createdAt: decision.createdAt, site, pageType: decision.pageType,
+        layout: describeLayout(decision.armId), source: decision.viewSource, mode: decision.mode, reward: decision.reward
+      }
+    })
+    const locked = Object.entries(this.lockedLayouts(userId)).map(([pageType, armId]) => ({ pageType, layout: describeLayout(armId!) }))
+    return { entries, ...this.log.ratingStats(userId), locked }
+  }
+
+  /**
+   * The person's rating closes the loop: it is combined with the implicit
+   * signals seen while the page was on screen into one reward, which trains the
+   * policy. Ratings are write-once per simplified page.
+   */
+  rate(userId: string, decisionId: string, helpful: boolean): LearningSummary {
+    const decision = this.log.get(decisionId)
+    if (!decision || decision.userId !== userId) throw new AppProblem('not_found', 'That simplified page is no longer in the learning history.')
+    if (decision.reward !== null) throw new AppProblem('already_rated', 'This simplified page was already rated.')
+    const session = this.sessions.get(decisionId)
+    // Without a session (e.g. rated after a restart), assume a typical visit length.
+    const durationMs = session ? (session.closedAt ?? this.now()) - session.shownAt : EXPECTED_MS[decision.pageType]
+    this.engine.reportOutcome(decisionId, {
+      // "Helpful" is the closest available proxy for having finished what the person came to do.
+      taskCompleted: helpful, durationMs: Math.max(0, Math.min(durationMs, 24 * 3600 * 1000)),
+      backtracks: Math.min(session?.linksFollowed ?? 0, 1000), thumbsUp: helpful, showedOriginal: false, repeatRequests: 0
+    })
+    this.sessions.delete(decisionId)
+    if (this.current?.decisionId === decisionId) this.current = undefined
+    return this.learning(userId)
   }
 
   /** Follow a link from the simplified view in the Chrome window. */
   async open(url: string): Promise<void> {
+    if (this.current && !this.current.closedAt) this.current.linksFollowed++
     const page = await this.page()
     await page.goto(url, { waitUntil: 'load' }).catch(() => {})
     await page.bringToFront().catch(() => {})
