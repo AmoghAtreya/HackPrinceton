@@ -7,6 +7,7 @@ import { Character } from './Character'
 import { SettingsPanel } from './SettingsPanel'
 import { HistoryPanel } from './HistoryPanel'
 import { VoiceButton } from './VoiceButton'
+import { matchVoiceIntent } from './voice/intents'
 import { displayError, unwrap } from './assistant-ui'
 import { appendConversations, refreshConversations } from './history-state'
 
@@ -139,13 +140,38 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     await deliver(draft.trim() || 'Explain what is happening on this screen. Be specific about visible content and uncertainty.', 'chat', capture, highlightMode ? 'highlight' : 'explain')
   }
 
-  /** A finished voice recording: send it like a typed message. */
+  function newConversation() {
+    setCapture(null); void bridge.discardScreen(); setSelected(null); setDetail(null); setDraft(''); setError(''); setView('chat')
+  }
+
+  /** Uses the screenshot already waiting in the composer, or takes a fresh one, then sends. */
+  async function captureAndDeliver(text: string, mode: 'explain' | 'highlight') {
+    let shot = capture
+    if (!shot) {
+      setCapturing(true); setError('')
+      try { shot = unwrap(await bridge.captureScreen()) }
+      catch (problem) { setError(displayError(problem)); return }
+      finally { setCapturing(false) }
+    }
+    await deliver(text, 'voice', shot, mode)
+  }
+
+  /** A finished voice recording: handle a local shortcut, or send it like a typed message. */
   async function handleTranscript(record: TranscriptRecord) {
     const text = record.text.trim()
     if (!text || !assistant) return
+    const intent = matchVoiceIntent(text)
+    if (intent.kind === 'stop') {
+      if (assistant.active) await stop()
+      else if (capture) { setCapture(null); void bridge.discardScreen() }
+      return
+    }
+    if (intent.kind === 'new_conversation') { newConversation(); return }
     if (!assistant.config.configured) { setView('settings'); return }
     if (assistant.active || busy || capturing || assistant.storageError) return
-    await deliver(text, 'voice', capture, highlightMode ? 'highlight' : 'explain')
+    if (intent.kind === 'explain_screen') await captureAndDeliver(text, 'explain')
+    else if (intent.kind === 'show_me_where') await captureAndDeliver(text, 'highlight')
+    else await deliver(text, 'voice', capture, highlightMode ? 'highlight' : 'explain')
   }
 
   async function stop() {
@@ -229,9 +255,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     <nav className="panel-tabs" aria-label="Triage views">
       {(['chat', 'history', 'settings'] as const).map((tab) => <button key={tab} aria-current={view === tab ? 'page' : undefined}
         onClick={() => { setView(tab); setError('') }}>{tab[0].toUpperCase() + tab.slice(1)}</button>)}
-      <button className="new-chat" aria-label="Start a new conversation" title="New conversation" onClick={() => {
-        setCapture(null); void bridge.discardScreen(); setSelected(null); setDetail(null); setDraft(''); setError(''); setView('chat')
-      }}>+</button>
+      <button className="new-chat" aria-label="Start a new conversation" title="New conversation" onClick={newConversation}>+</button>
     </nav>
     {active && <div className="active-request" role="status">
       <button className="active-open" onClick={() => openConversation(active.conversationId)}>{activity}<span className="thinking-dots">…</span></button>
