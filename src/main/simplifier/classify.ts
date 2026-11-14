@@ -61,6 +61,11 @@ const NOISE = /\b(cookie|privacy|terms|advert|sponsored|newsletter|share|tweet|f
  * learned element-importance ranker trained on click logs.
  */
 export function importance(el: PageElement): number {
+  return Math.max(0, Math.min(1, rawImportance(el)))
+}
+
+/** Unclamped score, so strong candidates do not tie at 1 when ranking. */
+function rawImportance(el: PageElement): number {
   if (el.kind === 'heading' || el.kind === 'text') return 0
   let score = REGION_WEIGHT[el.region]
   score += Math.min(el.area * 20, 0.25)
@@ -69,13 +74,13 @@ export function importance(el: PageElement): number {
   if (COMMIT.test(el.label)) score += 0.1
   if (NOISE.test(el.label)) score -= 0.4
   if (el.label.length > 80) score -= 0.15
-  return Math.max(0, Math.min(1, score))
+  return score
 }
 
 export function rankElements(page: DistilledPage): PageElement[] {
   return page.elements
     .filter((el) => el.kind !== 'heading' && el.kind !== 'text')
-    .map((el) => ({ el, score: importance(el) }))
+    .map((el) => ({ el, score: rawImportance(el) }))
     .sort((a, b) => b.score - a.score)
     .map(({ el }) => el)
 }
