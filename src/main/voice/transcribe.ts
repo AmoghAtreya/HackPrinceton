@@ -31,6 +31,7 @@ export function transcribeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): T
 
 export class TranscribeService implements SpeechToTextService {
   readonly name = 'Amazon Transcribe'
+  readonly id = 'transcribe' as const
   private client: TranscribeStreamingClient | null = null
   readonly config: TranscribeConfig
 

@@ -63,6 +63,7 @@ function frame(kind: 'A' | 'E' | 'C', payload?: Uint8Array): Buffer {
  */
 export class AppleSpeechService implements SpeechToTextService {
   readonly name = 'Apple on-device speech'
+  readonly id = 'apple' as const
   readonly config: { languageCode: string }
   private readonly helperApp: string
   private readonly launch: HelperLauncher

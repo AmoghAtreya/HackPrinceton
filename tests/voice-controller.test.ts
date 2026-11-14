@@ -13,6 +13,7 @@ function fakeService(options: { fail?: Error } = {}) {
   return {
     config: { region: 'test', languageCode: 'en-US' as const },
     name: 'fake',
+    id: 'apple' as const,
     verify: async () => {},
     dispose() {},
     async stream(audio: AsyncIterable<Uint8Array>, _rate: number, signal: AbortSignal, onResult: (result: TranscribeResult) => void) {
