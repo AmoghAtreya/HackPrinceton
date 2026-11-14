@@ -2,8 +2,9 @@
  * Turns a chat reply into something pleasant to hear: no links or markdown,
  * and only the first few sentences, since the full reply stays on screen.
  */
-export const SPEECH_TARGET_CHARS = 300
-const MAX_SENTENCES = 3
+// About 15 seconds at the default relaxed rate: long enough for an answer, short enough to follow.
+export const SPEECH_TARGET_CHARS = 200
+const MAX_SENTENCES = 2
 export const REST_ON_SCREEN = 'The rest is on screen.'
 
 export function prepareSpeech(text: string, targetChars = SPEECH_TARGET_CHARS): string {
