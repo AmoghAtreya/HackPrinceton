@@ -52,10 +52,13 @@ test('speech settings default to relaxed Joanna for voice requests and reject un
     const settings = new SpeechPreferences(directory)
     assert.deepEqual(settings.snapshot(), DEFAULT_SPEECH_SETTINGS)
     settings.save({ readAloud: 'always', rate: 80, voice: 'Matthew' })
-    assert.deepEqual(new SpeechPreferences(directory).snapshot(), { readAloud: 'always', rate: 80, voice: 'Matthew' })
+    assert.deepEqual(new SpeechPreferences(directory).snapshot(), { readAloud: 'always', rate: 80, voice: 'Matthew', geminiTranscription: true })
+    settings.save({ readAloud: 'always', rate: 80, voice: 'Matthew', geminiTranscription: false })
+    settings.save({ readAloud: 'off', rate: 90, voice: 'Joanna' })
+    assert.equal(new SpeechPreferences(directory).snapshot().geminiTranscription, false, 'an older window keeps the saved Gemini choice')
     for (const bad of [{ readAloud: 'always', rate: 85, voice: 'Matthew' }, { readAloud: 'loud', rate: 80, voice: 'Matthew' }, { readAloud: 'off', rate: 80, voice: 'Joanna', extra: 1 }])
       assert.throws(() => settings.save(bad), { code: 'invalid_input' })
-    assert.equal(new SpeechPreferences(directory).snapshot().voice, 'Matthew')
+    assert.equal(new SpeechPreferences(directory).snapshot().voice, 'Joanna')
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })
 
