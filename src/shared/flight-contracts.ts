@@ -19,6 +19,8 @@ export const routeSchema = z.discriminatedUnion('kind', [
   // Opens a curated destination in the user's own browser; the model never supplies a URL.
   // Simplify whatever page is frontmost in the user's own browser. Carries no arguments: the app reads the page itself.
   z.object({ kind: z.literal('simplify_page') }).strict(),
+  // The text snapshot of the screen is not enough; the app may take one redacted screenshot and ask again.
+  z.object({ kind: z.literal('needs_screenshot'), reason: z.string().trim().min(1).max(300) }).strict(),
   z.object({ kind: z.literal('open_page'), destination: z.enum(destinationIds), query: z.string().trim().min(1).max(200).optional() }).strict()
 ])
 export type AssistantRoute = z.infer<typeof routeSchema>
