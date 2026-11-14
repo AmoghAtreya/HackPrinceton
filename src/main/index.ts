@@ -2,6 +2,7 @@ import { PhishingMonitor } from './phishing/monitor'
 import { BrowserSupervisor } from './browser/supervisor'
 import { VoiceController, type VoiceEvent } from './voice/controller'
 import { TranscribeService, transcribeConfigFromEnv } from './voice/transcribe'
+import { AppleSpeechService } from './voice/apple-speech'
 import { LocalTranscriptStore } from './voice/transcript-store'
 import { ensureMicrophoneAccess } from './voice/microphone'
 import { installVoiceIpc } from './voice/ipc'
@@ -266,7 +267,12 @@ if (!app.requestSingleInstanceLock()) {
     removeAssistantIpc = installAssistantIpc(assistant, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
       screens, shake, () => shakeMonitor?.reset())
     voice = new VoiceController({
-      service: new TranscribeService(transcribeConfigFromEnv()),
+      // Free on-device Apple speech by default; TRIAGE_SPEECH_TO_TEXT=transcribe uses Amazon Transcribe.
+      service: process.env.TRIAGE_SPEECH_TO_TEXT === 'transcribe' || process.platform !== 'darwin'
+        ? new TranscribeService(transcribeConfigFromEnv())
+        : new AppleSpeechService(existsSync(join(process.resourcesPath, '../Helpers/TriageSpeechHelper.app'))
+          ? join(process.resourcesPath, '../Helpers/TriageSpeechHelper.app')
+          : join(app.getAppPath(), 'release/TriageSpeechHelper.app')),
       store: new LocalTranscriptStore(directory),
       ensureMicrophone: ensureMicrophoneAccess
     })
