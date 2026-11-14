@@ -17,6 +17,8 @@ export const routeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reply'), text: z.string().trim().min(1).max(16000) }).strict(),
   z.object({ kind: z.literal('flight_search'), flight: flightDraftSchema }).strict(),
   // Opens a curated destination in the user's own browser; the model never supplies a URL.
+  // Simplify whatever page is frontmost in the user's own browser. Carries no arguments: the app reads the page itself.
+  z.object({ kind: z.literal('simplify_page') }).strict(),
   z.object({ kind: z.literal('open_page'), destination: z.enum(destinationIds), query: z.string().trim().min(1).max(200).optional() }).strict()
 ])
 export type AssistantRoute = z.infer<typeof routeSchema>
