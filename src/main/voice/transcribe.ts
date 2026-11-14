@@ -6,6 +6,7 @@ import {
   type Result
 } from '@aws-sdk/client-transcribe-streaming'
 import { AppProblem } from '../assistant/errors.ts'
+import { awsRegionFromEnv } from '../aws/config.ts'
 
 export interface TranscribeConfig {
   region: string
@@ -29,7 +30,7 @@ export interface TranscribeResult {
  */
 export function transcribeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): TranscribeConfig {
   return {
-    region: env.TRIAGE_TRANSCRIBE_REGION || env.AWS_REGION || env.AWS_DEFAULT_REGION || 'us-east-1',
+    region: awsRegionFromEnv(env, env.TRIAGE_TRANSCRIBE_REGION),
     languageCode: (env.TRIAGE_TRANSCRIBE_LANGUAGE || 'en-US') as LanguageCode
   }
 }
