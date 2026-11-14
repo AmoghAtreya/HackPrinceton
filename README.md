@@ -156,7 +156,18 @@ When you ask where to click, Triage takes an accessibility snapshot of the app i
 
 This needs `npm run context:build` and **Accessibility** permission for Triage. Triage never prompts for it here: without the permission or the module, highlights fall back to the model's pixel box exactly as before. Activity History records only whether a highlight came from `element_id` or `pixel_box`.
 
-## Simplify this page
+## Rebuild the page you're on: `/simplify`
+
+Open any website in Google Chrome, switch to Triage and type `/simplify`. Triage reads the address of the page you have open, opens that same page in its own Chromium test browser (the "before" view), and rebuilds it as a calm, large-print page in its own window, the same way the example page works.
+
+| Command | What it rebuilds |
+|---|---|
+| `/simplify` | the page open in your browser right now |
+| `/simplify example.com` | a page you name |
+| `/examplesimplify` | the built-in example page (`/simplify demo` still works too) |
+
+How Triage finds your page: first it reads the address of the window just behind Triage through macOS Accessibility (needs `npm run context:build` and Accessibility permission, and never asks for them). If that fails, it asks Google Chrome for its active tab, and macOS asks once whether Triage may control Chrome. Only the address is read from your browser. Triage's own browser has a separate profile, so **pages that need you to be signed in show their sign-in page** in the rebuilt view.
+
 
 Ask Triage to "simplify this page", choose **Simplify this page** in the menu bar menu, or pick it as the Shake to Help action. Triage reads the page in front (your own Chrome, or any app) through macOS Accessibility, runs the same simplifier used by `/simplify`, and shows the result in the simplified-page window. Views of windows that are not web pages are labelled **Simplified from screen**.
 
