@@ -61,6 +61,9 @@ func scan() -> [Link] {
     return links
 }
 
-guard AXIsProcessTrusted() else { exit(2) }
+let prompt = CommandLine.arguments.contains("--request-access")
+let options = ["AXTrustedCheckOptionPrompt": prompt] as CFDictionary
+guard AXIsProcessTrustedWithOptions(options) else { exit(2) }
+if prompt { exit(0) }
 let data = try JSONEncoder().encode(scan())
 FileHandle.standardOutput.write(data)

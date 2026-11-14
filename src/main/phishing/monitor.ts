@@ -24,10 +24,10 @@ export class PhishingMonitor {
   constructor(private helper: string, private suppressed: () => boolean,
     private draw: (state: HighlightState | null) => void, private failed: (permissionDenied: boolean) => void) {}
 
-  start(): void {
+  start(requestAccess = false): void {
     if (this.timer) return
     this.timer = setInterval(() => this.scan(), 600)
-    this.scan()
+    this.scan(requestAccess)
   }
 
   clear(): void {
@@ -44,10 +44,10 @@ export class PhishingMonitor {
     this.clear()
   }
 
-  private scan(): void {
+  private scan(requestAccess = false): void {
     if (this.suppressed()) { this.clear(); return }
     if (this.child) return
-    const child = execFile(this.helper, [], { timeout: 450, maxBuffer: 800_000 }, (error, stdout) => {
+    const child = execFile(this.helper, requestAccess ? ['--request-access'] : [], { timeout: 450, maxBuffer: 800_000 }, (error, stdout) => {
       if (this.child !== child) return
       this.child = undefined
       if (error) {
@@ -58,6 +58,7 @@ export class PhishingMonitor {
         }
         return
       }
+      if (requestAccess) { this.scan(); return }
       if (this.suppressed()) { this.clear(); return }
       try { this.present(links.parse(JSON.parse(stdout))) } catch { this.clear() }
     })
