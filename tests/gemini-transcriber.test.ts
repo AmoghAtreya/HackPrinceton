@@ -55,7 +55,11 @@ test('a slow Gemini reply times out and falls back', async () => {
   const fetcher = ((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
     init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
   })) as unknown as typeof fetch
-  const started = Date.now()
-  assert.equal(await new GeminiTranscriber({ fetcher, timeoutMs: 50 }).transcribe(key, audio, 16000, signal), null)
-  assert.ok(Date.now() - started < 2000)
+  // AbortSignal.timeout does not keep Node alive on its own; the app always has other work running.
+  const keepAlive = setInterval(() => {}, 1000)
+  try {
+    const started = Date.now()
+    assert.equal(await new GeminiTranscriber({ fetcher, timeoutMs: 50 }).transcribe(key, audio, 16000, signal), null)
+    assert.ok(Date.now() - started < 2000)
+  } finally { clearInterval(keepAlive) }
 })
