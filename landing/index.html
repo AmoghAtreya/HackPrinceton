@@ -225,8 +225,7 @@
   .ask .tools svg { width: 18px; height: 18px; }
   .ask .send { position: absolute; right: 13px; bottom: 13px; width: 34px; height: 34px; border-radius: 50%; background: var(--button); color: #fff; border: 0; display: grid; place-items: center; cursor: pointer; }
   .ask .send:hover { background: var(--button-hover); }
-  .person { top: 801px; left: calc(50% + 186px); width: 50px; height: 50px; border-radius: 50%; background: #ffe2cc; border: 2px solid var(--brick); color: var(--brick); display: grid; place-items: center; font-size: 18px; font-weight: 600; z-index: 2; }
-  .person-pointer { top: 781px; left: calc(50% + 189px); z-index: 2; }
+  .ask-mascot { top: 790px; left: calc(50% + 178px); width: 66px; height: 64px; z-index: 2; filter: drop-shadow(0 6px 10px rgba(217, 98, 54, .28)); }
 
   /* Companion breathing — the only ambient motion on the page */
   .buddy svg .body { transform-origin: 60px 64px; animation: breathe 4s ease-in-out infinite; }
@@ -245,15 +244,14 @@
     .buddy-pointer { left: 44px; }
     .shake { left: 72px; }
     .ask { left: auto; right: 24px; }
-    .person { left: auto; right: 190px; }
-    .person-pointer { left: auto; right: 210px; }
+    .ask-mascot { left: auto; right: 180px; }
   }
   @media (max-width: 900px) {
     .nav-links, .nav-actions .plain { display: none; }
     .hero { height: auto; max-height: none; min-height: 0; padding-bottom: 48px; }
     h1 { margin-top: 72px; }
     .lede { font-size: 19px; padding: 0 16px; }
-    .float.flight, .buddy, .buddy-pointer, .shake, .person, .person-pointer { display: none; }
+    .float.flight, .buddy, .buddy-pointer, .shake, .ask-mascot { display: none; }
     .ask { position: relative; top: auto; left: auto; right: auto; margin: 56px auto 0; width: calc(100% - 32px); max-width: 400px; }
   }
   @media (max-width: 520px) {
@@ -397,8 +395,18 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
     </button>
   </form>
-  <svg class="float pointer person-pointer" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 2l16 7.5-6.8 2.3L10.9 19 4 2z" fill="#2a1a13"/></svg>
-  <div class="float person" aria-hidden="true">MR</div>
+  <!-- Triage logo sitting on the ask box -->
+  <svg class="float ask-mascot" viewBox="0 0 120 116" fill="none" aria-hidden="true">
+    <defs>
+      <linearGradient id="ag" x1="27" y1="16" x2="94" y2="102" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#FFBB83"/><stop offset=".5" stop-color="#F58A53"/><stop offset="1" stop-color="#D96236"/>
+      </linearGradient>
+    </defs>
+    <path d="M61 13C71 7 80 15 83 25C98 22 108 33 103 48C115 58 109 75 98 80C97 96 82 105 69 96C57 107 41 101 36 90C20 93 10 80 16 65C5 52 13 37 27 34C26 19 42 10 54 17L61 13Z" fill="url(#ag)"/>
+    <rect x="31" y="43" width="59" height="35" rx="17.5" fill="#3C2B27"/>
+    <rect x="46" y="53" width="7" height="14" rx="3.5" fill="#FFF7E9"/>
+    <rect x="68" y="53" width="7" height="14" rx="3.5" fill="#FFF7E9"/>
+  </svg>
 </header>
 </body>
 </html>
