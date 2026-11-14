@@ -12,8 +12,10 @@ import type { SimplifiedPresenter } from './service.ts'
 export class SimplifiedWindow implements SimplifiedPresenter {
   private window?: BrowserWindow
   private readonly follow: (url: string) => void
+  private readonly closed: () => void
 
-  constructor(follow: (url: string) => void) { this.follow = follow }
+  /** `closed` lets the simplifier measure how long the page stayed open (a learning signal). */
+  constructor(follow: (url: string) => void, closed: () => void = () => {}) { this.follow = follow; this.closed = closed }
 
   private ensure(): BrowserWindow {
     if (this.window && !this.window.isDestroyed()) return this.window
@@ -29,7 +31,7 @@ export class SimplifiedWindow implements SimplifiedPresenter {
     }
     window.webContents.setWindowOpenHandler(({ url }) => { followIfWeb(url); return { action: 'deny' } })
     window.webContents.on('will-navigate', (event, url) => { event.preventDefault(); followIfWeb(url) })
-    window.on('closed', () => { if (this.window === window) this.window = undefined })
+    window.on('closed', () => { if (this.window === window) this.window = undefined; this.closed() })
     this.window = window
     return window
   }
