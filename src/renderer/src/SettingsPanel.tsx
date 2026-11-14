@@ -4,6 +4,7 @@ import type { PublicConfig } from '../../shared/assistant-contracts'
 import { displayError, unwrap } from './assistant-ui'
 import { ShakeSettingsPanel } from './ShakeSettingsPanel'
 import { SpeechSettingsPanel } from './SpeechSettingsPanel'
+import { RequestLogSettingsPanel } from './RequestLogSettingsPanel'
 
 export function SettingsPanel({ bridge, config, active }: {
   bridge: DesktopBridge; config: PublicConfig; active: boolean
@@ -73,6 +74,7 @@ export function SettingsPanel({ bridge, config, active }: {
       <button className="text-button danger" disabled={busy || active} onClick={() => void remove()}>Remove key from Triage</button>}
     <SpeechSettingsPanel bridge={bridge} />
     <ShakeSettingsPanel bridge={bridge} />
+    <RequestLogSettingsPanel bridge={bridge} />
     <div className="privacy-note">
       <strong>Your data</strong>
       <p>Messages and recent context go to Anthropic for replies. Conversations are saved unencrypted on this Mac. Recognized keys and tokens are redacted, but avoid sharing secrets.</p>

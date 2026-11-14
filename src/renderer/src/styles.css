@@ -220,3 +220,5 @@ button:disabled { opacity: .55; cursor: default; }
 .speech-settings { margin-top: 22px; padding-top: 14px; border-top: 1px solid #e6dacc; }
 .speech-settings h3 { margin: 0 0 8px; font-size: 16px; color: #66503d; }
 .speech-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.request-log-settings { margin-top: 22px; padding-top: 14px; border-top: 1px solid #e6dacc; }
+.request-log-settings h3 { margin: 0 0 8px; font-size: 16px; color: #66503d; }
