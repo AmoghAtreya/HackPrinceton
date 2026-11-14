@@ -5,6 +5,7 @@ export function redact(text: string, secrets: readonly string[] = []): string {
   }
   return safe
     .replace(/\bsk-ant-[A-Za-z0-9_-]{8,}\b/g, '[redacted API key]')
+    .replace(/\bAIza[0-9A-Za-z_-]{30,}\b/g, '[redacted API key]')
     .replace(/\bBearer\s+[A-Za-z0-9._~+\/-]{8,}/gi, 'Bearer [redacted]')
     .replace(/\b(password|api[_ -]?key|access[_ -]?token)\s*[:=]\s*\S+/gi, '$1=[redacted]')
 }

@@ -22,6 +22,7 @@ import { AssistantCoordinator } from './assistant/coordinator'
 import { Credentials } from './assistant/credentials'
 import { HistoryStore } from './assistant/history'
 import { ClaudeGateway } from './assistant/model'
+import { GeminiGateway, ProviderGateway } from './assistant/gemini'
 import { installAssistantIpc } from './assistant/ipc'
 import { ScreenService } from './screen/service'
 import { electronCapture } from './screen/electron-capture'
@@ -202,7 +203,7 @@ if (!app.requestSingleInstanceLock()) {
     assistant = new AssistantCoordinator({
       requestLog,
       history: new HistoryStore(join(directory, 'history.sqlite')),
-      credentials, gateway: new ClaudeGateway(), screens, highlights, browser,
+      credentials, gateway: new ProviderGateway(new ClaudeGateway(), new GeminiGateway()), screens, highlights, browser,
       // The coordinator only passes URLs already checked against the destination allowlist.
       openPage: (url) => shell.openExternal(url, { activate: true }),
       changed: (state) => {
