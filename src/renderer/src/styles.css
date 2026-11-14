@@ -242,3 +242,9 @@ button:disabled { opacity: .55; cursor: default; }
 .trust-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .trust-channels { margin-top: 4px; padding-left: 10px; font-size: 11px; }
 .trust-channels li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.skills-view { margin: 16px 0; }
+.skills-view h4 { margin: 12px 0 4px; font-size: 11px; color: #795a40; }
+.skills-view ul { list-style: none; margin: 0; padding: 0; }
+.skills-view li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid #eadbc8; font-size: 12px; }
+.skills-view li label { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #795a40; white-space: nowrap; }
