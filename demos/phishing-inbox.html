@@ -3,14 +3,15 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Inbox — Triage Phishing Demo</title>
+<title>Triage Phishing Scenarios</title>
 <!--
-  Triage Link Warnings demo inbox.
-  Every brand, person and address here is fictional. Links never navigate.
+  Triage Link Warnings demo scenarios.
+  Every brand, person, number and address here is fictional. Links never navigate.
   Expected badges (see classify() in src/main/phishing/monitor.ts):
     https://triage-phishing-demo.invalid/... -> "Potential phishing"
     http://...                               -> "Unencrypted HTTP"
     https://example.com/...                  -> no badge
+  Pick a scenario with the switcher in the top right, or open e.g. #sms/toll directly.
 -->
 <style>
   :root {
@@ -20,53 +21,60 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body { font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; color: var(--text); background: var(--bg); display: flex; flex-direction: column; }
+  button { font: inherit; color: inherit; }
 
+  /* Demo bar with the scenario switcher */
+  .demobar { height: 40px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: #151a24; color: #c9cfdb; font-size: 12px; }
+  .demobar strong { color: white; font-weight: 600; }
+  .switcher { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .switcher select { height: 28px; padding: 0 28px 0 10px; border-radius: 7px; border: 1px solid #343c4d; background: #222937; color: white; font: inherit; font-size: 13px; }
+
+  .scenario { flex: 1; min-height: 0; display: none; flex-direction: column; }
+  .scenario.active { display: flex; }
+  .avatar { width: 36px; height: 36px; flex: none; border-radius: 50%; display: grid; place-items: center; color: white; font-weight: 600; font-size: 14px; }
+
+  /* Shared app header */
   .topbar { height: 56px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
-  .logo { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 17px; width: 200px; }
-  .logo-mark { width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #3b6cf6, #7a4cf2); display: grid; place-items: center; color: white; font-size: 15px; }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 17px; min-width: 200px; }
+  .logo-mark { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; color: white; font-size: 15px; }
   .search { flex: 1; max-width: 560px; height: 36px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); display: flex; align-items: center; padding: 0 12px; color: var(--muted); }
   .me { margin-left: auto; width: 32px; height: 32px; border-radius: 50%; background: #d9e2f6; color: #2a3f75; display: grid; place-items: center; font-weight: 600; font-size: 13px; }
 
+  /* Email */
   .shell { flex: 1; display: flex; min-height: 0; }
   .folders { width: 220px; flex: none; padding: 16px 12px; }
-  .compose { width: 100%; height: 40px; border: 0; border-radius: 10px; background: var(--accent); color: white; font: inherit; font-weight: 600; margin-bottom: 16px; cursor: default; }
+  .compose { width: 100%; height: 40px; border: 0; border-radius: 10px; background: var(--accent); color: white; font-weight: 600; margin-bottom: 16px; cursor: default; }
   .folder { display: flex; justify-content: space-between; padding: 8px 12px; border-radius: 8px; color: #3a4252; }
   .folder.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-  .folder small { color: inherit; opacity: .8; }
-
   .list { width: 360px; flex: none; background: var(--panel); border-left: 1px solid var(--line); border-right: 1px solid var(--line); overflow-y: auto; }
   .list-head { padding: 14px 18px; font-weight: 650; font-size: 15px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; }
   .list-head span { color: var(--muted); font-weight: 400; font-size: 13px; }
-  .item { display: flex; gap: 12px; width: 100%; padding: 14px 18px; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .item { display: flex; gap: 12px; width: 100%; padding: 14px 18px; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; cursor: pointer; }
   .item:hover { background: #fafbfc; }
   .item.selected { background: var(--selected); box-shadow: inset 3px 0 var(--accent); }
   .item.unread .item-from, .item.unread .item-subject { font-weight: 650; }
-  .avatar { width: 36px; height: 36px; flex: none; border-radius: 50%; display: grid; place-items: center; color: white; font-weight: 600; font-size: 14px; }
   .item-body { min-width: 0; flex: 1; }
   .item-row { display: flex; justify-content: space-between; gap: 8px; }
-  .item-from { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-from, .item-subject, .item-preview { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .item-time { color: var(--muted); font-size: 12px; flex: none; }
-  .item-subject { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .item-preview { color: var(--muted); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
+  .item-preview { color: var(--muted); font-size: 13px; }
   .reader { flex: 1; min-width: 0; overflow-y: auto; padding: 24px 32px 48px; }
   .subject { font-size: 21px; font-weight: 650; margin: 0 0 16px; }
   .sender { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
   .sender-name { font-weight: 600; }
-  .sender-addr, .sender-to { color: var(--muted); font-size: 13px; }
-  .sender-time { margin-left: auto; color: var(--muted); font-size: 13px; }
-
+  .sender-addr, .sender-to, .sender-time { color: var(--muted); font-size: 13px; }
+  .sender-time { margin-left: auto; }
   .mail { max-width: 600px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-  .mail-brand { padding: 18px 28px; color: white; font-weight: 700; font-size: 18px; letter-spacing: .2px; display: flex; align-items: center; gap: 10px; }
+  .mail-brand { padding: 18px 28px; color: white; font-weight: 700; font-size: 18px; display: flex; align-items: center; gap: 10px; }
   .mail-brand i { font-style: normal; width: 26px; height: 26px; border-radius: 6px; background: rgba(255,255,255,.22); display: grid; place-items: center; font-size: 14px; }
   .mail-content { padding: 26px 28px 8px; }
   .mail-content h2 { font-size: 18px; margin: 0 0 12px; }
   .mail-content p { margin: 0 0 14px; color: #374151; }
-  .details { width: 100%; border-collapse: collapse; margin: 6px 0 22px; font-size: 13px; background: #f8f9fb; border-radius: 8px; overflow: hidden; }
+  .details { width: 100%; border-collapse: collapse; margin: 6px 0 22px; font-size: 13px; background: #f8f9fb; }
   .details td { padding: 9px 14px; border-bottom: 1px solid #eceef2; }
   .details td:first-child { color: var(--muted); width: 38%; }
   .details tr:last-child td { border-bottom: 0; }
-  /* Extra space below each link leaves room for Triage's badge, which sits under the link. */
+  /* Extra space below links leaves room for Triage's badge, which sits under the link. */
   .cta { display: inline-block; padding: 11px 22px; border-radius: 8px; color: white; font-weight: 600; text-decoration: none; margin: 4px 0 28px; }
   .text-link { color: var(--accent); }
   .actions { display: flex; flex-wrap: wrap; gap: 6px 24px; align-items: baseline; }
@@ -75,34 +83,321 @@
   .mail-foot a { color: var(--muted); }
   .demo-note { max-width: 600px; margin-top: 14px; font-size: 12px; color: var(--muted); }
 
+  /* Text messages */
+  .sms-shell { flex: 1; display: flex; min-height: 0; background: var(--panel); }
+  .threads { width: 320px; flex: none; border-right: 1px solid var(--line); overflow-y: auto; background: #fbfbfc; }
+  .threads .item { background: none; }
+  .threads .item.selected { background: #e8eefc; box-shadow: none; }
+  .chat { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .chat-head { height: 64px; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; border-bottom: 1px solid var(--line); }
+  .chat-head small { color: var(--muted); font-size: 12px; }
+  .chat-body { flex: 1; overflow-y: auto; padding: 24px 15%; display: flex; flex-direction: column; gap: 10px; }
+  .stamp { align-self: center; color: var(--muted); font-size: 12px; margin: 6px 0; }
+  .bubble { max-width: 70%; padding: 10px 14px 12px; border-radius: 18px; background: #e9e9ec; align-self: flex-start; }
+  .bubble.mine { background: #2f7cf6; color: white; align-self: flex-end; }
+  .bubble a { color: #1559d6; word-break: break-all; }
+  .bubble.mine a { color: white; }
+  .bubble.link-gap { margin-bottom: 18px; }
+  .sms-warning { align-self: center; font-size: 12px; color: var(--muted); }
+  .compose-bar { flex: none; padding: 12px 15%; border-top: 1px solid var(--line); }
+  .compose-bar div { height: 38px; border-radius: 19px; border: 1px solid var(--line); padding: 0 16px; display: flex; align-items: center; color: var(--muted); }
+
+  /* Search results */
+  .seek { flex: 1; overflow-y: auto; background: white; }
+  .seek-head { display: flex; align-items: center; gap: 28px; padding: 18px 32px 0; border-bottom: 1px solid var(--line); }
+  .seek-logo { font-size: 24px; font-weight: 750; letter-spacing: -.5px; color: #3a55d8; }
+  .seek-logo span { color: #f0a01a; }
+  .seek-box { width: 600px; max-width: 60vw; height: 44px; border-radius: 22px; border: 1px solid #dfe1e5; box-shadow: 0 1px 4px rgba(32,33,36,.12); display: flex; align-items: center; padding: 0 20px; }
+  .seek-tabs { display: flex; gap: 22px; padding: 14px 0 0 calc(32px + 150px); font-size: 13px; color: var(--muted); }
+  .seek-tabs span { padding-bottom: 10px; }
+  .seek-tabs .on { color: #3a55d8; border-bottom: 3px solid #3a55d8; }
+  .seek-head-wrap { border-bottom: 1px solid var(--line); }
+  .results { padding: 18px 0 40px calc(32px + 150px); max-width: 860px; }
+  .result-count { color: var(--muted); font-size: 13px; margin-bottom: 18px; }
+  .result { margin-bottom: 30px; max-width: 620px; }
+  .result-site { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .favicon { width: 26px; height: 26px; border-radius: 50%; background: #eef0f3; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+  .result-site small { display: block; color: var(--muted); font-size: 12px; }
+  .sponsored { font-weight: 700; font-size: 12px; margin-bottom: 4px; }
+  .result a.title { display: inline-block; margin: 6px 0 4px; font-size: 20px; color: #1a0dab; text-decoration: none; }
+  .result a.title:hover { text-decoration: underline; }
+  .result p { margin: 0; color: #4d5156; font-size: 14px; }
+  .sitelinks { display: flex; gap: 22px; margin-top: 10px; padding-bottom: 6px; font-size: 14px; }
+  .sitelinks a { color: #1a0dab; }
+
+  /* Social feed */
+  .social { flex: 1; overflow-y: auto; background: #eef0f4; }
+  .feed { max-width: 620px; margin: 0 auto; padding: 20px 16px 40px; display: flex; flex-direction: column; gap: 14px; }
+  .post { background: white; border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px 18px; }
+  .post-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .post-head b { font-weight: 650; }
+  .verified { display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; background: #2f7cf6; color: white; font-size: 10px; margin-left: 3px; vertical-align: 1px; }
+  .post-head small { display: block; color: var(--muted); font-size: 12px; }
+  .post p { margin: 0 0 12px; }
+  .link-card { display: block; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; color: inherit; text-decoration: none; margin-bottom: 22px; }
+  .link-card .hero { height: 150px; display: grid; place-items: center; color: white; font-size: 26px; font-weight: 750; }
+  .link-card .meta { padding: 10px 14px; background: #f7f8fa; }
+  .link-card small { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .3px; }
+  .link-card div b { display: block; }
+  .post-stats { display: flex; gap: 18px; color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 10px; }
+  .notice-post { border-left: 4px solid #d93a3a; }
+  .post .inline-link { color: var(--accent); display: inline-block; margin-bottom: 18px; }
+
+  /* Marketplace */
+  .market { flex: 1; display: flex; min-height: 0; background: white; }
+  .listing { width: 46%; flex: none; overflow-y: auto; padding: 24px 28px; border-right: 1px solid var(--line); }
+  .photo { height: 240px; border-radius: 12px; background: linear-gradient(135deg, #c9d7e8, #8fa6c4); display: grid; place-items: center; font-size: 64px; margin-bottom: 18px; }
+  .price { font-size: 26px; font-weight: 750; margin: 0; }
+  .listing h2 { font-size: 19px; margin: 2px 0 6px; }
+  .listing .loc { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .listing p { color: #374151; margin: 0 0 16px; }
+  .tips { background: #f6f8fb; border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; font-size: 13px; }
+  .tips b { display: block; margin-bottom: 8px; }
+  .tips .actions { padding-bottom: 14px; }
+
+  /* News article with a fake security popup */
+  .news { flex: 1; overflow-y: auto; background: #fbfaf7; position: relative; }
+  .news-head { border-bottom: 3px double #222; text-align: center; padding: 16px 0 10px; background: white; }
+  .news-head h1 { font: 700 34px/1 Georgia, "Times New Roman", serif; margin: 0; letter-spacing: -.5px; }
+  .news-head nav { display: flex; justify-content: center; gap: 22px; margin-top: 12px; font-size: 13px; color: #444; }
+  .article { max-width: 680px; margin: 0 auto; padding: 28px 20px 60px; font: 18px/1.65 Georgia, "Times New Roman", serif; color: #222; }
+  .article .kicker { font: 600 12px system-ui; text-transform: uppercase; letter-spacing: 1px; color: #b0412e; }
+  .article h2 { font-size: 32px; line-height: 1.2; margin: 8px 0 10px; }
+  .article .byline { font: 13px system-ui; color: var(--muted); margin-bottom: 22px; }
+  .article p { margin: 0 0 20px; }
+  .article a { color: #1d4e9e; }
+  .popup-backdrop { position: absolute; inset: 0; background: rgba(15, 18, 26, .45); display: grid; place-items: center; }
+  .popup-backdrop[hidden] { display: none; }
+  .popup { width: 440px; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.35); font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
+  .popup-top { background: #c62828; color: white; padding: 14px 20px; font-weight: 650; display: flex; align-items: center; gap: 10px; }
+  .popup-body { padding: 18px 22px 6px; font-size: 14px; color: #333; }
+  .popup-body ul { margin: 8px 0 14px; padding-left: 20px; color: #b42318; font-weight: 600; }
+  .popup-actions { display: flex; gap: 12px; padding: 4px 22px 28px; }
+  .popup-actions a { flex: 1; text-align: center; padding: 10px 0; border-radius: 8px; font-weight: 600; text-decoration: none; }
+  .popup-actions .primary { background: #c62828; color: white; }
+  .popup-actions .secondary { background: #f1f1f3; color: #333; }
+  .popup-close { margin-left: auto; background: none; border: 0; color: white; font-size: 18px; cursor: pointer; opacity: .85; }
+
   .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); background: #1d2330; color: white; padding: 10px 16px; border-radius: 10px; font-size: 13px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; }
   .toast.show { opacity: 1; transform: translate(-50%, 0); }
 </style>
 </head>
 <body>
-<header class="topbar">
-  <div class="logo"><div class="logo-mark">✉</div>Mailroom</div>
-  <div class="search">Search mail</div>
-  <div class="me">JR</div>
-</header>
-
-<div class="shell">
-  <nav class="folders" aria-label="Folders">
-    <button class="compose" type="button">Compose</button>
-    <div class="folder active">Inbox <small id="unread-count"></small></div>
-    <div class="folder">Starred</div>
-    <div class="folder">Sent</div>
-    <div class="folder">Drafts</div>
-    <div class="folder">Spam</div>
-  </nav>
-
-  <section class="list" aria-label="Messages">
-    <div class="list-head">Inbox <span>Demo mailbox</span></div>
-    <div id="items"></div>
-  </section>
-
-  <main class="reader" id="reader" aria-live="polite"></main>
+<div class="demobar">
+  <strong>Triage Link Warnings</strong><span>Demo scenarios · all brands are fictional · links don’t open</span>
+  <label class="switcher">Scenario
+    <select id="scenario-select" aria-label="Scenario">
+      <option value="email">Email inbox</option>
+      <option value="sms">Text messages</option>
+      <option value="search">Search results</option>
+      <option value="social">Social feed</option>
+      <option value="market">Marketplace chat</option>
+      <option value="news">News site pop-up</option>
+    </select>
+  </label>
 </div>
+
+<!-- Email inbox -->
+<section class="scenario" id="email">
+  <header class="topbar">
+    <div class="logo"><div class="logo-mark" style="background:linear-gradient(135deg,#3b6cf6,#7a4cf2)">✉</div>Mailroom</div>
+    <div class="search">Search mail</div>
+    <div class="me">JR</div>
+  </header>
+  <div class="shell">
+    <nav class="folders" aria-label="Folders">
+      <button class="compose" type="button">Compose</button>
+      <div class="folder active">Inbox <small id="unread-count"></small></div>
+      <div class="folder">Starred</div>
+      <div class="folder">Sent</div>
+      <div class="folder">Drafts</div>
+      <div class="folder">Spam</div>
+    </nav>
+    <section class="list" aria-label="Messages">
+      <div class="list-head">Inbox <span>Demo mailbox</span></div>
+      <div id="email-items"></div>
+    </section>
+    <main class="reader" id="email-reader" aria-live="polite"></main>
+  </div>
+</section>
+
+<!-- Text messages -->
+<section class="scenario" id="sms">
+  <header class="topbar">
+    <div class="logo"><div class="logo-mark" style="background:#2fbf5b">💬</div>Messages</div>
+    <div class="search">Search conversations</div>
+    <div class="me">JR</div>
+  </header>
+  <div class="sms-shell">
+    <aside class="threads" id="sms-threads" aria-label="Conversations"></aside>
+    <main class="chat" id="sms-chat" aria-live="polite"></main>
+  </div>
+</section>
+
+<!-- Search results -->
+<section class="scenario" id="search">
+  <div class="seek">
+    <div class="seek-head-wrap">
+      <div class="seek-head" style="border:0">
+        <div class="seek-logo">seek<span>r</span></div>
+        <div class="seek-box">northfield bank login</div>
+        <div class="me">JR</div>
+      </div>
+      <div class="seek-tabs"><span class="on">All</span><span>News</span><span>Maps</span><span>Images</span><span>More</span></div>
+    </div>
+    <div class="results">
+      <div class="result-count">About 1,240,000 results (0.41 seconds)</div>
+
+      <div class="result">
+        <div class="sponsored">Sponsored</div>
+        <div class="result-site"><div class="favicon" style="color:#0f5c4a">N</div><div>Northfield Bank<small>https://www.northfield-bank-online.com › login</small></div></div>
+        <a class="title" href="https://triage-phishing-demo.invalid/seekr-ad/northfield-login">Northfield Bank® Online Banking — Official Sign In</a>
+        <p>Access your accounts securely. Sign in to view balances, pay bills and transfer money. Fast, secure login 24/7.</p>
+      </div>
+
+      <div class="result">
+        <div class="sponsored">Sponsored</div>
+        <div class="result-site"><div class="favicon">☎</div><div>northfield-help-desk.support<small>https://northfield-help-desk.support</small></div></div>
+        <a class="title" href="https://triage-phishing-demo.invalid/seekr-ad/northfield-support">Northfield Customer Support — Locked Account? Call Now</a>
+        <p>Speak to a Northfield account specialist in minutes. Account unlocks, refunds and fraud claims handled same day.</p>
+      </div>
+
+      <div class="result">
+        <div class="result-site"><div class="favicon" style="color:#0f5c4a">N</div><div>Northfield Bank<small>https://example.com › northfield</small></div></div>
+        <a class="title" href="https://example.com/northfield">Northfield Bank — Personal &amp; Business Banking</a>
+        <p>Checking, savings, mortgages and credit cards. Sign in to online banking or find a branch near you.</p>
+        <div class="sitelinks">
+          <a href="https://example.com/northfield/branches">Find a branch</a>
+          <a href="https://example.com/northfield/security">Security center</a>
+        </div>
+      </div>
+
+      <div class="result">
+        <div class="result-site"><div class="favicon">R</div><div>BankRater Forums<small>http://example.org › reviews › northfield</small></div></div>
+        <a class="title" href="http://example.org/reviews/northfield-online-banking">Northfield online banking login problems? (2019 thread)</a>
+        <p>Members discuss trouble signing in to Northfield’s website after the 2019 redesign and share workarounds…</p>
+      </div>
+
+      <div class="result">
+        <div class="result-site"><div class="favicon">W</div><div>Wikipedia<small>https://example.net › wiki › Northfield_Bank</small></div></div>
+        <a class="title" href="https://example.net/wiki/Northfield_Bank">Northfield Bank — Wikipedia</a>
+        <p>Northfield Bank is a fictional regional bank used in this demo. It offers retail and commercial banking services.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Social feed -->
+<section class="scenario" id="social">
+  <header class="topbar">
+    <div class="logo"><div class="logo-mark" style="background:#ff5a5f">◎</div>Circle</div>
+    <div class="search">Search Circle</div>
+    <div class="me">JR</div>
+  </header>
+  <div class="social">
+    <div class="feed">
+      <article class="post notice-post">
+        <div class="post-head"><div class="avatar" style="background:#d93a3a">!</div><div><b>Circle Page Security</b><small>Notification · 12 min</small></div></div>
+        <p><b>Your page “Jordan Rivera Photography” has been reported for copyright infringement.</b> If you do not submit an appeal within 24 hours, your page will be permanently disabled under our Community Standards.</p>
+        <a class="inline-link" href="https://triage-phishing-demo.invalid/circle/appeal-copyright">Submit an appeal →</a>
+      </article>
+
+      <article class="post">
+        <div class="post-head"><div class="avatar" style="background:#1f7ae0">B</div><div><b>Brightwave<span class="verified">✓</span></b><small>@brightwave.official.giveaway · Sponsored</small></div></div>
+        <p>🎉 To celebrate 10 million customers, we’re giving away <b>500 Brightwave laptops</b> this week only! Just cover shipping. Claim yours before midnight 👇</p>
+        <a class="link-card" href="https://triage-phishing-demo.invalid/brightwave-giveaway/claim">
+          <div class="hero" style="background:linear-gradient(135deg,#1f7ae0,#6a3de8)">500 FREE LAPTOPS</div>
+          <div class="meta"><small>brightwave-rewards.com</small><b>Claim your free Brightwave laptop — limited stock</b></div>
+        </a>
+        <div class="post-stats"><span>👍 18.2K</span><span>4,120 comments</span><span>9,876 shares</span></div>
+      </article>
+
+      <article class="post">
+        <div class="post-head"><div class="avatar" style="background:#2e9e6a">M</div><div><b>Maya Chen</b><small>2 h</small></div></div>
+        <p>Finished my first half marathon this morning! 🏃‍♀️ Official results are up:</p>
+        <a class="inline-link" href="https://example.com/riverside-half/results/maya-chen">riverside-half.example.com/results</a>
+        <div class="post-stats"><span>👍 214</span><span>38 comments</span></div>
+      </article>
+
+      <article class="post">
+        <div class="post-head"><div class="avatar" style="background:#8a5a2b">T</div><div><b>Tom’s Local News Digest</b><small>5 h</small></div></div>
+        <p>Town council approves new bike lanes on Main Street. Full story from the local paper:</p>
+        <a class="inline-link" href="http://example.org/town-gazette/bike-lanes-approved">town-gazette.example.org/bike-lanes</a>
+        <div class="post-stats"><span>👍 57</span><span>12 comments</span></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- Marketplace chat -->
+<section class="scenario" id="market">
+  <header class="topbar">
+    <div class="logo"><div class="logo-mark" style="background:#f2994a">⇄</div>Tradepost</div>
+    <div class="search">Search listings near you</div>
+    <div class="me">JR</div>
+  </header>
+  <div class="market">
+    <div class="listing">
+      <div class="photo">🚲</div>
+      <p class="price">$420</p>
+      <h2>Vintage steel road bike — 56cm, recently tuned</h2>
+      <div class="loc">Listed 2 days ago · Your listing</div>
+      <p>Classic lugged steel frame, new tires and bar tape, shifts perfectly. Pickup only, cash or Tradepost Pay.</p>
+      <div class="tips">
+        <b>Stay safe on Tradepost</b>
+        Never share verification codes or confirm payments outside the app.
+        <div class="actions" style="margin-top:10px">
+          <a class="text-link" href="http://example.com/tradepost/safety-tips">Seller safety tips</a>
+          <a class="text-link" href="https://example.com/tradepost/help">Help center</a>
+        </div>
+      </div>
+    </div>
+    <div class="chat">
+      <div class="chat-head"><b>Alex P.</b><small>Joined Tradepost this week · usually replies instantly</small></div>
+      <div class="chat-body">
+        <div class="stamp">Today 10:02 AM</div>
+        <div class="bubble">Hi! Is the bike still available? I’ll take it for full price.</div>
+        <div class="bubble mine">Yes it is! When can you pick it up?</div>
+        <div class="bubble">I’m out of town so my mover will collect it. I already sent $420 + $80 for the mover through Tradepost Secure Pay 👍</div>
+        <div class="bubble link-gap">You just need to confirm receipt so the funds release to your account:<br><a href="https://triage-phishing-demo.invalid/tradepost/securepay/confirm">tradepost-securepay.com/confirm/88213</a></div>
+        <div class="bubble">Please do it soon, it expires in 30 min. Then send the extra $80 to the mover by Zelle 🙏</div>
+      </div>
+      <div class="compose-bar"><div>Message Alex P.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- News site with a fake security pop-up -->
+<section class="scenario" id="news">
+  <div class="news">
+    <header class="news-head">
+      <h1>The Daily Ledger</h1>
+      <nav><span>World</span><span>Business</span><span>Tech</span><span>Science</span><span>Opinion</span></nav>
+    </header>
+    <article class="article">
+      <div class="kicker">Technology</div>
+      <h2>Scam pop-ups are getting harder to spot, researchers warn</h2>
+      <div class="byline">By Priya Natarajan · Nov 14, 2026 · 6 min read</div>
+      <p>Fake security warnings that mimic browser alerts are increasingly common on ad-supported sites, according to a report from a university security lab. The pop-ups often claim a device is infected and urge readers to “update” immediately.</p>
+      <p>Researchers recommend closing the tab rather than clicking any button in the pop-up. More background is in the <a href="https://example.com/ledger/security-report">full lab report</a> and an <a href="http://example.org/ledger/archive/2018-popup-scams">earlier 2018 story</a> on the same trend.</p>
+      <p>“The tell is pressure,” one author said. “Real software updates don’t count down a timer at you.”</p>
+    </article>
+    <div class="popup-backdrop" id="news-popup">
+      <div class="popup" role="alertdialog" aria-label="Security alert">
+        <div class="popup-top">⚠ Chrome Security Alert<button class="popup-close" type="button" aria-label="Close" id="news-popup-close">×</button></div>
+        <div class="popup-body">
+          <b>Your browser is out of date and your device may be infected.</b>
+          <ul><li>Trojan.Spyware.X detected</li><li>3 tracking cookies stealing passwords</li></ul>
+          Update now to protect your saved passwords and banking information. Ignoring this warning may lock your device in <b>04:59</b>.
+        </div>
+        <div class="popup-actions">
+          <a class="primary" href="https://triage-phishing-demo.invalid/fake-update/chrome-security">Update now</a>
+          <a class="secondary" href="https://triage-phishing-demo.invalid/fake-update/scan-device">Scan device</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
 
 <div class="toast" id="toast">Demo link: navigation is disabled.</div>
 
@@ -241,29 +536,77 @@ const emails = [
   }
 ]
 
-const itemsEl = document.getElementById('items')
-const readerEl = document.getElementById('reader')
-const toast = document.getElementById('toast')
+const threads = [
+  {
+    id: 'toll', unread: true, color: '#7a8699', time: '11:04 AM',
+    name: '+1 (855) 410-2297', sub: 'Text message · Unknown sender',
+    preview: 'StateLink Tolls: You have an unpaid toll balance of $4.85…',
+    body: `
+      <div class="stamp">Today 11:04 AM</div>
+      <div class="bubble link-gap">StateLink Tolls: Our records show an unpaid toll balance of $4.85 on your vehicle. To avoid a $50.00 late fee and registration hold, pay by Nov 15:<br><a href="${PHISH}/statelink/pay-toll">https://statelink-tollpay.com/pay/88F2</a></div>
+      <div class="bubble">Reply Y to activate the link, or copy it into your browser.</div>
+      <div class="sms-warning">This sender is not in your contacts.</div>`
+  },
+  {
+    id: 'bankfraud', unread: true, color: '#0f5c4a', time: '10:31 AM',
+    name: '72345', sub: 'Text message · Short code',
+    preview: 'Northfield Fraud Alert: Did you attempt a purchase of $899.00…',
+    body: `
+      <div class="stamp">Nov 2, 4:12 PM</div>
+      <div class="bubble">Northfield: Your one-time passcode is 448210. Never share this code with anyone.</div>
+      <div class="stamp">Today 10:31 AM</div>
+      <div class="bubble link-gap">Northfield Fraud Alert: Did you attempt a purchase of $899.00 at BESTMART ONLINE? If NOT, secure your card immediately:<br><a href="${PHISH}/northfield/card-freeze">https://northfield-cardsecure.com/freeze</a></div>
+      <div class="bubble">If this was you, no action is needed.</div>`
+  },
+  {
+    id: 'wrongnumber', unread: false, color: '#c2569b', time: 'Yesterday',
+    name: '+44 7700 900412', sub: 'Text message · Unknown sender',
+    preview: 'Hi, is this Sam? It’s Lily from the conference…',
+    body: `
+      <div class="stamp">Yesterday 7:48 PM</div>
+      <div class="bubble">Hi, is this Sam? It’s Lily from the conference 😊</div>
+      <div class="bubble mine">Sorry, wrong number!</div>
+      <div class="bubble">Oh so sorry! You seem really kind though. I actually do crypto trading with my uncle, we made 38% last month 📈</div>
+      <div class="bubble link-gap">If you’re curious you can see our results here, no pressure:<br><a href="${PHISH}/crypto-mentor/join">https://coinharbor-vip.io/invite/lily</a></div>`
+  },
+  {
+    id: 'mom', unread: false, color: '#e0a21f', time: 'Mon',
+    name: 'Mom', sub: 'iMessage',
+    preview: 'Here are the photos from the weekend!',
+    body: `
+      <div class="stamp">Monday 6:20 PM</div>
+      <div class="bubble">Here’s the lasagna recipe I mentioned:</div>
+      <div class="bubble link-gap"><a href="https://example.com/recipes/grandmas-lasagna">https://example.com/recipes/grandmas-lasagna</a></div>
+      <div class="bubble mine">Thanks! Can you send the photos too?</div>
+      <div class="bubble link-gap">Here are the photos from the weekend!<br><a href="http://example.org/album/fall-trip-2026">http://example.org/album/fall-trip-2026</a></div>
+      <div class="bubble mine">Love these ❤️</div>`
+  }
+]
 
-function renderList(selected) {
-  itemsEl.innerHTML = emails.map(e => `
-    <button class="item${e.unread ? ' unread' : ''}${e.id === selected ? ' selected' : ''}" data-id="${e.id}" type="button">
-      <div class="avatar" style="background:${e.color}">${e.from[0]}</div>
+const toast = document.getElementById('toast')
+const select = document.getElementById('scenario-select')
+const scenarios = [...select.options].map(option => option.value)
+const state = { email: 'bank', sms: 'toll' }
+
+function listItem(entry, selected, title, subject) {
+  return `
+    <button class="item${entry.unread ? ' unread' : ''}${entry.id === selected ? ' selected' : ''}" data-id="${entry.id}" type="button">
+      <div class="avatar" style="background:${entry.color}">${title[0] === '+' || /\d/.test(title[0]) ? '#' : title[0]}</div>
       <div class="item-body">
-        <div class="item-row"><span class="item-from">${e.from}</span><span class="item-time">${e.time}</span></div>
-        <div class="item-subject">${e.subject}</div>
-        <div class="item-preview">${e.preview}</div>
+        <div class="item-row"><span class="item-from">${title}</span><span class="item-time">${entry.time}</span></div>
+        ${subject ? `<div class="item-subject">${subject}</div>` : ''}
+        <div class="item-preview">${entry.preview}</div>
       </div>
-    </button>`).join('')
-  const unread = emails.filter(e => e.unread).length
-  document.getElementById('unread-count').textContent = unread || ''
+    </button>`
 }
 
-function open(id) {
-  const email = emails.find(e => e.id === id) ?? emails[0]
+function renderEmail() {
+  const email = emails.find(e => e.id === state.email) ?? emails[0]
   email.unread = false
-  renderList(email.id)
-  readerEl.innerHTML = `
+  document.getElementById('email-items').innerHTML = emails.map(e => listItem(e, email.id, e.from, e.subject)).join('')
+  document.getElementById('unread-count').textContent = emails.filter(e => e.unread).length || ''
+  const reader = document.getElementById('email-reader')
+  reader.innerHTML = `
     <h1 class="subject">${email.subject}</h1>
     <div class="sender">
       <div class="avatar" style="background:${email.color}">${email.from[0]}</div>
@@ -275,13 +618,45 @@ function open(id) {
     </div>
     <article class="mail">${email.body}</article>
     <p class="demo-note">Demo message for Triage Link Warnings. All companies and addresses are fictional and links don’t open.</p>`
-  readerEl.scrollTop = 0
-  if (location.hash.slice(1) !== email.id) history.replaceState(null, '', '#' + email.id)
+  reader.scrollTop = 0
 }
 
-itemsEl.addEventListener('click', event => {
+function renderSms() {
+  const thread = threads.find(t => t.id === state.sms) ?? threads[0]
+  thread.unread = false
+  document.getElementById('sms-threads').innerHTML = threads.map(t => listItem(t, thread.id, t.name)).join('')
+  document.getElementById('sms-chat').innerHTML = `
+    <div class="chat-head"><b>${thread.name}</b><small>${thread.sub}</small></div>
+    <div class="chat-body">${thread.body}</div>
+    <div class="compose-bar"><div>Text message</div></div>`
+}
+
+function show(hash) {
+  const [scenario, item] = hash.split('/')
+  // Older links such as #bank still open the matching email.
+  if (emails.some(e => e.id === scenario)) return show('email/' + scenario)
+  const active = scenarios.includes(scenario) ? scenario : 'email'
+  if (item && active in state) state[active] = item
+  for (const id of scenarios) document.getElementById(id).classList.toggle('active', id === active)
+  select.value = active
+  if (active === 'email') renderEmail()
+  if (active === 'sms') renderSms()
+  if (active === 'news') document.getElementById('news-popup').hidden = false
+  const next = active in state ? `${active}/${state[active]}` : active
+  if (location.hash.slice(1) !== next) history.replaceState(null, '', '#' + next)
+}
+
+select.addEventListener('change', () => show(select.value))
+document.getElementById('email-items').addEventListener('click', event => {
   const item = event.target.closest('.item')
-  if (item) open(item.dataset.id)
+  if (item) show('email/' + item.dataset.id)
+})
+document.getElementById('sms-threads').addEventListener('click', event => {
+  const item = event.target.closest('.item')
+  if (item) show('sms/' + item.dataset.id)
+})
+document.getElementById('news-popup-close').addEventListener('click', () => {
+  document.getElementById('news-popup').hidden = true
 })
 
 // Keep the demo self-contained: links exist for Triage to scan, never to follow.
@@ -294,8 +669,8 @@ document.addEventListener('click', event => {
   toastTimer = setTimeout(() => toast.classList.remove('show'), 1800)
 })
 
-window.addEventListener('hashchange', () => open(location.hash.slice(1)))
-open(location.hash.slice(1))
+window.addEventListener('hashchange', () => show(location.hash.slice(1)))
+show(location.hash.slice(1))
 </script>
 </body>
 </html>
