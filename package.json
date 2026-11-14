@@ -12,6 +12,7 @@
     "predev": "install-electron",
     "dev": "electron-vite dev",
     "phishing:build": "node scripts/build-link-scanner.mjs",
+    "speech:build": "node scripts/build-speech-helper.mjs",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && electron-vite build",
     "prestart": "install-electron",
