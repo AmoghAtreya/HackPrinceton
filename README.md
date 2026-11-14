@@ -29,3 +29,11 @@ Quit any running copy of Triage before opening the rebuilt app. macOS may ask yo
 When you ask where to click, Triage takes an accessibility snapshot of the app in front alongside the screenshot and offers the model up to 60 of its controls (id, kind, label and region; never typed values). If the model picks one, the highlight uses that control's real frame and follows it while the page scrolls, re-reading its position every 150 ms. When the control leaves the screen or you switch apps for more than a second, the highlight clears and Triage says so in chat.
 
 This needs `npm run context:build` and **Accessibility** permission for Triage. Triage never prompts for it here: without the permission or the module, highlights fall back to the model's pixel box exactly as before. Activity History records only whether a highlight came from `element_id` or `pixel_box`.
+
+## Simplify this page
+
+Ask Triage to "simplify this page", choose **Simplify this page** in the menu bar menu, or pick it as the Shake to Help action. Triage reads the page in front (your own Chrome, or any app) through macOS Accessibility, runs the same simplifier used by `/simplify`, and shows the result in the simplified-page window. Views of windows that are not web pages are labelled **Simplified from screen**.
+
+Buttons in that view never act on the real page. Pressing one highlights the real control and says "This is the button to press"; actions that submit, pay or sign in add a warning line. You press the real button yourself. Rating a page in History trains the layout policy using what Triage observed: whether you clicked the highlighted control, whether you chose **Show original page**, and whether you went back to an earlier page of the same site.
+
+This needs `npm run context:build` and **Accessibility** permission. The page's visible text and control labels are sent to Anthropic to write the simpler version; typed values and password fields are never read.
