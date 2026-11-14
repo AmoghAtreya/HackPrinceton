@@ -1,6 +1,6 @@
-import { execFile, type ChildProcess } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { randomUUID } from 'node:crypto'
-import { screen } from 'electron'
+import { screen, systemPreferences } from 'electron'
 import { z } from 'zod'
 import type { HighlightState, LinkWarning } from '../../shared/highlight-contracts'
 
@@ -18,7 +18,9 @@ function classify(destination: string): LinkWarning['label'] | undefined {
 
 export class PhishingMonitor {
   private timer?: ReturnType<typeof setInterval>
-  private child?: ChildProcess
+  private scanning = false
+  private revision = 0
+  private scanner?: { scanLinks(): Promise<string> | string }
   private lastScan = ''
   private scanId = ''
   constructor(private helper: string, private suppressed: () => boolean,
@@ -31,9 +33,7 @@ export class PhishingMonitor {
   }
 
   clear(): void {
-    const child = this.child
-    this.child = undefined
-    child?.kill()
+    this.revision++
     this.lastScan = ''
     this.draw(null)
   }
@@ -44,25 +44,31 @@ export class PhishingMonitor {
     this.clear()
   }
 
-  private scan(requestAccess = false): void {
+  private async scan(requestAccess = false): Promise<void> {
     if (this.suppressed()) { this.clear(); return }
-    if (this.child) return
-    const child = execFile(this.helper, requestAccess ? ['--request-access'] : [], { timeout: 450, maxBuffer: 800_000 }, (error, stdout) => {
-      if (this.child !== child) return
-      this.child = undefined
-      if (error) {
-        this.clear()
-        if (!error.killed) {
-          this.stop()
-          this.failed(error.code === 2)
-        }
-        return
-      }
-      if (requestAccess) { this.scan(); return }
+    if (this.scanning) return
+    if (!systemPreferences.isTrustedAccessibilityClient(requestAccess)) {
+      this.stop()
+      this.failed(true)
+      return
+    }
+
+    const revision = this.revision
+    this.scanning = true
+    try {
+      this.scanner ??= createRequire(this.helper)(this.helper)
+      const output = await this.scanner!.scanLinks()
+      if (revision !== this.revision) return
       if (this.suppressed()) { this.clear(); return }
-      try { this.present(links.parse(JSON.parse(stdout))) } catch { this.clear() }
-    })
-    this.child = child
+      this.present(links.parse(JSON.parse(output)))
+    } catch {
+      if (revision === this.revision) {
+        this.stop()
+        this.failed(false)
+      }
+    } finally {
+      this.scanning = false
+    }
   }
 
   private present(items: z.infer<typeof links>): void {

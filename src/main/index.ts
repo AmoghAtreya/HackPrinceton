@@ -188,17 +188,15 @@ if (!app.requestSingleInstanceLock()) {
     })
     await overlay.initialize()
     if (process.platform === 'darwin') {
-      const scannerApp = join(process.resourcesPath, '../Helpers/TriageLinkScanner.app')
-      const bundledScanner = join(scannerApp, 'Contents/MacOS/TriageLinkScanner')
+      const bundledScanner = join(process.resourcesPath, '../Helpers/TriageLinkScanner.node')
       const helper = app.isPackaged || existsSync(bundledScanner)
-        ? bundledScanner : join(app.getAppPath(), 'release/TriageLinkScanner')
+        ? bundledScanner : join(app.getAppPath(), 'release/TriageLinkScanner.node')
       phishing = new PhishingMonitor(helper, () => Boolean(quitting || desktop?.isCapturing),
         (state) => overlay?.drawWarnings(state), (permissionDenied) => {
           phishingEnabled = false
           tray?.setContextMenu(buildControls())
           dialog.showErrorBox('Chrome Link Warnings paused', permissionDenied
-            ? 'In System Settings → Privacy & Security → Accessibility, add and enable this helper, then turn Link Warnings back on.\n\n' +
-              (helper === bundledScanner ? scannerApp : helper)
+            ? 'In System Settings → Privacy & Security → Accessibility, enable Triage, then turn Link Warnings back on.'
             : 'Run npm run phishing:build. If using Triage.app, rebuild the bundle before turning Link Warnings back on.')
         })
     }
