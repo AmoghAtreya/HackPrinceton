@@ -260,12 +260,10 @@
   }
   .trio h2 span { display: block; }
   .trio h2[id] { scroll-margin-top: 100px; }
-  /* Six equal cards in a 3 x 2 grid. Cards never resize: hovering only changes the fill,
-     shrinks the drawing and reveals the description, so the page stays still.
-     The middle column sits higher, echoing the raised center card of the reference. */
+  /* Six equal cards in an aligned 3 x 2 grid. Cards never resize: hovering only changes the fill,
+     shrinks the drawing and reveals the description, so the page stays still. */
   .feature-group {
-    --lift: 44px;
-    margin: calc(64px + var(--lift)) auto 0;
+    margin: 64px auto 0;
     max-width: 1000px;
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -283,7 +281,6 @@
     display: flex; flex-direction: column;
     transition: background-color .3s ease, color .3s ease, border-color .3s ease;
   }
-  .feature:nth-child(3n + 2) { transform: translateY(calc(var(--lift) * -1)); }
   .feature:not(.is-active):hover { --card: #f3e5da; }
   .feature.is-active { --card: #ffe6d2; color: var(--navy); border-color: rgba(217, 98, 54, .2); }
   .feature h3 { margin: 0; font-size: 20px; font-weight: 500; line-height: 1.3; letter-spacing: -.01em; }
@@ -343,12 +340,11 @@
     h1 { font-size: 52px; }
     .ctas { flex-direction: column; gap: 14px; }
   }
-  /* Narrower screens: two columns, then one, every card open and no lift */
+  /* Narrower screens: two columns, then one, every card open */
   @media (max-width: 1000px) {
     .features { padding: 72px 16px 0; }
     .trio { padding-bottom: 96px; }
     .feature-group { margin-top: 44px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; max-width: 680px; }
-    .feature:nth-child(3n + 2) { transform: none; }
     .feature { height: auto; min-height: 340px; }
     .art { flex: none; height: 190px; }
     .feature p, .feature.is-active p { max-height: none; opacity: 1; margin-top: 8px; }
