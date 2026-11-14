@@ -112,6 +112,9 @@ export class SimplifierService {
     return result
   }
 
+  /** Triage's own Chrome page, shared with task drivers (e.g. the pharmacy refill). */
+  browserPage(): Promise<Page> { return this.page() }
+
   /** Called by the presenter when the simplified window closes. */
   viewClosed(): void {
     if (this.current && !this.current.closedAt) this.current.closedAt = this.now()
