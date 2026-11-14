@@ -10,6 +10,7 @@ import type { PageType } from '../../shared/simplifier-contracts.ts'
 import { armById } from './arms.ts'
 import type { DecisionLog } from './decision-log.ts'
 import { EXPECTED_MS } from './reward.ts'
+import type { ObservedSignals } from './screen.ts'
 
 /** Where to show the simplified page. Implemented in index.ts with a locked-down BrowserWindow. */
 export interface SimplifiedPresenter {
@@ -58,6 +59,8 @@ export class SimplifierService {
   private readonly demoHtml: string
   private readonly log: DecisionLog
   private readonly lockedLayouts: (userId: string) => Partial<Record<PageType, string>>
+  private readonly observed: (decisionId: string) => ObservedSignals | undefined
+  private readonly reported: (userId: string, pageType: PageType, signals: ObservedSignals) => void
   private readonly now: () => number
   private readonly sessions = new Map<string, ViewSession>()
   private current?: ViewSession
@@ -65,7 +68,13 @@ export class SimplifierService {
   constructor(options: {
     engine: SimplificationEngine; presenter: SimplifiedPresenter; channel: BrowserChannel; demoHtml: string
     log: DecisionLog; lockedLayouts?: (userId: string) => Partial<Record<PageType, string>>; now?: () => number
+    /** Signals for pages simplified from the screen, which this class did not show itself. */
+    observed?: (decisionId: string) => ObservedSignals | undefined
+    /** Told what was observed on a page once its outcome is reported, e.g. to update the skill graph. */
+    reported?: (userId: string, pageType: PageType, signals: ObservedSignals) => void
   }) {
+    this.reported = options.reported ?? (() => {})
+    this.observed = options.observed ?? (() => undefined)
     this.log = options.log
     this.lockedLayouts = options.lockedLayouts ?? (() => ({}))
     this.now = options.now ?? Date.now
@@ -143,7 +152,13 @@ export class SimplifierService {
     const session = this.sessions.get(decisionId)
     // Without a session (e.g. rated after a restart), assume a typical visit length.
     const durationMs = session ? (session.closedAt ?? this.now()) - session.shownAt : EXPECTED_MS[decision.pageType]
-    this.engine.reportOutcome(decisionId, {
+    const observed = this.observed(decisionId)
+    // A page simplified from the screen was watched directly: use what happened, plus this rating.
+    if (observed) {
+      this.engine.reportOutcome(decisionId, { ...observed, thumbsUp: helpful })
+      this.reported(userId, decision.pageType, observed)
+    }
+    else this.engine.reportOutcome(decisionId, {
       // "Helpful" is the closest available proxy for having finished what the person came to do.
       taskCompleted: helpful, durationMs: Math.max(0, Math.min(durationMs, 24 * 3600 * 1000)),
       backtracks: Math.min(session?.linksFollowed ?? 0, 1000), thumbsUp: helpful, showedOriginal: false, repeatRequests: 0

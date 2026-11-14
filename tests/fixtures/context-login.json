@@ -1,0 +1,25 @@
+{
+  "app": {"bundleId": "com.google.Chrome", "name": "Google Chrome", "pid": 4242},
+  "window": {"title": "Sign in - Example Bank", "frame": {"x": 0, "y": 25, "width": 1200, "height": 800}},
+  "url": "https://bank.example.com/login",
+  "focusedElementIndex": 9,
+  "elements": [
+    {"role": "AXButton", "label": "Reload", "frame": {"x": 80, "y": 60, "width": 30, "height": 30}, "secure": false, "enabled": true, "depth": 0, "path": [0, 2]},
+    {"role": "AXWebArea", "label": "Sign in - Example Bank", "url": "https://bank.example.com/login", "frame": {"x": 0, "y": 110, "width": 1200, "height": 715}, "secure": false, "enabled": true, "depth": 0, "path": [1, 0]},
+    {"role": "AXGroup", "subrole": "AXLandmarkNavigation", "label": "Site", "frame": {"x": 0, "y": 110, "width": 1200, "height": 50}, "secure": false, "enabled": true, "depth": 1, "path": [1, 0, 0]},
+    {"role": "AXList", "subrole": "AXContentList", "label": "", "frame": {"x": 0, "y": 110, "width": 600, "height": 50}, "secure": false, "enabled": true, "depth": 2, "path": [1, 0, 0, 0]},
+    {"role": "AXLink", "label": "Accounts", "url": "https://bank.example.com/accounts", "frame": {"x": 20, "y": 120, "width": 90, "height": 30}, "secure": false, "enabled": true, "depth": 3, "path": [1, 0, 0, 0, 0, 0]},
+    {"role": "AXHeading", "label": "Welcome back", "value": "1", "frame": {"x": 300, "y": 200, "width": 600, "height": 50}, "secure": false, "enabled": true, "depth": 1, "path": [1, 0, 1]},
+    {"role": "AXStaticText", "label": "", "value": "Sign in to see your accounts.", "frame": {"x": 300, "y": 260, "width": 600, "height": 20}, "secure": false, "enabled": true, "depth": 1, "path": [1, 0, 2, 0]},
+    {"role": "AXTextField", "label": "Username", "frame": {"x": 300, "y": 300, "width": 400, "height": 40}, "secure": false, "enabled": true, "depth": 1, "path": [1, 0, 3, 0]},
+    {"role": "AXImage", "label": "Lock icon", "frame": {"x": 710, "y": 360, "width": 24, "height": 24}, "secure": false, "enabled": true, "depth": 1, "path": [1, 0, 3, 1]},
+    {"role": "AXTextField", "subrole": "AXSecureTextField", "label": "Password", "frame": {"x": 300, "y": 360, "width": 400, "height": 40}, "secure": true, "enabled": true, "depth": 1, "path": [1, 0, 4, 0]},
+    {"role": "AXCheckBox", "label": "Remember me", "frame": {"x": 300, "y": 410, "width": 20, "height": 20}, "secure": false, "enabled": true, "depth": 1, "path": [1, 0, 5]},
+    {"role": "AXButton", "label": "Sign in", "frame": {"x": 300, "y": 450, "width": 400, "height": 48}, "secure": false, "enabled": true, "depth": 1, "path": [1, 0, 6]},
+    {"role": "AXGroup", "subrole": "AXApplicationDialog", "label": "Cookie choices", "frame": {"x": 800, "y": 600, "width": 380, "height": 200}, "secure": false, "enabled": true, "depth": 1, "path": [1, 0, 7]},
+    {"role": "AXStaticText", "label": "", "value": "We use cookies.", "frame": {"x": 820, "y": 620, "width": 340, "height": 20}, "secure": false, "enabled": true, "depth": 2, "path": [1, 0, 7, 0]},
+    {"role": "AXButton", "label": "Accept", "frame": {"x": 820, "y": 740, "width": 120, "height": 40}, "secure": false, "enabled": true, "depth": 2, "path": [1, 0, 7, 1]},
+    {"role": "AXGroup", "subrole": "AXLandmarkContentInfo", "label": "", "frame": {"x": 0, "y": 780, "width": 1200, "height": 45}, "secure": false, "enabled": true, "depth": 1, "path": [1, 0, 8]},
+    {"role": "AXLink", "label": "Privacy", "url": "https://bank.example.com/privacy", "frame": {"x": 20, "y": 790, "width": 70, "height": 20}, "secure": false, "enabled": true, "depth": 2, "path": [1, 0, 8, 0]}
+  ]
+}

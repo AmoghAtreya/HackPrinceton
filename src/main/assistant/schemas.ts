@@ -20,6 +20,7 @@ export const connectSchema = z.object({
   key: z.string().trim().min(20).max(512).regex(/^[\x21-\x7e]+$/),
   remember: z.boolean()
 }).strict()
+export const fastModelSchema = z.boolean()
 export const modelSchema = z.string().trim().min(1).max(160).regex(/^[a-zA-Z0-9._:-]+$/)
 export const listSchema = z.object({
   before: z.object({ at: z.number().int().nonnegative(), id: idSchema }).strict().optional()

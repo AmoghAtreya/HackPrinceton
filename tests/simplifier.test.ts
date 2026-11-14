@@ -78,8 +78,8 @@ test('voice arms are shielded off when voice is disabled', () => {
 const FIXED_NOW = Date.UTC(2026, 10, 13, 15, 0, 0)
 function banditInput(userId = 'u', sensitive = false) {
   const p = page([el(0, {})], { mainText: 'x'.repeat(2000) })
-  const traits = { visionSupport: 0.9, readingSupport: 0.5, voicePreference: 0.5, techConfidence: 0.5 }
-  const x = contextVector(p, 'article', { userId, now: FIXED_NOW, voiceEnabled: false, recentErrorRate: 0 }, traits)
+  const knowledge = { page: 0.9, weakestPrerequisite: 0.5, overall: 0.5, practice: 0 }
+  const x = contextVector(p, 'article', { userId, now: FIXED_NOW, voiceEnabled: false, recentErrorRate: 0 }, knowledge)
   return { userId, x, arms: allowedArms(false), pageType: 'article' as const, sensitive }
 }
 

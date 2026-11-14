@@ -15,6 +15,7 @@ import { installRequestLogIpc } from './logging/ipc'
 import { createSimplifier } from './simplifier/index'
 import { SimplifierService } from './simplifier/service'
 import { SimplifiedWindow } from './simplifier/window'
+import { ScreenSimplifier } from './simplifier/screen'
 import { ThompsonPolicy } from './simplifier/thompson'
 import demoPageHtml from '../../demo/sites/cluttered-news.html?raw'
 import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
@@ -32,6 +33,18 @@ import { ClaudeGateway } from './assistant/model'
 import { GeminiGateway, ProviderGateway } from './assistant/gemini'
 import { installAssistantIpc } from './assistant/ipc'
 import { ScreenService } from './screen/service'
+import { ContextService } from './context/service'
+import { PairedCapture } from './context/paired-capture'
+import { electronContext } from './context/electron-context'
+import { screenContextBlock } from './context/chat-context'
+import { TrustStore } from './trust/store'
+import { TrustService } from './trust/service'
+import { seedStore } from './trust/seed'
+import { installTrustIpc } from './trust/ipc'
+import { trustChannels } from '../shared/trust-contracts'
+import { SkillStore } from './skills/store'
+import { SkillTutor } from './skills/tutor'
+import { installSkillsIpc } from './skills/ipc'
 import { electronCapture } from './screen/electron-capture'
 import { HighlightController } from './screen/highlight'
 import { OverlayWindow } from './screen/overlay-window'
@@ -39,7 +52,7 @@ import { observeTargetClick } from './screen/target-click'
 import { ShakePreferences } from './gestures/settings'
 import { ShakeMonitor } from './gestures/monitor'
 import { redact } from './assistant/redaction'
-import { AppProblem } from './assistant/errors'
+import { AppProblem, publicProblem } from './assistant/errors'
 import { DEFAULT_BROWSER_CHANNEL, browserChannelFrom, type BrowserChannel } from '../shared/browser-config'
 
 // A typo in TRIAGE_BROWSER_CHANNEL should not stop the app from launching.
@@ -60,12 +73,43 @@ let desktop: DesktopWindows | undefined
 let tray: Tray | undefined
 let quitting = false
 let screens: ScreenService | undefined
+let contexts: ContextService | undefined
+let captures: PairedCapture | undefined
+let chatContexts: ContextService | undefined
+let trust: TrustService | undefined
+let trustContexts: ContextService | undefined
+let trustTimer: ReturnType<typeof setInterval> | undefined
+let trustChecking = false
+let removeTrustIpc: (() => void) | undefined
+let tutor: SkillTutor | undefined
+let removeSkillsIpc: (() => void) | undefined
+let warnedAbout: string | undefined
+
+// Looks at what is in front every few seconds and compares it with the user's list. Reads only.
+function setTrustMonitoring(on: boolean): void {
+  clearInterval(trustTimer)
+  trustTimer = undefined
+  trust?.setMonitoring(on && Boolean(trustContexts))
+  if (!on || !trust || !trustContexts) return
+  trustTimer = setInterval(() => {
+    if (trustChecking || quitting || desktop?.isCapturing) return
+    trustChecking = true
+    trustContexts!.capture().then((snapshot) => { trustContexts?.clear(); trust?.inspect(snapshot) })
+      .catch((error: unknown) => {
+        if (!(error instanceof AppProblem) || error.code !== 'context_permission') return
+        setTrustMonitoring(false)
+        tray?.setContextMenu(buildControls())
+        dialog.showErrorBox('Scam warnings paused', 'In System Settings → Privacy & Security → Accessibility, enable Triage, then turn the warnings back on.')
+      }).finally(() => { trustChecking = false })
+  }, 3000)
+}
 let highlights: HighlightController | undefined
 let overlay: OverlayWindow | undefined
 let assistant: AssistantCoordinator | undefined
 let browser: BrowserSupervisor | undefined
 let simplifier: SimplifierService | undefined
 let simplifiedWindow: SimplifiedWindow | undefined
+let screenSimplifier: ScreenSimplifier | undefined
 let closeSimplifierLog: (() => void) | undefined
 let shutdownReady = false
 let removeAssistantIpc: (() => void) | undefined
@@ -102,6 +146,13 @@ function buildControls(): Electron.Menu {
     { label: 'Hide Triage', click: () => desktop?.hide() },
     { label: 'Stop current task', click: () => assistant?.stopActive() },
     {
+      // Reads the page in front and shows a simpler version. It never clicks anything on the page.
+      label: 'Simplify this page', enabled: Boolean(screenSimplifier), click: () => {
+        try { assistant?.simplifyPage() }
+        catch (error) { dialog.showErrorBox('Triage could not simplify this page', publicProblem(error).message) }
+      }
+    },
+    {
       label: 'Chrome Link Warnings (Preview)', type: 'checkbox', checked: phishingEnabled,
       enabled: Boolean(phishing), click: (item) => {
         phishingEnabled = item.checked
@@ -109,6 +160,10 @@ function buildControls(): Electron.Menu {
         else phishing?.stop()
         tray?.setContextMenu(buildControls())
       }
+    },
+    {
+      label: 'Warn About Impersonation (Preview)', type: 'checkbox', checked: Boolean(trustTimer),
+      enabled: Boolean(trust && trustContexts), click: (item) => { setTrustMonitoring(item.checked); tray?.setContextMenu(buildControls()) }
     },
     { type: 'separator' },
     { label: 'Quit Triage', accelerator: 'CommandOrControl+Q', click: () => app.quit() }
@@ -174,13 +229,15 @@ if (!app.requestSingleInstanceLock()) {
     // Reject input and stop native timers immediately, before waiting for Chromium.
     // Each cleanup runs even when another resource has already failed.
     const cleanup = [
-      () => removeVoiceIpc?.(), () => voice?.dispose(), () => phishing?.stop(),
+      () => removeVoiceIpc?.(), () => voice?.dispose(), () => phishing?.stop(), () => setTrustMonitoring(false),
+      () => removeTrustIpc?.(), () => trustContexts?.dispose(), () => trust?.dispose(),
+      () => removeSkillsIpc?.(), () => tutor?.dispose(),
       () => removeSpeechIpc?.(), () => polly?.dispose(), () => removeRequestLogIpc?.(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
-      () => assistant?.dispose(), () => screens?.dispose(),
+      () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(), () => chatContexts?.dispose(),
       () => highlights?.dispose(), () => overlay?.dispose(),
-      () => desktop?.dispose(), () => tray?.destroy(), () => simplifiedWindow?.dispose(),
+      () => desktop?.dispose(), () => tray?.destroy(), () => screenSimplifier?.dispose(), () => simplifiedWindow?.dispose(),
       () => {
         ipcMain.removeHandler(channels.getState)
         for (const channel of Object.values(channels)) ipcMain.removeAllListeners(channel)
@@ -227,9 +284,31 @@ if (!app.requestSingleInstanceLock()) {
             : 'Run npm run phishing:build. If using Triage.app, rebuild the bundle before turning Link Warnings back on.')
         })
     }
+    // Optional: without this module (or without Accessibility access) highlights use pixel boxes.
+    const bundledContext = join(process.resourcesPath, '../Helpers/TriageContextSnapshot.node')
+    const accessibility = process.platform === 'darwin' ? electronContext(app.isPackaged || existsSync(bundledContext)
+      ? bundledContext : join(app.getAppPath(), 'release/TriageContextSnapshot.node')) : undefined
+    contexts = accessibility ? new ContextService(accessibility.port) : undefined
+    // Its own instance: a chat message must not replace the snapshot paired with a pending screenshot.
+    chatContexts = accessibility ? new ContextService(accessibility.port) : undefined
+    trustContexts = accessibility ? new ContextService(accessibility.port) : undefined
+    // The trust graph is optional equipment: if it cannot be opened, everything else still works.
+    try {
+      const store = new TrustStore(join(directory, 'trust-graph.sqlite'))
+      seedStore(store)
+      trust = new TrustService(store, (state) => {
+        if (!desktop || quitting) return
+        if (!desktop.chat.isDestroyed()) desktop.chat.webContents.send(trustChannels.state, state)
+        // A new warning is worth interrupting for, once.
+        if (state.warning && state.warning.key !== warnedAbout && !desktop.isCapturing) desktop.openChat()
+        warnedAbout = state.warning?.key
+      })
+    } catch { console.warn('The list of people and organizations is unavailable.') }
     highlights = new HighlightController({
       display: (id) => overlay!.display(id), draw: (state) => overlay!.draw(state), hide: () => overlay!.hide(),
-      blocked: (target) => desktop!.coversTarget(target), observeClick: observeTargetClick
+      redraw: (state) => overlay!.redraw(state),
+      blocked: (target) => desktop!.coversTarget(target), observeClick: observeTargetClick,
+      ...(accessibility ? { frameOf: accessibility.frameOf } : {})
     })
     const clearMovedMarker = () => { if (highlights?.snapshot()) highlights.clear() }
     desktop.companion.on('move', clearMovedMarker)
@@ -238,24 +317,45 @@ if (!app.requestSingleInstanceLock()) {
       window.on('show', () => overlay?.refreshArrow())
       window.on('hide', () => overlay?.refreshArrow())
     }
-    screens = new ScreenService(electronCapture(desktop, () => phishing?.clear()))
+    screens = new ScreenService(electronCapture(desktop, () => phishing?.clear(),
+      (cursor) => captures?.privateFields(cursor) ?? Promise.resolve(null)))
+    captures = new PairedCapture(screens, contexts)
     browser = new BrowserSupervisor(() => utilityProcess.fork(join(__dirname, 'browser-worker.js'), [], {
       serviceName: 'Triage flight search', stdio: 'ignore',
       env: Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'LANG'].flatMap((name) => process.env[name] ? [[name, process.env[name]!]] : []))
     }), join(directory, 'browser-profile'), () => highlights?.clear(), configuredBrowserChannel())
-    const simplifierParts = createSimplifier(directory)
+    // Optional, like the trust graph: without it Triage explains everything and the learner sees neutral knowledge.
+    try { tutor = new SkillTutor(new SkillStore(join(directory, 'skill-knowledge.sqlite'))) }
+    catch { console.warn('The record of what you have learned is unavailable.') }
+    const simplifierParts = createSimplifier(directory, tutor ? { knowledge: (userId, pageType) => tutor!.features(userId, pageType) } : {})
     closeSimplifierLog = simplifierParts.close
-    simplifiedWindow = new SimplifiedWindow((url) => { void simplifier?.open(url) }, () => simplifier?.viewClosed())
+    simplifiedWindow = new SimplifiedWindow((url) => { void simplifier?.open(url) },
+      () => { simplifier?.viewClosed(); screenSimplifier?.viewClosed() }, (link) => screenSimplifier?.handle(link))
     const policy = simplifierParts.policy
     simplifier = new SimplifierService({
       engine: simplifierParts.engine, presenter: simplifiedWindow, channel: configuredBrowserChannel(), demoHtml: demoPageHtml,
-      log: simplifierParts.log, lockedLayouts: (userId) => (policy instanceof ThompsonPolicy ? policy.frozenArms(userId) : {})
+      log: simplifierParts.log, lockedLayouts: (userId) => (policy instanceof ThompsonPolicy ? policy.frozenArms(userId) : {}),
+      observed: (decisionId) => screenSimplifier?.signals(decisionId),
+      reported: (userId, pageType, signals) => tutor?.observePage(userId, pageType, signals)
     })
+    // Needs the accessibility module; its only powers over the real page are reading it and drawing a highlight.
+    screenSimplifier = contexts && accessibility ? new ScreenSimplifier({
+      contexts, engine: simplifierParts.engine, presenter: simplifiedWindow, highlights, probe: accessibility.frameOf
+    }) : undefined
     const requestLog = new LocalRequestLog(directory, app.getVersion())
     assistant = new AssistantCoordinator({
       requestLog,
       history: new HistoryStore(join(directory, 'history.sqlite')),
-      credentials, gateway: new ProviderGateway(new ClaudeGateway(), new GeminiGateway()), screens, highlights, browser, simplifier,
+      credentials, gateway: new ProviderGateway(new ClaudeGateway(), new GeminiGateway()), screens, contexts: captures, highlights, browser, simplifier, screenSimplifier,
+      // Labels only, and only what is frontmost. Without Accessibility access chat simply gets no block.
+      screenContext: async () => {
+        if (!chatContexts) return undefined
+        const snapshot = await chatContexts.capture()
+        chatContexts.clear()
+        trust?.inspect(snapshot)
+        return screenContextBlock(snapshot)
+      },
+      captureScreen: () => captures!.capture(), trust, tutor,
       // The coordinator only passes URLs already checked against the destination allowlist.
       openPage: (url) => shell.openExternal(url, { activate: true }),
       changed: (state) => {
@@ -282,16 +382,19 @@ if (!app.requestSingleInstanceLock()) {
         return { ...point, at: Date.now(), displayId: String(screen.getDisplayNearestPoint(point).id) }
       },
       trigger: (trigger) => {
-        if (!assistant || !screens || quitting) return
+        if (!assistant || !captures || quitting) return
         try {
+          if (shake.snapshot().mode === 'simplify') { assistant.simplifyPage(); return }
           assistant.shake(trigger, shake.snapshot().instruction,
-            () => screens!.capture({ cursor: trigger.point, focusAfterCapture: false }), shake.snapshot().mode)
+            () => captures!.capture({ cursor: trigger.point, focusAfterCapture: false }), shake.snapshot().mode === 'highlight' ? 'highlight' : 'explain')
         } catch { /* The coordinator publishes a blocking notice if history cannot be saved. */ }
       }
     })
     installIpc()
+    if (tutor) removeSkillsIpc = installSkillsIpc(tutor, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
+    if (trust) removeTrustIpc = installTrustIpc(trust, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
     removeAssistantIpc = installAssistantIpc(assistant, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
-      screens, shake, () => shakeMonitor?.reset())
+      captures, shake, () => shakeMonitor?.reset())
     voice = new VoiceController({
       // Free on-device Apple speech by default; TRIAGE_SPEECH_TO_TEXT=transcribe uses Amazon Transcribe.
       service: process.env.TRIAGE_SPEECH_TO_TEXT === 'transcribe' || process.platform !== 'darwin'
@@ -316,7 +419,7 @@ if (!app.requestSingleInstanceLock()) {
     await desktop.initialize()
     const interrupt = (message: string) => {
       assistant?.interrupt(message)
-      screens?.clear()
+      captures?.clear()
       highlights?.clear()
     }
     const reset = () => { phishing?.clear(); shakeMonitor?.reset(); interrupt('Interrupted because the display configuration changed.') }

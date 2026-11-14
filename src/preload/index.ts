@@ -5,6 +5,8 @@ import { requestLogChannels } from '../shared/request-log-contracts'
 import { highlightChannels, type OverlayBridge, type HighlightState } from '../shared/highlight-contracts'
 import { channels, type DesktopBridge, type DesktopState } from '../shared/contracts'
 import { assistantChannels, type AssistantState } from '../shared/assistant-contracts'
+import { trustChannels, type TrustState } from '../shared/trust-contracts'
+import { skillChannels } from '../shared/skill-contracts'
 
 const bridge: DesktopBridge = {
   getRequestLogSettings: () => ipcRenderer.invoke(requestLogChannels.getSettings),
@@ -42,6 +44,7 @@ const bridge: DesktopBridge = {
   connectKey: (input) => ipcRenderer.invoke(assistantChannels.connect, input),
   removeKey: () => ipcRenderer.invoke(assistantChannels.removeKey),
   selectModel: (model) => ipcRenderer.invoke(assistantChannels.selectModel, model),
+  setFastModel: (enabled) => ipcRenderer.invoke(assistantChannels.setFastModel, enabled),
   sendMessage: (input) => ipcRenderer.invoke(assistantChannels.send, input),
   closeBrowser: () => ipcRenderer.invoke(assistantChannels.closeBrowser),
   stopRequest: (id) => ipcRenderer.invoke(assistantChannels.stop, id),
@@ -52,6 +55,23 @@ const bridge: DesktopBridge = {
   clearHistory: () => ipcRenderer.invoke(assistantChannels.clear),
   getLearning: () => ipcRenderer.invoke(assistantChannels.learning),
   rateSimplification: (input) => ipcRenderer.invoke(assistantChannels.rate, input),
+  getSkills: () => ipcRenderer.invoke(skillChannels.view),
+  setSkillPractice: (input) => ipcRenderer.invoke(skillChannels.practice, input),
+  getTrustGraph: () => ipcRenderer.invoke(trustChannels.graph),
+  addTrustEntity: (input) => ipcRenderer.invoke(trustChannels.addEntity, input),
+  updateTrustEntity: (input) => ipcRenderer.invoke(trustChannels.updateEntity, input),
+  deleteTrustEntity: (id) => ipcRenderer.invoke(trustChannels.deleteEntity, id),
+  addTrustChannel: (input) => ipcRenderer.invoke(trustChannels.addChannel, input),
+  deleteTrustChannel: (id) => ipcRenderer.invoke(trustChannels.deleteChannel, id),
+  deleteTrustDecision: (id) => ipcRenderer.invoke(trustChannels.deleteDecision, id),
+  getTrustState: () => ipcRenderer.invoke(trustChannels.getState),
+  decideTrust: (input) => ipcRenderer.invoke(trustChannels.decide, input),
+  dismissTrustWarning: () => ipcRenderer.invoke(trustChannels.dismiss),
+  onTrustState: (listener) => {
+    const receive = (_event: Electron.IpcRendererEvent, state: TrustState): void => listener(state)
+    ipcRenderer.on(trustChannels.state, receive)
+    return () => { ipcRenderer.removeListener(trustChannels.state, receive) }
+  },
   getState: () => ipcRenderer.invoke(channels.getState),
   onState: (listener) => {
     const receive = (_event: Electron.IpcRendererEvent, state: DesktopState): void => listener(state)

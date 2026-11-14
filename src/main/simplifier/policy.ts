@@ -40,23 +40,26 @@ const index = (name: typeof FEATURE_NAMES[number]) => FEATURE_NAMES.indexOf(name
 
 /**
  * Deterministic baseline and fallback ("rules + memory" in the doc's cut
- * order). It reads user traits and voice state straight from the context
- * vector. It never learns.
+ * order). It reads the person's skill knowledge and voice state straight from
+ * the context vector. It never learns.
+ *
+ * Version 2: chooses by skill knowledge. Version 1 chose by generic user traits.
  */
 export class RulesPolicy implements PresentationPolicy {
   readonly name = 'rules'
-  readonly version = 1
+  readonly version = 2
 
   private pick(input: PolicyInput): string {
     const allowed = new Set(input.arms.map((arm) => arm.id))
     const x = input.x
     const wanted: string[] = []
-    const voice = x[index('voice_on')] > 0.5 && x[index('trait_voice')] > 0.6
-    const vision = x[index('trait_vision')] > 0.6
-    const reading = x[index('trait_reading')] > 0.6
-    if (voice) wanted.push(vision ? 'a10' : 'a07')
-    if (vision) wanted.push(reading ? 'a09' : 'a08')
-    if (x[index('trait_tech')] > 0.7 && !reading) wanted.push('a04')
+    const practice = x[index('skill_practice')] > 0.5
+    // New to what this page asks of them, or marked for practice: plain words, one step at a time.
+    const novice = practice || x[index('skill_page')] < 0.45
+    // Comfortable with it and everything under it: the page's own wording, more choices at once.
+    const fluent = !practice && x[index('skill_page')] >= 0.85 && x[index('skill_weakest_prerequisite')] >= 0.45
+    if (novice) wanted.push(x[index('voice_on')] > 0.5 ? 'a07' : 'a05')
+    if (fluent) wanted.push('a04')
     wanted.push(DEFAULT_ARM_ID)
     return wanted.find((id) => allowed.has(id)) ?? input.arms[0].id
   }

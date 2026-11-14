@@ -69,3 +69,19 @@ test('the provider gateway sends Gemini keys to Gemini and others to Claude', as
   assert.equal(await gateway.reply(key, 'm', [], signal), 'gemini')
   assert.equal(await gateway.reply('sk-ant-api03-abcdefghijklmnop', 'm', [], signal), 'claude')
 })
+
+test('Gemini gets screen context in the user turn and trusted context in the system prompt, like Claude', async () => {
+  const { fetcher, calls } = fakeFetch(() => ({ body: textReply('{"kind":"reply","text":"ok"}') }))
+  const gateway = new ProviderGateway({ models: async () => [], reply: async () => 'claude' } as ModelGateway, new GeminiGateway(fetcher))
+  const screen = '<screen_context>app: Mail</screen_context>'
+  const trusted = '<known_contacts>Ravi (son)</known_contacts>'
+  await gateway.route(key, 'gemini-2.5-flash', [{ role: 'user', content: 'who is this from?' }], signal, screen, trusted)
+  await gateway.reply(key, 'gemini-2.5-flash', [{ role: 'user', content: 'who is this from?' }], signal, undefined, screen, trusted)
+  for (const call of calls) {
+    const body = JSON.parse(String(call.init.body))
+    assert.equal(body.contents.at(-1).parts[0].text, 'who is this from?\n\n' + screen)
+    assert.ok(body.systemInstruction.parts[0].text.endsWith(trusted))
+    assert.doesNotMatch(body.systemInstruction.parts[0].text, /screen_context>app/)
+  }
+  assert.match(JSON.parse(String(calls[0].init.body)).systemInstruction.parts[0].text, /needs_screenshot/)
+})

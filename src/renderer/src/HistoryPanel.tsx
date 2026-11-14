@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import type { AssistantBridge, ConversationPage } from '../../shared/assistant-contracts'
+import type { SkillsBridge } from '../../shared/skill-contracts'
+import { SkillsPanel } from './SkillsPanel'
 import { LearningHistory } from './LearningHistory'
 
 export function HistoryPanel({ bridge, revision, page, active, busy, open, loadMore, remove, clear }: {
-  bridge: AssistantBridge; revision: number
+  bridge: AssistantBridge & SkillsBridge; revision: number
   page: ConversationPage; active: boolean | string; busy: boolean
   open: (id: string) => void; loadMore: () => void
   remove: (id: string) => Promise<boolean | void>; clear: () => Promise<boolean | void>
@@ -28,6 +30,7 @@ export function HistoryPanel({ bridge, revision, page, active, busy, open, loadM
       </div>)}
     </div>
     {page.next && <button className="secondary-button" disabled={busy} onClick={loadMore}>Load older conversations</button>}
+    <SkillsPanel bridge={bridge} revision={revision} />
     <LearningHistory bridge={bridge} revision={revision} />
     {page.items.length > 0 && <div className="clear-history">
       {confirm === 'all' ? <>
