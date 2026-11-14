@@ -1,6 +1,6 @@
 # Voice input (Amazon Transcribe)
 
-The chat window has a **Hold to talk** button. Hold it while speaking and let go to stop. A quick tap starts recording, and a second tap stops it. Esc cancels. Live captions appear as you speak. When you stop, the finished transcript is saved locally. It is **not** sent to the assistant yet; that is the next step.
+The chat window has a **Hold to talk** button. Hold it while speaking and let go to stop. A quick tap starts recording, and a second tap stops it. Esc cancels. Live captions appear as you speak. When you stop, the finished transcript is saved locally and handed to the chatbot (see [Voice commands](#voice-commands)).
 
 ## Setup
 
@@ -56,9 +56,31 @@ Partial results for the same `segmentId` are replaced by later ones. `confidence
 
 `TranscriptStore` (`src/main/voice/transcript-store.ts`). The default implementation is `LocalTranscriptStore`, which appends one JSON line per recording to `<userData>/voice-transcripts.jsonl` (on macOS: `~/Library/Application Support/triage/`). The file is unencrypted, with mode 0600. Recordings with no recognized text and cancelled recordings are not stored. A DynamoDB store can implement the same two-method interface.
 
-## Hooking in the agent (next step)
+## Voice commands
 
-In `src/main/index.ts`, `voice.subscribe(...)` already receives every event. Act on `event.type === 'transcript'` (or on final `user_utterance` events for lower latency). For example, `assistant.send({ text: event.record.text })`. To record the message as spoken, add a voice entry point on `AssistantCoordinator` that calls `accept(..., 'voice')`; the coordinator still supports the `'voice'` message source.
+Finished transcripts are handled in the chat window (`handleTranscript` in `src/renderer/src/AssistantPanel.tsx`), not in the main process. The chat window already knows the open conversation, any waiting screenshot, the "Show me where" setting, and whether a reply is running. Spoken messages go through the same `sendMessage` call as typed ones, with `source: 'voice'`, so history shows them as "You · voice".
+
+Order of handling:
+
+1. **Local shortcuts** (`src/renderer/src/voice/intents.ts`). These never reach the model. Stop and new-conversation only match the whole utterance, so "stop my subscription" still goes to the chatbot.
+
+   | Say | Does |
+   |---|---|
+   | "stop", "cancel that", "never mind" | Stops the running request (works while busy), or discards a waiting screenshot |
+   | "start over", "new conversation" | Starts a new conversation |
+   | "what's on my screen", "explain this page", "what does this say" | Captures the screen (or uses the waiting one) and explains it |
+   | "show me where…", "where's the…", "where do I click…", "highlight the…" | Captures the screen and points at the control |
+
+2. **Review instead of sending.** The transcript goes into the message box with a notice, and isn't sent, when:
+   - a request is already running, or
+   - the transcript is one word, or
+   - the mean word confidence is below `VOICE_CONFIDENCE_THRESHOLD` (0.6). Shortcuts skip this check.
+
+   Spoken text is appended after any typed draft.
+
+3. **Everything else** is sent to the chatbot as is. The chatbot decides between a normal reply and the Alaska flight search.
+
+The main-process `voice.subscribe(...)` hook in `src/main/index.ts` still receives every voice event. It's for logging and, later, for Polly spoken replies, not for sending messages.
 
 ## Files
 
@@ -70,6 +92,7 @@ In `src/main/index.ts`, `voice.subscribe(...)` already receives every event. Act
 - `src/main/voice/ipc.ts`, `src/main/voice/microphone.ts`: IPC and the macOS mic permission
 - `src/renderer/public/pcm-worklet.js`, `src/renderer/src/voice/microphone.ts`: capture
 - `src/renderer/src/VoiceButton.tsx`: UI
+- `src/renderer/src/voice/intents.ts`: voice shortcuts and the review rule
 
 ## Not yet verified
 
