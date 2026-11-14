@@ -1,9 +1,25 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import { voiceChannels, type SpeechStateMessage, type UserUtterance } from '../shared/voice-contracts'
 import { highlightChannels, type OverlayBridge, type HighlightState } from '../shared/highlight-contracts'
 import { channels, type DesktopBridge, type DesktopState } from '../shared/contracts'
 import { assistantChannels, type AssistantState } from '../shared/assistant-contracts'
 
 const bridge: DesktopBridge = {
+  startVoice: () => ipcRenderer.invoke(voiceChannels.start),
+  sendVoiceAudio: (sessionId, chunk) => ipcRenderer.send(voiceChannels.audio, sessionId, chunk),
+  finishVoice: (sessionId) => ipcRenderer.invoke(voiceChannels.finish, sessionId),
+  cancelVoice: (sessionId) => ipcRenderer.invoke(voiceChannels.cancel, sessionId),
+  listTranscripts: () => ipcRenderer.invoke(voiceChannels.list),
+  onSpeechState: (listener) => {
+    const receive = (_event: Electron.IpcRendererEvent, message: SpeechStateMessage): void => listener(message)
+    ipcRenderer.on(voiceChannels.state, receive)
+    return () => { ipcRenderer.removeListener(voiceChannels.state, receive) }
+  },
+  onUtterance: (listener) => {
+    const receive = (_event: Electron.IpcRendererEvent, utterance: UserUtterance): void => listener(utterance)
+    ipcRenderer.on(voiceChannels.utterance, receive)
+    return () => { ipcRenderer.removeListener(voiceChannels.utterance, receive) }
+  },
   getShakeSettings: () => ipcRenderer.invoke(assistantChannels.getShake),
   saveShakeSettings: (input) => ipcRenderer.invoke(assistantChannels.saveShake, input),
   captureScreen: () => ipcRenderer.invoke(assistantChannels.capture),
