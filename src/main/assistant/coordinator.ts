@@ -9,7 +9,8 @@ import { Credentials } from './credentials.ts'
 import { HistoryStore } from './history.ts'
 import type { ModelGateway } from './model.ts'
 import { AppProblem, publicProblem } from './errors.ts'
-import { connectSchema, idSchema, modelSchema, sendSchema, validated } from './schemas.ts'
+import { analyzeSchema, connectSchema, idSchema, modelSchema, sendSchema, validated } from './schemas.ts'
+import { parseScreenAnalysis, type ScreenAnalysis } from '../../shared/screen-analysis-contracts.ts'
 import { redact } from './redaction.ts'
 import { resolveDestination } from '../../shared/destinations.ts'
 import type { RequestLog } from '../logging/request-log.ts'
@@ -45,6 +46,7 @@ export class AssistantCoordinator {
   private browser?: BrowserRunner
   private openPage?: (url: string) => Promise<void>
   private requestLog?: RequestLog
+  private analyzing: AbortController | null = null
   private screens?: ScreenAccess
 
   constructor(options: {
@@ -134,6 +136,43 @@ export class AssistantCoordinator {
   }
 
   clearHighlight(): void { this.highlights?.clear() }
+
+  /**
+   * "What can I do here?" or "Is this safe?" for a captured screenshot. Returns
+   * structured help for a card in the chat window; nothing is saved to history.
+   */
+  async analyzeScreen(input: unknown): Promise<ScreenAnalysis> {
+    const { captureId, kind, source } = validated(analyzeSchema, input)
+    this.idle()
+    if (this.analyzing) throw new AppProblem('busy', 'I’m still looking at your screen. One moment.')
+    if (!this.gateway.analyze || !this.screens) throw new AppProblem('analysis_unavailable', 'Checking the screen is unavailable in this build.')
+    const key = this.credentials.getKey()
+    const model = this.credentials.snapshot().model
+    if (!model) throw new AppProblem('missing_model', 'Connect your key and choose an available model in Settings.')
+    const image = this.screens.take(captureId)
+    const controller = new AbortController()
+    this.analyzing = controller
+    const startedAt = Date.now()
+    const deadline = setTimeout(() => controller.abort(), this.requestTimeout)
+    try {
+      const text = await this.gateway.analyze(key, model, kind, controller.signal, image)
+      if (this.disposed) throw new AppProblem('closed', 'Triage is closing.')
+      const analysis = parseScreenAnalysis(kind, text)
+      if (!analysis) throw new AppProblem('invalid_analysis', kind === 'simplify' ? 'I couldn’t simplify this screen. Please try again.' : 'I couldn’t check this screen. Please try again.')
+      try {
+        this.requestLog?.record({ at: Date.now(), source: source ?? 'chat', text: kind === 'simplify' ? '[Simplify screen]' : '[Is this safe?]', route: kind,
+          outcome: 'completed', latencyMs: Date.now() - startedAt,
+          reply: redact(analysis.kind === 'simplify' ? analysis.view.summary : `${analysis.check.verdict}: ${analysis.check.headline}`, [key]) })
+      } catch { /* Logging must never break a request. */ }
+      return analysis
+    } catch (error) {
+      if (controller.signal.aborted && !this.disposed) throw new AppProblem('timeout', 'Looking at the screen took too long. Please try again.')
+      throw error
+    } finally {
+      clearTimeout(deadline)
+      this.analyzing = null
+    }
+  }
 
   send(input: unknown): SendReceipt { return this.accept(input) }
 
@@ -380,6 +419,7 @@ If you can’t find something on the page, ask “show me where…” and I’ll
     if (this.disposed) return
     this.disposed = true
     this.connecting?.abort()
+    this.analyzing?.abort()
     try {
       if (this.active) this.finish(this.active, 'stopped', 'Stopped because Triage quit.')
       this.offHighlights?.()

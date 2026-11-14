@@ -6,7 +6,7 @@ import type { Result } from './assistant-contracts'
  * PII redaction → DynamoDB) to suggest FAQs and new destinations.
  */
 
-export type RequestRoute = 'reply' | 'flight_search' | 'open_page' | 'explain' | 'highlight'
+export type RequestRoute = 'reply' | 'flight_search' | 'open_page' | 'explain' | 'highlight' | 'simplify' | 'safety'
 export type RequestOutcome = 'completed' | 'failed' | 'stopped' | 'interrupted'
 
 export interface RequestEvent {

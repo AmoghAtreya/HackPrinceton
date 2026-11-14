@@ -47,6 +47,7 @@ const bridge: DesktopBridge = {
   stopRequest: (id) => ipcRenderer.invoke(assistantChannels.stop, id),
   listConversations: (input) => ipcRenderer.invoke(assistantChannels.list, input),
   getConversation: (input) => ipcRenderer.invoke(assistantChannels.detail, input),
+  analyzeScreen: (input) => ipcRenderer.invoke(assistantChannels.analyze, input),
   deleteConversation: (id) => ipcRenderer.invoke(assistantChannels.delete, id),
   clearHistory: () => ipcRenderer.invoke(assistantChannels.clear),
   getState: () => ipcRenderer.invoke(channels.getState),
