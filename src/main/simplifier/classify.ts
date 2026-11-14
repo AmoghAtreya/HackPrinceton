@@ -20,6 +20,11 @@ function host(url: string): string {
   try { return new URL(url).hostname } catch { return '' }
 }
 
+/** True for the webmail sites Triage recognises. */
+export function isMailHost(url: string): boolean {
+  return MAIL_HOSTS.test(host(url))
+}
+
 function isCardField(el: PageElement): boolean {
   return Boolean(el.autocomplete && CARD_AUTOCOMPLETE.test(el.autocomplete)) || CARD_LABEL.test(el.label)
 }
