@@ -1,5 +1,6 @@
 import type { ActivityEvent } from './flight-contracts'
 import type { HighlightState } from './highlight-contracts'
+import type { GuideState } from './guide-contracts'
 import type { ScreenPreview } from './screen-contracts'
 import type { ShakeSettings } from './shake-contracts'
 import type { ScreenAnalysis, ScreenAnalysisKind } from './screen-analysis-contracts'
@@ -25,6 +26,8 @@ export interface AssistantState {
   storageError?: string
   gestureRequest?: SendReceipt
   highlight?: HighlightState
+  /** Present while Triage is walking the person through a task step by step. */
+  guide?: GuideState
 }
 export interface ConversationSummary { id: string; title: string; updatedAt: number }
 export interface HistoryCursor { at: number; id: string }
