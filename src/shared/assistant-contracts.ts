@@ -12,6 +12,8 @@ export interface PublicConfig {
   model: string
   models: ModelChoice[]
   keyStorage: 'none' | 'session' | 'encrypted' | 'locked'
+  /** "Use faster model for simple requests": routing and short replies go to a Haiku model when one is listed. */
+  fastModel: boolean
   warning?: string
 }
 export interface ActiveRequest { id: string; conversationId: string; startedAt: number; stage?: 'capturing' | 'thinking' | 'browser'; progress?: string }
@@ -67,6 +69,7 @@ export interface AssistantBridge {
   connectKey(input: { key: string; remember: boolean }): Promise<Result<PublicConfig>>
   removeKey(): Promise<Result<PublicConfig>>
   selectModel(model: string): Promise<Result<PublicConfig>>
+  setFastModel(enabled: boolean): Promise<Result<PublicConfig>>
   captureScreen(): Promise<Result<ScreenPreview>>
   discardScreen(): Promise<Result<void>>
   dismissHighlight(): Promise<Result<void>>
@@ -84,7 +87,7 @@ export const assistantChannels = {
   getShake: 'assistant:get-shake', saveShake: 'assistant:save-shake',
   capture: 'assistant:capture', discard: 'assistant:discard', dismissHighlight: 'assistant:dismiss-highlight',
   state: 'assistant:state', getState: 'assistant:get-state', connect: 'assistant:connect',
-  removeKey: 'assistant:remove-key', selectModel: 'assistant:select-model',
+  removeKey: 'assistant:remove-key', selectModel: 'assistant:select-model', setFastModel: 'assistant:set-fast-model',
   closeBrowser: 'assistant:close-browser',
   send: 'assistant:send', stop: 'assistant:stop', list: 'assistant:list',
   detail: 'assistant:detail', delete: 'assistant:delete', clear: 'assistant:clear',

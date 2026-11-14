@@ -13,7 +13,9 @@ export interface SecretCrypto {
 
 const preferencesSchema = z.object({
   model: modelSchema,
-  models: z.array(z.object({ id: modelSchema, label: z.string().max(200) })).max(200)
+  models: z.array(z.object({ id: modelSchema, label: z.string().max(200) })).max(200),
+  /** Absent in files written before the setting existed; it defaults to on. */
+  fastModel: z.boolean().optional()
 })
 
 export class Credentials {
@@ -23,6 +25,7 @@ export class Credentials {
   private storage: PublicConfig['keyStorage'] = 'none'
   private model = ''
   private models: ModelChoice[] = []
+  private fastModel = true
   private warning?: string
 
   constructor(directory: string, crypto: SecretCrypto) {
@@ -41,6 +44,7 @@ export class Credentials {
       const data = preferencesSchema.parse(JSON.parse(readFileSync(join(this.directory, 'model-settings.json'), 'utf8')))
       this.model = data.model
       this.models = data.models
+      this.fastModel = data.fastModel ?? true
     } catch { /* Absent or invalid non-secret preferences can be reset in settings. */ }
     const file = join(this.directory, 'credentials.enc')
     if (!existsSync(file)) return
@@ -66,7 +70,7 @@ export class Credentials {
     return {
       configured: this.key !== null, model: this.model,
       models: this.models.map((model) => ({ ...model })),
-      keyStorage: this.storage, ...(this.warning ? { warning: this.warning } : {})
+      keyStorage: this.storage, fastModel: this.fastModel, ...(this.warning ? { warning: this.warning } : {})
     }
   }
 
@@ -84,7 +88,7 @@ export class Credentials {
       models.find((item) => /sonnet/i.test(item.id)) ?? models.find((item) => /haiku/i.test(item.id)) ?? models[0]
     if (!preferred) throw new AppProblem('no_models', 'No usable Claude models were returned for this key.')
     try {
-      this.atomicWrite('model-settings.json', JSON.stringify({ model: preferred.id, models }))
+      this.atomicWrite('model-settings.json', JSON.stringify({ model: preferred.id, models, fastModel: this.fastModel }))
       if (encrypted) this.atomicWrite('credentials.enc', encrypted)
       else rmSync(join(this.directory, 'credentials.enc'), { force: true })
     } catch {
@@ -100,9 +104,19 @@ export class Credentials {
 
   select(model: string): PublicConfig {
     if (!this.models.some((item) => item.id === model)) throw new AppProblem('invalid_model', 'Choose a model returned for your connected key.')
-    try { this.atomicWrite('model-settings.json', JSON.stringify({ model, models: this.models })) }
+    try { this.atomicWrite('model-settings.json', JSON.stringify({ model, models: this.models, fastModel: this.fastModel })) }
     catch { throw new AppProblem('storage', 'The model setting could not be saved.') }
     this.model = model
+    return this.snapshot()
+  }
+
+  /** "Use faster model for simple requests". Saved with the model choice once a key has been connected. */
+  setFastModel(enabled: boolean): PublicConfig {
+    if (this.model) {
+      try { this.atomicWrite('model-settings.json', JSON.stringify({ model: this.model, models: this.models, fastModel: enabled })) }
+      catch { throw new AppProblem('storage', 'The model setting could not be saved.') }
+    }
+    this.fastModel = enabled
     return this.snapshot()
   }
 
