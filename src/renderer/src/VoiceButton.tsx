@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import type { TranscriptRecord, VoiceBridge } from '../../shared/voice-contracts'
 import { displayError, unwrap } from './assistant-ui'
 import { MicrophoneCapture, MicrophoneProblem } from './voice/microphone'
+import { speechPlayer, type PlaybackSnapshot } from './voice/speech-player'
 
 type Phase = 'idle' | 'starting' | 'recording' | 'finishing'
 
@@ -20,6 +21,7 @@ export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onT
   const [level, setLevel] = useState(0)
   const [last, setLast] = useState<TranscriptRecord | null>(null)
   const [error, setError] = useState('')
+  const [playback, setPlayback] = useState<PlaybackSnapshot>(speechPlayer.snapshot())
   const phaseRef = useRef<Phase>('idle')
   const session = useRef<string | null>(null)
   const microphone = useRef<MicrophoneCapture | null>(null)
@@ -106,6 +108,8 @@ export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onT
   }
 
   function press() {
+    // Never record Triage's own voice: stop any reply before the microphone opens.
+    speechPlayer.stop()
     pressedAt.current = Date.now()
     if (phaseRef.current === 'idle') { tapMode.current = false; void begin() }
     else if (tapMode.current && (phaseRef.current === 'recording' || phaseRef.current === 'starting')) void end()
@@ -117,6 +121,8 @@ export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onT
     if (Date.now() - pressedAt.current < TAP_MS) { tapMode.current = true; return }
     void end()
   }
+
+  useEffect(() => speechPlayer.subscribe(setPlayback), [])
 
   useEffect(() => {
     const offState = bridge.onSpeechState((message) => {
@@ -174,5 +180,14 @@ export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onT
     {phase === 'idle' && last?.text && !error && <p className="voice-last">Heard: “{last.text}”</p>}
     {error && <p className="voice-error" role="alert">{error}</p>}
     {phase !== 'idle' && <button type="button" className="text-button" onClick={() => void cancel()}>Cancel · Esc</button>}
+    {phase === 'idle' && playback.state !== 'idle' && <div className="speaking-status" role="status">
+      <span className="speaking-icon" aria-hidden="true">🔊</span>{playback.state === 'loading' ? 'Getting ready to speak…' : 'Speaking…'}
+      <button type="button" className="text-button" onClick={() => speechPlayer.stop()}>Stop</button>
+    </div>}
+    {phase === 'idle' && playback.state === 'idle' && playback.canReplay &&
+      <button type="button" className="text-button say-again" onClick={() => void speechPlayer.replay()}>
+        <span aria-hidden="true">↻</span> Say that again</button>}
+    {playback.notice && <p className="notice warning voice-notice" role="status">{playback.notice}
+      <button type="button" className="text-button" onClick={() => speechPlayer.dismissNotice()}>Dismiss</button></p>}
   </section>
 }
