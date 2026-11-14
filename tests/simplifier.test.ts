@@ -192,3 +192,31 @@ test('a History tab rating becomes one reward and shows up in the learning summa
   assert.throws(() => service.rate('someone-else', result.decisionId, true), /no longer/)
   log.close()
 })
+
+test('/simplify targets the open tab, an address, or (as /examplesimplify) the example page', async () => {
+  const { parseSimplifyCommand } = await import('../src/main/simplifier/service.ts')
+  assert.deepEqual(parseSimplifyCommand('/simplify'), { kind: 'current' })
+  assert.deepEqual(parseSimplifyCommand('  /SIMPLIFY  '), { kind: 'current' })
+  assert.deepEqual(parseSimplifyCommand('/simplify example.com'), { kind: 'url', url: 'https://example.com/' })
+  assert.deepEqual(parseSimplifyCommand('/examplesimplify'), { kind: 'demo' })
+  assert.deepEqual(parseSimplifyCommand('/simplify demo'), { kind: 'demo' })
+  assert.equal(parseSimplifyCommand('/simplifyx'), null)
+  assert.equal(parseSimplifyCommand('/examplesimplify example.com'), null)
+  assert.equal(parseSimplifyCommand('please simplify this'), null)
+  assert.throws(() => parseSimplifyCommand('/simplify ftp://example.com'), /Only http and https/)
+})
+
+test('the current-tab reader takes the first web address and skips Triage’s own page when it can', async () => {
+  const { currentTabReader, webUrl } = await import('../src/main/simplifier/current-tab.ts')
+  assert.equal(webUrl('https://shop.example/orders#top'), 'https://shop.example/orders')
+  assert.equal(webUrl('chrome://newtab/'), undefined)
+  assert.equal(webUrl('not a url'), undefined)
+  const failing = async () => { throw new Error('no access') }
+  const reader = currentTabReader([failing, async () => 'chrome://settings', async () => 'https://a.example/x', async () => 'https://b.example/'])
+  assert.equal(await reader(), 'https://a.example/x')
+  // Triage's own browser is showing a.example: the next source's different page wins.
+  assert.equal(await reader('https://a.example/x'), 'https://b.example/')
+  // Only Triage's own page is offered: it is the same page either way, so use it.
+  assert.equal(await currentTabReader([async () => 'https://a.example/x'])('https://a.example/x'), 'https://a.example/x')
+  assert.equal(await currentTabReader([async () => undefined])(), undefined)
+})
