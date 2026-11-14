@@ -454,39 +454,10 @@ export class AssistantCoordinator {
           this.tutor?.locateGuidance(LOCAL_USER, request.conversationId))
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         reply = result.explanation
-        try {
-          let anchor: ElementAnchor | undefined
-          let rejected: AppProblem | undefined
-          if (result.elementId) {
-            // The id is only meaningful for the snapshot it was offered from: the
-            // lookup refuses ids that snapshot never had, and any snapshot that
-            // has since expired or been replaced by a newer generation.
-            try {
-              if (!snapshot || !this.contexts) throw new AppProblem('context_element', 'No element list was offered.')
-              const element = this.contexts.element(snapshot.id, snapshot.generation, result.elementId)
-              anchor = { frame: element.frame, pid: snapshot.app.pid, path: element.path, role: element.role }
-            } catch (error) {
-              if (!(error instanceof AppProblem)) throw error
-              rejected = error.code === 'context_expired'
-                ? new AppProblem('stale_element', 'No highlight: the view of the screen expired or was replaced. Capture again before asking where to click.')
-                : new AppProblem('unknown_element', 'No highlight: the reply named an item that is not on the captured screen. Try a fresh capture.')
-            }
-          }
-          if (anchor) {
-            try { plan = this.highlights.plan(result, image.metadata, request.id, request.highlightRevision!, anchor) }
-            // An element that is off this display can still be marked from the model's pixel box, if it gave one.
-            catch (error) { if (!(error instanceof AppProblem) || error.code !== 'invalid_target' || !result.target) throw error }
-          }
-          if (!plan) {
-            if (rejected && !result.target) throw rejected
-            plan = this.highlights.plan(result, image.metadata, request.id, request.highlightRevision!)
-          }
-          outcome = plan ? 'prepared' : 'no_target'
-        } catch (error) {
-          if (!(error instanceof AppProblem)) throw error
-          outcome = error.code
-          reply += '\n\n' + error.message
-        }
+        const pointed = this.pointAt(request, image, result, snapshot)
+        plan = pointed.plan
+        outcome = pointed.outcome
+        if (pointed.note) reply += '\n\n' + pointed.note
       } else if (request.local) {
         reply = await this.runLocal(request, request.local)
       } else if (request.simplifyScreen) {
@@ -597,6 +568,48 @@ export class AssistantCoordinator {
       // A canceled native capture can restore the windows after Stop. Publish once
       // it settles so the gesture conversation can be opened without spoiling capture.
       if (capture && !this.disposed) this.emit()
+    }
+  }
+
+  /**
+   * Turns the model's answer into a highlight that is ready to show: the listed
+   * element's real frame when it named one, otherwise its pixel box. A problem
+   * placing it comes back as a note for the reply, never as a failed request.
+   */
+  private pointAt(request: RunningRequest, image: ScreenImage, result: HighlightReply, snapshot: ReturnType<ContextLookup['forCapture']>):
+    { plan: HighlightPlan | null; outcome: string; note?: string } {
+    let plan: HighlightPlan | null = null
+    try {
+      let anchor: ElementAnchor | undefined
+      let rejected: AppProblem | undefined
+      if (result.elementId) {
+        // The id is only meaningful for the snapshot it was offered from: the
+        // lookup refuses ids that snapshot never had, and any snapshot that
+        // has since expired or been replaced by a newer generation.
+        try {
+          if (!snapshot || !this.contexts) throw new AppProblem('context_element', 'No element list was offered.')
+          const element = this.contexts.element(snapshot.id, snapshot.generation, result.elementId)
+          anchor = { frame: element.frame, pid: snapshot.app.pid, path: element.path, role: element.role }
+        } catch (error) {
+          if (!(error instanceof AppProblem)) throw error
+          rejected = error.code === 'context_expired'
+            ? new AppProblem('stale_element', 'No highlight: the view of the screen expired or was replaced. Capture again before asking where to click.')
+            : new AppProblem('unknown_element', 'No highlight: the reply named an item that is not on the captured screen. Try a fresh capture.')
+        }
+      }
+      if (anchor) {
+        try { plan = this.highlights!.plan(result, image.metadata, request.id, request.highlightRevision!, anchor) }
+        // An element that is off this display can still be marked from the model's pixel box, if it gave one.
+        catch (error) { if (!(error instanceof AppProblem) || error.code !== 'invalid_target' || !result.target) throw error }
+      }
+      if (!plan) {
+        if (rejected && !result.target) throw rejected
+        plan = this.highlights!.plan(result, image.metadata, request.id, request.highlightRevision!)
+      }
+      return { plan, outcome: plan ? 'prepared' : 'no_target' }
+    } catch (error) {
+      if (!(error instanceof AppProblem)) throw error
+      return { plan: null, outcome: error.code, note: error.message }
     }
   }
 
