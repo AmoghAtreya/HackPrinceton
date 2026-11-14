@@ -16,6 +16,7 @@ import { pickModel, type RequestPurpose } from './tiers.ts'
 import { redact } from './redaction.ts'
 import { resolveDestination } from '../../shared/destinations.ts'
 import type { TrustService } from '../trust/service.ts'
+import type { SkillTutor } from '../skills/tutor.ts'
 import { describeResult, parseSimplifyCommand, type SimplifierService, type SimplifyCommand } from '../simplifier/service.ts'
 import { describeScreenResult, type ScreenSimplifier } from '../simplifier/screen.ts'
 
@@ -54,6 +55,8 @@ export class AssistantCoordinator {
   private screenContext?: () => Promise<string | undefined>
   private captureScreen?: () => Promise<ScreenPreview>
   private trust?: Pick<TrustService, 'propose' | 'answer' | 'context'>
+  private tutor?: Pick<SkillTutor, 'guidance' | 'asked' | 'locateGuidance' | 'pointed' | 'resolved'>
+  private offClicked?: () => void
   private contexts?: ContextLookup
   private gestureRequest?: SendReceipt
   private browser?: BrowserRunner
@@ -76,6 +79,8 @@ export class AssistantCoordinator {
     captureScreen?: () => Promise<ScreenPreview>
     /** The local list of people and organizations the user really deals with. */
     trust?: Pick<TrustService, 'propose' | 'answer' | 'context'>
+    /** What the person already knows how to do; shapes how-to answers and learns from what they do. */
+    tutor?: Pick<SkillTutor, 'guidance' | 'asked' | 'locateGuidance' | 'pointed' | 'resolved'>
     /** Opens a vetted https URL in the user's own browser. */
     openPage?: (url: string) => Promise<void>
   }) {
@@ -83,6 +88,9 @@ export class AssistantCoordinator {
     this.screenContext = options.screenContext
     this.captureScreen = options.captureScreen
     this.trust = options.trust
+    this.tutor = options.tutor
+    // Clicking the outlined control first try is evidence the person can do it; losing it is evidence they could not.
+    this.offClicked = options.highlights?.onClicked((state) => this.tutor?.resolved(state.taskId, true))
     this.screenSimplifier = options.screenSimplifier
     this.browser = options.browser
     this.openPage = options.openPage
@@ -91,6 +99,7 @@ export class AssistantCoordinator {
     this.contexts = options.contexts
     this.offLost = options.highlights?.onLost((state) => {
       if (this.disposed) return
+      this.tutor?.resolved(state.taskId, false)
       try { if (this.history.note(state.taskId, 'highlight_lost', HIGHLIGHT_LOST_MESSAGE)) this.emit() }
       catch { this.blockStorage() }
     })
@@ -307,7 +316,8 @@ export class AssistantCoordinator {
         const snapshot = this.contexts?.forCapture(image.metadata.id)
         const candidates = snapshot ? locateElements(snapshot) : []
         used = pick('locate')
-        result = await this.gateway.locate(key, used.model, context, request.controller.signal, image, candidates.length ? candidates : undefined)
+        result = await this.gateway.locate(key, used.model, context, request.controller.signal, image, candidates.length ? candidates : undefined,
+          this.tutor?.locateGuidance(LOCAL_USER, request.conversationId))
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         reply = result.explanation
         try {
@@ -377,6 +387,15 @@ export class AssistantCoordinator {
           reply = this.trust?.propose(request.conversationId, route.contact, request.text) ??
             'I can only save contact details that you tell me yourself. Say the name with their email, phone number or website, or add them in Settings.'
         }
+        else if (route.kind === 'how_to') {
+          // The plan is made before this question counts as evidence, from catalogue skills only.
+          const guidance = this.tutor?.guidance(LOCAL_USER, route.skills)
+          this.tutor?.asked(LOCAL_USER, request.conversationId, route.skills)
+          used = pick('reply')
+          reply = await this.gateway.reply(key, used.model, context, request.controller.signal, undefined, screenContext,
+            [trusted, guidance].filter(Boolean).join('\n\n') || undefined)
+          if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
+        }
         else if (route.kind === 'needs_screenshot') {
           const vision = pick('vision')
           const answer = await this.escalate(request, key, vision.model, context, screenContext, trusted)
@@ -420,7 +439,7 @@ export class AssistantCoordinator {
         local ? undefined : { tier: used.tier, model: used.model, screenshotEscalation: escalated })
       clearTimeout(request.deadline)
       this.active = null
-      if (plan) this.highlights?.present(plan)
+      if (plan && this.highlights?.present(plan)) this.tutor?.pointed(LOCAL_USER, request.conversationId, request.id)
       this.emit()
     } catch (error) {
       if (this.disposed || this.active?.id !== request.id) return
@@ -558,6 +577,7 @@ If you can’t find something on the page, ask “show me where…” and I’ll
       if (this.active) this.finish(this.active, 'stopped', 'Stopped because Triage quit.')
       this.offHighlights?.()
       this.offLost?.()
+      this.offClicked?.()
       this.highlights?.clear()
     } finally {
       this.credentials.dispose()
