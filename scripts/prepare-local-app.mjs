@@ -65,6 +65,17 @@ try {
       if (existsSync(manifest)) {
         const metadata = JSON.parse(readFileSync(manifest, 'utf8'))
         if (metadata.name === name) {
+          // A version nested in another package's own node_modules (e.g.
+          // @langchain/langgraph-sdk/node_modules/p-queue) was already copied
+          // with that parent folder; only its dependencies still need copying.
+          const topLevel = join(root, 'node_modules', name)
+          if (directory !== (existsSync(topLevel) ? realpathSync(topLevel) : topLevel) && directory.includes(join('node_modules', name.split('/')[0]))) {
+            const nestedKey = 'nested:' + directory
+            if (copied.has(nestedKey)) return
+            copied.set(nestedKey, directory)
+            for (const dependency of Object.keys(metadata.dependencies ?? {})) copyPackage(dependency, directory)
+            return
+          }
           if (copied.has(name)) {
             if (copied.get(name) !== directory) throw new Error('Multiple versions of ' + name + ' need explicit packaging support.')
             return
@@ -88,6 +99,9 @@ try {
   copyPackage('@aws-sdk/client-transcribe-streaming', root)
   copyPackage('zod', root)
   copyPackage('playwright', root)
+  // Memory (LangChain vector store) and multi-step tasks (LangGraph).
+  copyPackage('@langchain/core', root)
+  copyPackage('@langchain/langgraph', root)
 
   const plist = join(staging, 'Contents', 'Info.plist')
   for (const [key, value] of Object.entries({
