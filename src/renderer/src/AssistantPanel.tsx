@@ -5,6 +5,7 @@ import { redactionNotice, type ScreenPreview } from '../../shared/screen-contrac
 import type { TranscriptRecord } from '../../shared/voice-contracts'
 import { Character } from './Character'
 import { SettingsPanel } from './SettingsPanel'
+import { TrustWarning } from './TrustWarning'
 import { HistoryPanel } from './HistoryPanel'
 import { VoiceButton } from './VoiceButton'
 import { matchVoiceIntent, needsConfirmation } from './voice/intents'
@@ -279,6 +280,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       <button className="active-open" onClick={() => openConversation(active.conversationId)}>{activity}<span className="thinking-dots">…</span></button>
       <button className="stop-button" onClick={() => void stop()}>■ Stop</button>
     </div>}
+    <TrustWarning bridge={bridge} />
     {assistant?.highlight && <div className="highlight-status" role="status">
       <span>Click the highlighted control to clear the marker</span>
       <button className="text-button" onClick={() => void bridge.dismissHighlight().then(unwrap).catch((problem) => setError(displayError(problem)))}>Dismiss highlight</button>
