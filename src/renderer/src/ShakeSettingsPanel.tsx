@@ -29,7 +29,7 @@ export function ShakeSettingsPanel({ bridge }: { bridge: DesktopBridge }) {
   return <section className="shake-settings" aria-label="Shake to Help settings">
     <h3>Shake to Help</h3>
     <p className="field-hint">Move your cursor back and forth quickly to run one saved instruction near the cursor.</p>
-    <p className="notice warning">When enabled, each deliberate shake automatically captures the entire display under your cursor and sends it with this instruction to Anthropic. API usage may incur charges. There is no preview step for shakes.</p>
+    <p className="notice warning">When enabled, each deliberate shake automatically captures the entire display under your cursor and sends it with this instruction to your AI provider. API usage may incur charges. There is no preview step for shakes.</p>
     {settings ? <form className="settings-form" onSubmit={save}>
       <label className="checkbox-label"><input type="checkbox" checked={settings.enabled} disabled={busy}
         onChange={(event) => { setSettings({ ...settings, enabled: event.target.checked }); setNotice('') }} />Enable Shake to Help</label>

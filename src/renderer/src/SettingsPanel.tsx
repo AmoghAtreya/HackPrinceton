@@ -41,14 +41,14 @@ export function SettingsPanel({ bridge, config, active }: {
 
   return <section className="settings-view">
     <span className="eyebrow">MAKE TRIAGE YOURS</span>
-    <h2>Connect Claude</h2>
-    <p className="section-description">Use your own Anthropic API key. Your key never appears in saved conversations.</p>
+    <h2>Connect your AI</h2>
+    <p className="section-description">Use your own Anthropic (Claude) or Google AI Studio (Gemini) API key. Triage picks the provider from the key. Your key never appears in saved conversations.</p>
     <div className="connection-status"><i className={config.configured ? 'connected' : ''} />
       {config.configured ? `Connected · ${config.keyStorage === 'session' ? 'this session only' : 'encrypted on this Mac'}` : 'Not connected'}
     </div>
     {config.warning && <p className="notice warning" role="status">{config.warning}</p>}
     <form className="settings-form" onSubmit={connect}>
-      <label htmlFor="api-key">Anthropic API key</label>
+      <label htmlFor="api-key">Anthropic or Gemini API key</label>
       <input id="api-key" type="password" autoComplete="off" spellCheck={false}
         placeholder={config.configured ? 'Enter a replacement key…' : 'Paste your API key…'}
         value={key} maxLength={512} onChange={(event) => setKey(event.target.value)} disabled={busy || active} />
@@ -62,13 +62,13 @@ export function SettingsPanel({ bridge, config, active }: {
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice success" role="status">{notice}</p>}
     <div className="model-setting">
-      <label htmlFor="model">Claude model</label>
+      <label htmlFor="model">Model</label>
       <select id="model" value={config.model} disabled={!config.models.length || busy || active}
         onChange={(event) => void select(event.target.value)}>
         {!config.models.length && <option value="">Connect to load available models</option>}
         {config.models.map((model) => <option value={model.id} key={model.id}>{model.label}</option>)}
       </select>
-      <p className="field-hint">Models are loaded from Anthropic for your key. API usage may incur charges; check your account’s pricing.</p>
+      <p className="field-hint">Models are loaded from your provider for this key. API usage may incur charges; check your account’s pricing.</p>
     </div>
     {(config.configured || config.keyStorage === 'locked') &&
       <button className="text-button danger" disabled={busy || active} onClick={() => void remove()}>Remove key from Triage</button>}
@@ -77,7 +77,7 @@ export function SettingsPanel({ bridge, config, active }: {
     <RequestLogSettingsPanel bridge={bridge} />
     <div className="privacy-note">
       <strong>Your data</strong>
-      <p>Messages and recent context go to Anthropic for replies. Conversations are saved unencrypted on this Mac. Recognized keys and tokens are redacted, but avoid sharing secrets.</p>
+      <p>Messages and recent context go to your AI provider (Anthropic or Google) for replies. Conversations are saved unencrypted on this Mac. Recognized keys and tokens are redacted, but avoid sharing secrets.</p>
       <p>Triage uses a bounded recent context, not your entire saved history. Screen capture is available from Chat: preview locally, then explicitly send it for explanation. With Shake to Help enabled, a shake sends a screen capture automatically using your saved instruction. Images are not saved. Alaska flight searches run in a separate visible browser; Triage never selects a fare or purchases a ticket.</p>
       <p>Voice input is sent to Amazon Transcribe to write down what you said, and spoken replies are sent to Amazon Polly to generate audio. Transcripts are saved unencrypted on this Mac; audio is not saved.</p>
     </div>

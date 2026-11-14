@@ -364,7 +364,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
           <span className="eyebrow">A LITTLE COMPANY FOR YOUR COMPUTER</span>
           <h1>Hello, I'm Triage<span>.</span></h1>
           <p>Ask a question, or ask me to search Alaska Airlines flights.</p>
-          {!ready ? <button className="primary-button welcome-connect" onClick={() => setView('settings')}>Connect your Anthropic key</button> :
+          {!ready ? <button className="primary-button welcome-connect" onClick={() => setView('settings')}>Connect your AI key</button> :
             <div className="welcome-note"><span className="note-symbol">↗</span><div><strong>Pick up where you left off</strong><p>Your conversations are saved here.<br />Find them any time in History.</p></div></div>}
         </div>}
       {view === 'chat' && <div ref={bottom} />}
@@ -379,12 +379,12 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       </div>
       {capture && <div className="screen-preview">
         <img src={capture.dataUrl} alt="Current display screenshot preview" />
-        <div><strong>{capture.metadata.displayName}</strong><p>Sent to Anthropic only when you submit. Not saved; expires in one minute.</p>
+        <div><strong>{capture.metadata.displayName}</strong><p>Sent to your AI provider only when you submit. Not saved; expires in one minute.</p>
           <label className="checkbox-label"><input type="checkbox" checked={highlightMode} onChange={(event) => setHighlightMode(event.target.checked)} />Show me where to click</label>
           {highlightMode && <p>Describe the control below. The marker stays until you click the control or dismiss it. If the screen moves, dismiss and capture again.</p>}
           <button className="text-button" onClick={() => { setCapture(null); void bridge.discardScreen() }}>Discard screenshot</button></div>
       </div>}
-      <div className="preview-label"><span />{active ? activity : ready ? 'Connected to Claude' : 'Connect a key to start'}
+      <div className="preview-label"><span />{active ? activity : ready ? `Connected · ${assistant?.config.model}` : 'Connect a key to start'}
         <span className="preview-description">Saved on this Mac</span></div>
       <form className="composer" onSubmit={submit}>
         <label className="sr-only" htmlFor="message">Message Triage</label>
