@@ -27,6 +27,13 @@ import { ShakePreferences } from './gestures/settings'
 import { ShakeMonitor } from './gestures/monitor'
 import { redact } from './assistant/redaction'
 import { AppProblem } from './assistant/errors'
+import { DEFAULT_BROWSER_CHANNEL, browserChannelFrom, type BrowserChannel } from '../shared/browser-config'
+
+// A typo in TRIAGE_BROWSER_CHANNEL should not stop the app from launching.
+function configuredBrowserChannel(): BrowserChannel {
+  try { return browserChannelFrom(process.env) }
+  catch (error) { console.warn(String(error)); return DEFAULT_BROWSER_CHANNEL }
+}
 
 app.setName('Triage')
 // Allows authorized acceptance testing without touching the user's normal history.
@@ -190,7 +197,7 @@ if (!app.requestSingleInstanceLock()) {
     browser = new BrowserSupervisor(() => utilityProcess.fork(join(__dirname, 'browser-worker.js'), [], {
       serviceName: 'Triage flight search', stdio: 'ignore',
       env: Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'LANG'].flatMap((name) => process.env[name] ? [[name, process.env[name]!]] : []))
-    }), join(directory, 'browser-profile'), () => highlights?.clear())
+    }), join(directory, 'browser-profile'), () => highlights?.clear(), configuredBrowserChannel())
     assistant = new AssistantCoordinator({
       history: new HistoryStore(join(directory, 'history.sqlite')),
       credentials, gateway: new ClaudeGateway(), screens, highlights, browser,
