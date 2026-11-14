@@ -41,8 +41,12 @@ export function finalizeView(draft: SimplifiedViewDraft, page: DistilledPage, ra
 export function rulesView(page: DistilledPage, ranked: PageElement[], arm: PresentationArm): SimplifiedView {
   const heading = page.elements.find((el) => el.kind === 'heading' && el.level === 1) ?? page.elements.find((el) => el.kind === 'heading')
   const title = (heading?.label || page.title || 'This page').slice(0, 120)
-  const sentences = page.mainText.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter((s) => s.length > 30)
-  const summary = sentences.slice(0, arm.verbosity === 'terse' ? 2 : 4).map((s) => s.slice(0, 400))
+  // One point per real paragraph (long, ends like a sentence), so link rows and
+  // bylines are skipped. Terse arms keep each paragraph's first sentence.
+  const paragraphs = page.mainText.split('\n').map((line) => line.trim()).filter((line) => line.length >= 80 && /[.!?]["”)]?$/.test(line))
+  const firstSentence = (text: string) => /^.*?[.!?](?=\s|$)/.exec(text)?.[0] ?? text
+  const summary = paragraphs.slice(0, arm.verbosity === 'terse' ? 3 : 5)
+    .map((text) => (arm.verbosity === 'terse' ? firstSentence(text) : text).slice(0, 400))
   const actions = ranked.slice(0, arm.maxActions).map((el) => toAction(el, page))
   const narration = arm.voiceNarration ? [title + '.', ...summary.slice(0, 1), actions.length ? 'You can choose: ' + actions.map((a) => a.label).join(', ') + '.' : ''].join(' ').trim() : ''
   return { title, purpose: page.title.slice(0, 240) || title, summary, actions, narration, concerns: [], source: 'rules' }
