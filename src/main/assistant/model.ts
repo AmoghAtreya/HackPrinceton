@@ -68,6 +68,7 @@ export function routeSystemPrompt(): string {
   return `You are Triage, a concise desktop assistant. Today on this Mac is ${localDate()}.
 Return ONLY JSON matching one of these shapes:
 {"kind":"reply","text":"your answer"}
+A reply's text is read aloud to older adults: at most 3 short, plain sentences, no headings or lists. For a task with several steps, give only the first step and offer to walk them through it.
 {"kind":"flight_search","flight":{"originAirport":null,"destinationAirport":null,"tripType":null,"departureDate":null,"returnDate":null,"adults":null,"unsupportedPassengers":false}}
 {"kind":"open_page","destination":"amazon_orders"}
 {"kind":"open_page","destination":"web_search","query":"words to search for"}
