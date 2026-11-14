@@ -119,9 +119,9 @@ export class AssistantCoordinator {
 
   clearHighlight(): void { this.highlights?.clear() }
 
-  send(input: unknown): SendReceipt { return this.accept(input, 'chat') }
+  send(input: unknown): SendReceipt { return this.accept(input) }
 
-  private accept(input: unknown, source: 'chat' | 'voice'): SendReceipt {
+  private accept(input: unknown): SendReceipt {
     const request = validated(sendSchema, input)
     this.idle()
     if (this.storageError) throw new AppProblem('storage', this.storageError)
@@ -133,7 +133,7 @@ export class AssistantCoordinator {
       if (!this.screens) throw new AppProblem('screen_unavailable', 'Screen capture is unavailable.')
       image = this.screens.take(request.captureId)
     }
-    return this.start(request, key, model, image, undefined, undefined, source)
+    return this.start(request, key, model, image, undefined, undefined, request.source ?? 'chat')
   }
 
   shake(trigger: ShakeTrigger, instruction: string, capture: () => Promise<ScreenPreview>, mode: 'explain' | 'highlight' = 'explain'): SendReceipt | null {
