@@ -722,11 +722,14 @@ export class AssistantCoordinator {
     if (stopped()) return null
     if (this.guide !== guide) return { reply: result.explanation, result: { ...result, target: null, elementId: undefined }, plan: null, outcome: 'guide_ended', image, used }
     if (result.done) {
+      console.info(`Guide finished after ${guide.stepCount} steps.`)
       this.endGuide()
       return { reply: result.explanation, result, plan: null, outcome: 'guide_done', image, used }
     }
     const pointed = this.pointAt(request, image, result, snapshot)
     const step = guide.shown(request.id, result.explanation)
+    // Shape only, never screen text: enough to see from the log whether boxes are being drawn.
+    console.info(`Guide step ${step}: ${pointed.plan ? (pointed.plan.anchor ? 'outlined a listed control' : 'outlined a pixel box') : 'nothing to outline (' + pointed.outcome + ')'}; ${candidates.length} controls offered.`)
     let reply = `Step ${step}: ${result.explanation}`
     if (pointed.note) reply += '\n\n' + pointed.note.replace('Capture again before asking where to click.', 'Say “next” and I’ll look again.').replace('Try a fresh capture.', 'Say “next” and I’ll look again.')
     if (guide.exhausted) {
