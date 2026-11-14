@@ -31,7 +31,27 @@ export function distillDocument(limit: number): unknown {
     return true
   }
 
+  const PROMO_TOKEN = /^(ad|ads|advert|advertisement|sponsor|sponsored|promo|promotion|banner-ad|adslot)$/i
+  const PROMO_LABEL = /^\s*(sponsored|advertisement|ad|promoted)\b/i
+  const OVERLAY_TOPIC = /cookie|consent|newsletter|subscribe|sign up for/i
+  const isPromo = (el: Element): boolean => {
+    let node: Element | null = el
+    for (let depth = 0; node && depth < 8; depth++, node = node.parentElement) {
+      const tokens = [...Array.from(node.classList), ...(node.id ? node.id.split(/[-_\s]+/) : [])]
+      if (tokens.some((token) => PROMO_TOKEN.test(token))) return true
+      // A small block that announces itself as an ad. Size-limited so a page
+      // wrapper whose first child happens to be an ad is not swept up.
+      if (node.tagName === 'DIV' || node.tagName === 'SECTION' || node.tagName === 'ASIDE') {
+        const text = (node as HTMLElement).innerText ?? ''
+        if (text.length < 300 && PROMO_LABEL.test(text.slice(0, 40))) return true
+      }
+    }
+    const dialog = el.closest('dialog, [role="dialog"], [role="alertdialog"]')
+    return Boolean(dialog && OVERLAY_TOPIC.test((dialog.getAttribute('aria-label') ?? '') + ' ' + (dialog.textContent ?? '').slice(0, 300)))
+  }
+
   const regionOf = (el: Element): string => {
+    if (isPromo(el)) return 'promo'
     if (el.closest('dialog, [role="dialog"], [role="alertdialog"]')) return 'dialog'
     if (el.closest('main, [role="main"], article')) return 'main'
     if (el.closest('nav, [role="navigation"]')) return 'nav'

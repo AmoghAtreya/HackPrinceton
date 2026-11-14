@@ -8,7 +8,8 @@ import { z } from 'zod'
 
 export const elementKinds = ['button', 'link', 'input', 'select', 'textarea', 'checkbox', 'radio', 'heading', 'text'] as const
 export type ElementKind = typeof elementKinds[number]
-export const pageRegions = ['main', 'header', 'nav', 'aside', 'footer', 'dialog', 'other'] as const
+// 'promo': ads, sponsored blocks, and cookie / newsletter pop-ups. Never what the person came for.
+export const pageRegions = ['main', 'header', 'nav', 'aside', 'footer', 'dialog', 'promo', 'other'] as const
 export type PageRegion = typeof pageRegions[number]
 
 export const pageElementSchema = z.object({
