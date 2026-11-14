@@ -1,4 +1,9 @@
-# Voice input (Amazon Transcribe)
+# Voice input (Apple on-device speech or Amazon Transcribe)
+
+> **Default: free on-device Apple speech.** Triage turns speech into text with Apple's Speech framework, entirely on this Mac. There's no cost, no AWS account, and it works offline. Amazon Transcribe is still available with `TRIAGE_SPEECH_TO_TEXT=transcribe` (it needs an AWS account on the **Paid** plan; new Free-plan accounts can't use Transcribe). Both backends share the same talk button, captions, controller and storage behind `SpeechToTextService` (`src/main/voice/speech-to-text.ts`).
+>
+> **Apple speech setup:** run `npm run speech:build` once. It builds `release/TriageSpeechHelper.app`, a tiny helper app with its own identity. The first time you talk, macOS asks whether **Triage Speech** may use Speech Recognition; click **Allow**. Triage launches the helper through Launch Services for each recording and streams it the 16 kHz PCM it already captured, over a Unix socket in a private temp folder. The helper uses `requiresOnDeviceRecognition`, so audio never goes to Apple's servers. Code: `native/speech/TriageSpeechHelper.swift`, `src/main/voice/apple-speech.ts`.
+
 
 The chat window has a **Hold to talk** button. Hold it while speaking and let go to stop. A quick tap starts recording, and a second tap stops it. Esc cancels. Live captions appear as you speak. When you stop, the finished transcript is saved locally and handed to the chatbot (see [Voice commands](#voice-commands)).
 

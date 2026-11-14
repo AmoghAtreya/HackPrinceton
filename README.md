@@ -44,7 +44,7 @@ Built for older users:
 
 ```
              ┌──────────────────────── Electron app (runs in the background) ─────────────────────────┐
- mic ──▶ chat window: AudioWorklet → 16 kHz PCM ──IPC──▶ main process ──▶ Amazon Transcribe (streaming)
+ mic ──▶ chat window: AudioWorklet → 16 kHz PCM ──IPC──▶ main process ──▶ Apple on-device speech (free) or Amazon Transcribe
                      live captions ◀───────────────────── partial / final text
                      voice shortcuts (stop, explain, show-me-where) ─┐
                      "Did I hear that right?" check                  │
@@ -62,7 +62,7 @@ Built for older users:
 AWS credentials stay in the main process. The chat window never sees them.
 
 ### AWS services
-- **Amazon Transcribe (streaming):** speech-to-text with live partial captions and per-word confidence.
+- **Amazon Transcribe (streaming):** optional cloud speech-to-text with live partial captions and per-word confidence. It needs an AWS account on the Paid plan. By default Triage uses **free on-device Apple speech** instead (no audio leaves the Mac).
 - **Amazon Polly (neural voices):** spoken replies, with the speed set through SSML.
 - *Planned:* Amazon Comprehend (removing personal details from shared questions), DynamoDB (anonymous request log for FAQs), SNS (caregiver alerts).
 
@@ -73,12 +73,13 @@ Requirements: macOS on Apple Silicon, Node 22 (`.nvmrc`), and an **Anthropic (Cl
 ```bash
 npm install
 npm run browser:install     # Chromium for the flight-search task browser
+npm run speech:build        # free on-device speech helper (voice input)
 ```
 
-AWS credentials for voice. Create an IAM user that has only these permissions:
+AWS credentials for spoken replies (Amazon Polly). Create an IAM user that has only these permissions (Transcribe is only needed if you opt into it):
 
 ```json
-{ "Effect": "Allow", "Action": ["transcribe:StartStreamTranscription", "polly:SynthesizeSpeech"], "Resource": "*" }
+{ "Effect": "Allow", "Action": ["polly:SynthesizeSpeech", "transcribe:StartStreamTranscription"], "Resource": "*" }
 ```
 
 Then:
@@ -86,9 +87,14 @@ Then:
 ```bash
 # ~/.aws/credentials holds a [triage-dev] profile with that user's key
 AWS_PROFILE=triage-dev AWS_REGION=us-east-1 npm run dev
+# New Free-plan AWS accounts: Polly works only in us-east-2 (standard voices), so add:
+#   TRIAGE_POLLY_REGION=us-east-2
+# To use Amazon Transcribe instead of on-device speech (Paid-plan accounts only), add:
+#   TRIAGE_SPEECH_TO_TEXT=transcribe
 ```
 
-macOS asks for microphone access the first time you press **Hold to talk**. Without AWS credentials, everything except voice still works. Spoken replies then use the Mac's built-in voice.
+- **First time you press Hold to talk:** macOS asks for **microphone** access (Triage), then **Speech Recognition** (Triage Speech).
+- **Without AWS credentials:** voice input still works (it's on-device). Spoken replies then use the Mac's built-in voice.
 
 ```bash
 npm test          # node:test suite
@@ -101,7 +107,8 @@ npm run build
 | Path | What |
 |---|---|
 | `src/main/` | Electron main process: windows, assistant coordinator, screen capture and highlight overlay, gestures |
-| `src/main/voice/` | Amazon Transcribe session, audio queue, transcript store |
+| `src/main/voice/` | voice sessions, Apple on-device speech and Amazon Transcribe backends, audio queue, transcript store |
+| `native/speech/` | Swift helper app for free on-device speech recognition |
 | `src/main/speech/` | Amazon Polly, voice reply settings |
 | `src/shared/destinations.ts` | the approved list of places Triage can open |
 | `src/renderer/src/` | React UI: chat, talk button, settings |
@@ -112,7 +119,7 @@ npm run build
 ## Privacy and safety
 
 - **Screenshots** are taken only when you ask (button, voice shortcut or shake), are sent to the model for that one request, and are never saved.
-- **Voice audio** is streamed to Amazon Transcribe only while you hold or tap the talk button, and is never saved. Transcripts are saved on this Mac.
+- **Voice audio** is captured only while you hold or tap the talk button and is never saved. By default it's transcribed **on this Mac** (Apple on-device speech, no server fallback). If you opt into Amazon Transcribe, it's streamed to AWS instead. Transcripts are saved on this Mac.
 - **Conversations** are saved on this Mac (unencrypted). Known API keys are removed from saved text.
 - **Help improve Triage** (off by default) keeps an anonymous log of questions only, never screenshots or audio. You can delete it in Settings at any time.
 - **Triage never buys anything, enters passwords or payment details, or picks a flight fare.** Pages open only from the approved list, over https.
