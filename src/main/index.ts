@@ -1,3 +1,4 @@
+import { PhishingMonitor } from './phishing/monitor'
 import { VoiceShortcut } from './voice/shortcut'
 import { VoiceSession } from './voice/session'
 import { VoicePreferences } from './voice/settings'
@@ -51,6 +52,8 @@ let removeShakeListeners: (() => void) | undefined
 let presentedGesture: string | undefined
 let voiceShortcut: VoiceShortcut | undefined
 let voice: VoiceSession | undefined
+let phishing: PhishingMonitor | undefined
+let phishingEnabled = false
 let removeVoiceIpc: (() => void) | undefined
 
 function trusted(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
@@ -74,6 +77,15 @@ function buildControls(): Electron.Menu {
     { label: 'Open chat', click: () => desktop?.openChat() },
     { label: 'Hide Triage', click: () => desktop?.hide() },
     { label: 'Stop current task', click: () => assistant?.stopActive() },
+    {
+      label: 'Chrome Link Warnings (Preview)', type: 'checkbox', checked: phishingEnabled,
+      enabled: Boolean(phishing), click: (item) => {
+        phishingEnabled = item.checked
+        if (phishingEnabled) phishing?.start()
+        else phishing?.stop()
+        tray?.setContextMenu(buildControls())
+      }
+    },
     { type: 'separator' },
     { label: 'Quit Triage', accelerator: 'CommandOrControl+Q', click: () => app.quit() }
   ])
@@ -139,7 +151,7 @@ if (!app.requestSingleInstanceLock()) {
     // Each cleanup runs even when another resource has already failed.
     const voiceClosed = Promise.all([voiceShortcut?.dispose(), voice?.dispose()])
     const cleanup = [
-      () => removeVoiceIpc?.(),
+      () => removeVoiceIpc?.(), () => phishing?.stop(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(),
@@ -175,6 +187,17 @@ if (!app.requestSingleInstanceLock()) {
       return { x: x + 16, y: y + 16 }
     })
     await overlay.initialize()
+    if (process.platform === 'darwin') {
+      const helper = join(app.getAppPath(), 'release/TriageLinkScanner')
+      phishing = new PhishingMonitor(helper, () => Boolean(quitting || desktop?.isCapturing),
+        (state) => overlay?.drawWarnings(state), (permissionDenied) => {
+          phishingEnabled = false
+          tray?.setContextMenu(buildControls())
+          dialog.showErrorBox('Chrome Link Warnings paused', permissionDenied
+            ? 'Allow TriageLinkScanner (or the app that launched Triage) in System Settings → Privacy & Security → Accessibility, then turn Link Warnings back on.'
+            : 'Build the local helper with npm run phishing:build, then turn Link Warnings back on.')
+        })
+    }
     highlights = new HighlightController({
       display: (id) => overlay!.display(id), draw: (state) => overlay!.draw(state), hide: () => overlay!.hide(),
       blocked: (target) => desktop!.coversTarget(target), observeClick: observeTargetClick
@@ -186,7 +209,7 @@ if (!app.requestSingleInstanceLock()) {
       window.on('show', () => overlay?.refreshArrow())
       window.on('hide', () => overlay?.refreshArrow())
     }
-    screens = new ScreenService(electronCapture(desktop))
+    screens = new ScreenService(electronCapture(desktop, () => phishing?.clear()))
     browser = new BrowserSupervisor(() => utilityProcess.fork(join(__dirname, 'browser-worker.js'), [], {
       serviceName: 'Triage flight search', stdio: 'ignore',
       env: Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'LANG'].flatMap((name) => process.env[name] ? [[name, process.env[name]!]] : []))
@@ -265,12 +288,12 @@ if (!app.requestSingleInstanceLock()) {
       screens?.clear()
       highlights?.clear()
     }
-    const reset = () => { shakeMonitor?.reset(); interrupt('Interrupted because the display configuration changed.') }
+    const reset = () => { phishing?.clear(); shakeMonitor?.reset(); interrupt('Interrupted because the display configuration changed.') }
     const paused = new Set<string>()
-    const sleep = () => { paused.add('sleep'); voiceShortcut?.suspend(); voice?.suspend(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac went to sleep.') }
-    const lock = () => { paused.add('lock'); voiceShortcut?.suspend(); voice?.suspend(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac was locked.') }
-    const wake = () => { paused.delete('sleep'); if (!paused.size) { shakeMonitor?.resume(); voice?.resume(); voiceShortcut?.resume() } }
-    const unlock = () => { paused.delete('lock'); if (!paused.size) { shakeMonitor?.resume(); voice?.resume(); voiceShortcut?.resume() } }
+    const sleep = () => { paused.add('sleep'); phishing?.stop(); voiceShortcut?.suspend(); voice?.suspend(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac went to sleep.') }
+    const lock = () => { paused.add('lock'); phishing?.stop(); voiceShortcut?.suspend(); voice?.suspend(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac was locked.') }
+    const wake = () => { paused.delete('sleep'); if (!paused.size) { if (phishingEnabled) phishing?.start(); shakeMonitor?.resume(); voice?.resume(); voiceShortcut?.resume() } }
+    const unlock = () => { paused.delete('lock'); if (!paused.size) { if (phishingEnabled) phishing?.start(); shakeMonitor?.resume(); voice?.resume(); voiceShortcut?.resume() } }
     powerMonitor.on('suspend', sleep)
     powerMonitor.on('resume', wake)
     powerMonitor.on('lock-screen', lock)
