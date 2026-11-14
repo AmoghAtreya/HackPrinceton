@@ -32,6 +32,12 @@ type LocalCommand =
   | { kind: 'resume'; answer: string }
   | { kind: 'where' }
 
+const SIMPLIFY_PROGRESS: Record<SimplifyCommand['kind'], string> = {
+  current: 'Rebuilding the page you have open in a simpler way…',
+  url: 'Opening and simplifying the page…',
+  demo: 'Simplifying the example page…'
+}
+
 // Triage is single-user on this Mac; the simplifier keys its learning by this ID.
 const LOCAL_USER = 'local-user'
 
@@ -494,7 +500,7 @@ export class AssistantCoordinator {
         reply = await this.simplifyFront(request, key, used.model)
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
       } else if (request.simplify && this.simplifier) {
-        request.progress = request.simplify.url ? 'Opening and simplifying the page…' : 'Simplifying the demo page…'
+        request.progress = SIMPLIFY_PROGRESS[request.simplify.kind]
         this.emit()
         used = pick('simplify')
         const simplified = await this.simplifier.simplify(request.simplify, LOCAL_USER, { key, model: used.model }, request.controller.signal)

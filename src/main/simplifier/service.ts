@@ -18,22 +18,32 @@ export interface SimplifiedPresenter {
   show(html: string, title: string): void
 }
 
-export interface SimplifyCommand {
-  /** An http(s) URL, or null for the built-in demo page. */
-  url: string | null
-}
+/**
+ * What to simplify:
+ * - current: the page open in the person's own browser right now ("/simplify")
+ * - url: a typed address ("/simplify example.com")
+ * - demo: the built-in example page ("/examplesimplify")
+ */
+export type SimplifyCommand = { kind: 'current' } | { kind: 'url'; url: string } | { kind: 'demo' }
 
-/** Parse "/simplify <url>" or "/simplify demo". Returns null when the text is not a simplify command. */
+export const NO_CURRENT_TAB = 'I couldn’t tell which web page you have open. Open the page in Chrome, click on it, then type /simplify again. You can also type /simplify followed by a web address.'
+
+/**
+ * Parse "/simplify", "/simplify <url>" or "/examplesimplify".
+ * Returns null when the text is not a simplify command.
+ */
 export function parseSimplifyCommand(text: string): SimplifyCommand | null {
-  const match = /^\/simplify(?:\s+(\S+))?\s*$/i.exec(text.trim())
+  const trimmed = text.trim()
+  if (/^\/examplesimplify\s*$/i.test(trimmed)) return { kind: 'demo' }
+  const match = /^\/simplify(?:\s+(\S+))?\s*$/i.exec(trimmed)
   if (!match) return null
   const target = match[1]
-  if (!target || target.toLowerCase() === 'demo') return { url: null }
+  if (!target) return { kind: 'current' }
   let url: URL
   try { url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(target) ? target : 'https://' + target) }
-  catch { throw new AppProblem('invalid_url', 'That does not look like a web address. Try /simplify example.com or /simplify demo.') }
+  catch { throw new AppProblem('invalid_url', 'That does not look like a web address. Type /simplify on its own for the page you have open, /simplify example.com, or /examplesimplify for the example page.') }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new AppProblem('invalid_url', 'Only http and https pages can be simplified.')
-  return { url: url.href }
+  return { kind: 'url', url: url.href }
 }
 
 /** Implicit signals gathered while a simplified page is on screen. */
@@ -62,6 +72,7 @@ export class SimplifierService {
   private readonly observed: (decisionId: string) => ObservedSignals | undefined
   private readonly reported: (userId: string, pageType: PageType, signals: ObservedSignals) => void
   private readonly now: () => number
+  private readonly currentTab: () => Promise<string | undefined>
   private readonly sessions = new Map<string, ViewSession>()
   private current?: ViewSession
 
@@ -72,7 +83,10 @@ export class SimplifierService {
     observed?: (decisionId: string) => ObservedSignals | undefined
     /** Told what was observed on a page once its outcome is reported, e.g. to update the skill graph. */
     reported?: (userId: string, pageType: PageType, signals: ObservedSignals) => void
+    /** The address open in the person's own browser, for a bare "/simplify". */
+    currentTab?: () => Promise<string | undefined>
   }) {
+    this.currentTab = options.currentTab ?? (async () => undefined)
     this.reported = options.reported ?? (() => {})
     this.observed = options.observed ?? (() => undefined)
     this.log = options.log
@@ -103,8 +117,12 @@ export class SimplifierService {
   }
 
   async simplify(command: SimplifyCommand, userId: string, credentials: { key: string; model: string } | undefined, signal: AbortSignal): Promise<SimplifyResult> {
+    // Read the address before Triage's Chromium opens, so its window is never mistaken for the person's page.
+    const url = command.kind === 'url' ? command.url : command.kind === 'current' ? await this.currentTab() : undefined
+    if (command.kind === 'current' && !url) throw new AppProblem('no_current_page', NO_CURRENT_TAB)
+    if (signal.aborted) throw new AppProblem('stopped', 'Simplification stopped.')
     const page = await this.page()
-    if (command.url) await page.goto(command.url, { waitUntil: 'load' })
+    if (url) await page.goto(url, { waitUntil: 'load' })
     else await page.setContent(this.demoHtml, { waitUntil: 'load' })
     if (signal.aborted) throw new AppProblem('stopped', 'Simplification stopped.')
     await page.bringToFront().catch(() => {})
