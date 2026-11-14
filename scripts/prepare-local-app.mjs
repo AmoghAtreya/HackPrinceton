@@ -97,6 +97,11 @@ try {
     }
   }
   signRuntime(join(staging, 'Contents', 'Frameworks'))
+  // macOS requires a usage description before any app may open the microphone.
+  const micKey = 'NSMicrophoneUsageDescription'
+  const micText = 'Triage listens only while you hold or tap the talk button, and sends that audio to Amazon Transcribe to write down what you said.'
+  const micPresent = spawnSync('/usr/libexec/PlistBuddy', ['-c', 'Print :' + micKey, plist], { encoding: 'utf8' }).status === 0
+  run('/usr/libexec/PlistBuddy', ['-c', (micPresent ? 'Set :' + micKey + ' ' : 'Add :' + micKey + ' string ') + micText, plist])
   run('/usr/bin/codesign', ['--force', '--sign', '-', staging])
   run('/usr/bin/codesign', ['--verify', '--deep', '--strict', staging])
   // Replacing this generated app never removes application user data.
