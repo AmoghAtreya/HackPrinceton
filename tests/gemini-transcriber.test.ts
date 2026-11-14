@@ -1,0 +1,61 @@
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+import { GeminiTranscriber, pcmToWav, transcriptionHints } from '../src/main/voice/gemini-transcriber.ts'
+
+const key = 'AIza' + 'x'.repeat(35)
+const signal = new AbortController().signal
+const audio = [new Uint8Array([1, 0, 2, 0]), new Uint8Array([3, 0])]
+
+function fakeFetch(respond: () => Response | Promise<Response>) {
+  const calls: Array<{ url: string; init: RequestInit }> = []
+  const fetcher = (async (url: string | URL, init: RequestInit = {}) => { calls.push({ url: String(url), init }); return respond() }) as typeof fetch
+  return { fetcher, calls }
+}
+const answer = (text: string) => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text }] } }] }))
+
+test('PCM becomes a valid 16 kHz mono WAV', () => {
+  const wav = pcmToWav(audio, 16000)
+  assert.equal(wav.length, 44 + 6)
+  assert.equal(wav.toString('ascii', 0, 4), 'RIFF')
+  assert.equal(wav.toString('ascii', 8, 12), 'WAVE')
+  assert.equal(wav.readUInt32LE(24), 16000)
+  assert.equal(wav.readUInt16LE(22), 1)
+  assert.equal(wav.readUInt32LE(40), 6)
+  assert.deepEqual([...wav.subarray(44)], [1, 0, 2, 0, 3, 0])
+})
+
+test('the recording is sent as audio/wav with word hints, and the key stays out of the URL', async () => {
+  const { fetcher, calls } = fakeFetch(() => answer('{"text":"Open Gmail.","clarity":"clear"}'))
+  const result = await new GeminiTranscriber({ fetcher, model: 'gemini-2.5-flash' }).transcribe(key, audio, 16000, signal)
+  assert.deepEqual(result, { text: 'Open Gmail.', clarity: 'clear' })
+  assert.doesNotMatch(calls[0].url, /AIza/)
+  assert.match(calls[0].url, /gemini-2\.5-flash:generateContent$/)
+  const body = JSON.parse(String(calls[0].init.body))
+  assert.equal(body.contents[0].parts[0].inline_data.mime_type, 'audio/wav')
+  assert.match(body.contents[0].parts[1].text, /Gmail/)
+  assert.match(transcriptionHints(), /Medicare/)
+})
+
+test('any failure returns null so the on-device transcript is kept', async () => {
+  const cases: Array<() => Response | Promise<Response>> = [
+    () => new Response('{"error":{}}', { status: 429 }),
+    () => new Response('{"error":{}}', { status: 400 }),
+    () => answer('not json'),
+    () => answer('{"words":"wrong shape"}'),
+    () => { throw new TypeError('fetch failed') }
+  ]
+  for (const respond of cases) {
+    const { fetcher } = fakeFetch(respond)
+    assert.equal(await new GeminiTranscriber({ fetcher }).transcribe(key, audio, 16000, signal), null)
+  }
+  assert.equal(await new GeminiTranscriber({ fetcher: fakeFetch(() => answer('{}')).fetcher }).transcribe(key, [], 16000, signal), null)
+})
+
+test('a slow Gemini reply times out and falls back', async () => {
+  const fetcher = ((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+  })) as unknown as typeof fetch
+  const started = Date.now()
+  assert.equal(await new GeminiTranscriber({ fetcher, timeoutMs: 50 }).transcribe(key, audio, 16000, signal), null)
+  assert.ok(Date.now() - started < 2000)
+})
