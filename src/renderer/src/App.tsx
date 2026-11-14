@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import type { DesktopBridge, DesktopState } from '../../shared/contracts'
 import { Character } from './Character'
 import { AssistantPanel } from './AssistantPanel'
-import { VoiceStatus } from './VoiceStatus'
 import { HighlightOverlay } from './HighlightOverlay'
 
 const initialState: DesktopState = {
@@ -117,6 +116,5 @@ function DesktopApp({ bridge }: { bridge: DesktopBridge }) {
 export function App() {
   if (new URLSearchParams(window.location.search).get('view') === 'highlight') return <HighlightOverlay />
   if (!window.triage) return <div className="connection-error">Start Triage with <code>npm run dev</code> to use the desktop companion.</div>
-  if (new URLSearchParams(window.location.search).get('view') === 'voice') return <VoiceStatus bridge={window.triage} />
   return <DesktopApp bridge={window.triage} />
 }

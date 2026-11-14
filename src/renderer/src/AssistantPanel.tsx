@@ -3,7 +3,6 @@ import type { DesktopBridge, DesktopState } from '../../shared/contracts'
 import type { AssistantState, ConversationDetail, ConversationPage } from '../../shared/assistant-contracts'
 import type { ScreenPreview } from '../../shared/screen-contracts'
 import { Character } from './Character'
-import { VoiceSettingsPanel } from './VoiceSettingsPanel'
 import { SettingsPanel } from './SettingsPanel'
 import { HistoryPanel } from './HistoryPanel'
 import { displayError, unwrap } from './assistant-ui'
@@ -26,8 +25,6 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   const input = useRef<HTMLTextAreaElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const keepScroll = useRef(false)
-  const voiceCapture = useRef<string | null>(null)
-  const lastVoice = useRef<string | undefined>(undefined)
   const lastGesture = useRef<string | undefined>(undefined)
   const historyVersion = useRef(0)
   const selection = useRef(selected)
@@ -46,23 +43,6 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     }).catch((problem) => { if (active) setError(displayError(problem)) })
     return () => { active = false; off() }
   }, [bridge])
-
-  useEffect(() => {
-    return bridge.onVoiceState((next) => {
-      voiceCapture.current = next.sessionId
-      const receipt = next.receipt
-      if (!receipt || lastVoice.current === receipt.taskId) return
-      lastVoice.current = receipt.taskId
-      setCapture(null); void bridge.discardScreen()
-      setSelected(receipt.conversationId); setView('chat'); setError('')
-      // A typed draft is independent of voice and survives a spoken turn.
-    })
-  }, [bridge])
-
-  useEffect(() => {
-    void bridge.setVoiceContext({ view, conversationId: selected }).then(unwrap)
-      .catch((problem) => setError(displayError(problem)))
-  }, [bridge, view, selected])
 
   useEffect(() => {
     const gesture = assistant?.gestureRequest
@@ -133,8 +113,6 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   }
 
   function openConversation(id: string) {
-    void bridge.setVoiceContext({ view: 'chat', conversationId: id, explicitSelection: true })
-      .then(unwrap).catch((problem) => setError(displayError(problem)))
     setCapture(null); void bridge.discardScreen()
     if (selected !== id) setDetail(null)
     setSelected(id); setView('chat'); setError(''); setDraft('')
@@ -207,12 +185,10 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
         unwrap(await bridge.deleteConversation(id))
         setHistory((current) => ({ ...current, items: current.items.filter((item) => item.id !== id) }))
         if (selected === id) {
-          unwrap(await bridge.setVoiceContext({ view, conversationId: null, explicitSelection: true }))
           setSelected(null); setDetail(null)
         }
       } else {
         unwrap(await bridge.clearHistory())
-        unwrap(await bridge.setVoiceContext({ view, conversationId: null, explicitSelection: true }))
         setHistory({ items: [], next: null }); setSelected(null); setDetail(null)
       }
       return true
@@ -236,8 +212,6 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       {(['chat', 'history', 'settings'] as const).map((tab) => <button key={tab} aria-current={view === tab ? 'page' : undefined}
         onClick={() => { setView(tab); setError('') }}>{tab[0].toUpperCase() + tab.slice(1)}</button>)}
       <button className="new-chat" aria-label="Start a new conversation" title="New conversation" onClick={() => {
-        void bridge.setVoiceContext({ view: 'chat', conversationId: null, explicitSelection: true })
-          .then(unwrap).catch((problem) => setError(displayError(problem)))
         setCapture(null); void bridge.discardScreen(); setSelected(null); setDetail(null); setDraft(''); setError(''); setView('chat')
       }}>+</button>
     </nav>
@@ -293,12 +267,6 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       {view === 'chat' && <div ref={bottom} />}
     </div>
     {view === 'chat' && <footer className="chat-footer">
-      <details className="voice-chat-controls" onToggle={(event) => {
-        if (!event.currentTarget.open && voiceCapture.current) event.currentTarget.open = true
-      }}>
-        <summary>Voice input · click to talk</summary>
-        <VoiceSettingsPanel bridge={bridge} controlsOnly />
-      </details>
       <div className="screen-controls">
         <button className="text-button" disabled={capturing || busy || Boolean(active)} onClick={() => void captureScreen()}>{capturing ? 'Capturing screen…' : 'Capture screen'}</button>
         <button className="text-button" disabled={Boolean(active) || busy} onClick={() => {

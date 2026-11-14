@@ -192,16 +192,3 @@ button:disabled { opacity: .55; cursor: default; }
   outline: 2px solid var(--accent); outline-offset: 3px;
 }
 
-.voice-settings { margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--border, #ddd); }
-.voice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0; }
-.voice-level { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
-.voice-level meter { flex: 1; }
-.voice-provisional { border-left: 3px solid #b6a3dc; padding-left: 12px; font-style: italic; overflow-wrap: anywhere; }
-.voice-draft { display: block; margin: 12px 0 6px; }
-.voice-settings > textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; }
-.voice-chat-controls { margin-bottom: 10px; font-size: 12px; }
-.voice-chat-controls > summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
-.voice-chat-controls > .voice-settings { margin: 6px 0; padding: 8px 2px; border: 0; max-height: 230px; overflow-y: auto; }
-.voice-chat-controls .voice-actions { margin: 8px 0; }
-.voice-chat-controls h3 { margin: 4px 0 8px; }
-.voice-chat-controls textarea { max-height: 100px; }
