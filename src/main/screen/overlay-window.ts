@@ -16,6 +16,9 @@ export class OverlayWindow implements HighlightPort {
       fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, enableLargerThanScreen: true,
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'), additionalArguments: ['--triage-overlay'],
+        // Its own in-memory session: the deny-all permission handler below must not
+        // replace the chat window's handler (which allows the microphone for voice input).
+        partition: 'triage-overlay',
         contextIsolation: true, nodeIntegration: false, sandbox: true,
         webSecurity: true, backgroundThrottling: false
       }

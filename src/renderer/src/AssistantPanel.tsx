@@ -9,6 +9,11 @@ import { TrustWarning } from './TrustWarning'
 import { HistoryPanel } from './HistoryPanel'
 import { VoiceButton } from './VoiceButton'
 import { matchVoiceIntent, needsConfirmation } from './voice/intents'
+import { speechPlayer } from './voice/speech-player'
+import { failureSpeech, prepareSpeech } from '../../shared/speech-text'
+import type { ReadAloud } from '../../shared/speech-contracts'
+import { analysisSpeech, type ScreenAnalysis, type ScreenAnalysisKind } from '../../shared/screen-analysis-contracts'
+import { ScreenHelpCard } from './ScreenHelpCard'
 import { displayError, unwrap } from './assistant-ui'
 import { appendConversations, refreshConversations } from './history-state'
 
@@ -28,10 +33,16 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   const [error, setError] = useState('')
   /** A gentle, non-error message about voice input (e.g. "Did I hear that right?"). */
   const [voiceNotice, setVoiceNotice] = useState('')
+  /** The current simplified view or safety check card, if any. */
+  const [screenHelp, setScreenHelp] = useState<ScreenAnalysis | null>(null)
+  const [analyzing, setAnalyzing] = useState<ScreenAnalysisKind | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const keepScroll = useRef(false)
   const lastGesture = useRef<string | undefined>(undefined)
+  /** Task ids whose reply should be read aloud when it arrives. */
+  const speakTasks = useRef(new Set<string>())
+  const readAloud = useRef<ReadAloud>('voice')
   const historyVersion = useRef(0)
   const selection = useRef(selected)
   selection.current = selected
@@ -51,9 +62,33 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   }, [bridge])
 
   useEffect(() => {
+    // Re-read on every view change so a change saved in Settings applies right away.
+    let active = true
+    bridge.getSpeechSettings().then((result) => { if (active && result.ok) readAloud.current = result.value.readAloud })
+      .catch(() => { /* Keep the default. */ })
+    return () => { active = false }
+  }, [bridge, view])
+
+  useEffect(() => {
+    for (const message of detail?.messages ?? []) {
+      if (!speakTasks.current.has(message.taskId)) continue
+      if (message.role === 'assistant' && message.status === 'completed') {
+        speakTasks.current.delete(message.taskId)
+        void speechPlayer.speak(prepareSpeech(message.content))
+      } else if (message.role === 'user' && ['failed', 'interrupted', 'stopped'].includes(message.status)) {
+        speakTasks.current.delete(message.taskId)
+        // The user stopped it themselves, so there is nothing to announce.
+        if (message.status !== 'stopped') void speechPlayer.speak(failureSpeech(message.error))
+      }
+    }
+  }, [detail?.messages])
+
+  useEffect(() => {
     const gesture = assistant?.gestureRequest
     if (!gesture || lastGesture.current === gesture.taskId) return
     lastGesture.current = gesture.taskId
+    // Shake to Help is hands-free, so its answer is spoken unless replies are muted.
+    if (readAloud.current !== 'off') queueSpeech(gesture.taskId)
     setCapture(null); setDetail(null); setSelected(gesture.conversationId); setView('chat'); setError('')
   }, [assistant?.gestureRequest?.taskId])
 
@@ -129,6 +164,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     setBusy(true); setError(''); setVoiceNotice('')
     try {
       const receipt = unwrap(await bridge.sendMessage({ ...(selected ? { conversationId: selected } : {}), text, source, ...(shot ? { captureId: shot.metadata.id, mode } : {}) }))
+      if (readAloud.current === 'always' || (readAloud.current === 'voice' && source === 'voice')) queueSpeech(receipt.taskId)
       setSelected(receipt.conversationId); setCapture(null); setView('chat')
       if (source === 'chat') setDraft('')
       return true
@@ -143,8 +179,15 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     await deliver(draft.trim() || 'Explain what is happening on this screen. Be specific about visible content and uncertainty.', 'chat', capture, highlightMode ? 'highlight' : 'explain')
   }
 
+  function queueSpeech(taskId: string) {
+    speakTasks.current.add(taskId)
+    // Forget requests whose replies never showed up (e.g. the user switched conversations).
+    while (speakTasks.current.size > 20) speakTasks.current.delete(speakTasks.current.values().next().value!)
+  }
+
   function newConversation() {
-    setCapture(null); void bridge.discardScreen(); setSelected(null); setDetail(null); setDraft(''); setError(''); setVoiceNotice(''); setView('chat')
+    speechPlayer.stop()
+    setCapture(null); void bridge.discardScreen(); setSelected(null); setDetail(null); setDraft(''); setError(''); setVoiceNotice(''); setScreenHelp(null); setView('chat')
   }
 
   /** Puts spoken words in the message box (after any typed text) instead of sending them. */
@@ -156,7 +199,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   }
 
   /** Uses the screenshot already waiting in the composer, or takes a fresh one, then sends. */
-  async function captureAndDeliver(text: string, mode: 'explain' | 'highlight') {
+  async function captureAndDeliver(text: string, mode: 'explain' | 'highlight', source: 'chat' | 'voice' = 'voice') {
     let shot = capture
     if (!shot) {
       setCapturing(true); setError('')
@@ -164,7 +207,22 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       catch (problem) { setError(displayError(problem)); return }
       finally { setCapturing(false) }
     }
-    await deliver(text, 'voice', shot, mode)
+    await deliver(text, source, shot, mode)
+  }
+
+  /** Simplified view or safety check of the current screen, shown as a card and optionally spoken. */
+  async function analyzeScreen(kind: ScreenAnalysisKind, source: 'chat' | 'voice') {
+    if (!assistant || analyzing || capturing || busy || assistant.active) return
+    if (!assistant.config.configured) { setView('settings'); return }
+    setAnalyzing(kind); setError(''); setVoiceNotice(''); setScreenHelp(null); setView('chat')
+    try {
+      const shot = capture ?? unwrap(await bridge.captureScreen())
+      setCapture(null)
+      const result = unwrap(await bridge.analyzeScreen({ captureId: shot.metadata.id, kind, source }))
+      setScreenHelp(result)
+      if (readAloud.current === 'always' || (readAloud.current === 'voice' && source === 'voice')) void speechPlayer.speak(analysisSpeech(result))
+    } catch (problem) { setError(displayError(problem)) }
+    finally { setAnalyzing(null) }
   }
 
   /** A finished voice recording: handle a local shortcut, or send it like a typed message. */
@@ -173,6 +231,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     if (!text || !assistant) return
     const intent = matchVoiceIntent(text)
     if (intent.kind === 'stop') {
+      speechPlayer.stop()
       if (assistant.active) await stop()
       else if (capture) { setCapture(null); void bridge.discardScreen() }
       return
@@ -188,7 +247,8 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       holdForReview(text, 'Did I hear that right? I put your words in the message box. Fix anything that’s wrong, then press Send.')
       return
     }
-    if (intent.kind === 'explain_screen') await captureAndDeliver(text, 'explain')
+    if (intent.kind === 'simplify' || intent.kind === 'safety_check') await analyzeScreen(intent.kind === 'simplify' ? 'simplify' : 'safety', 'voice')
+    else if (intent.kind === 'explain_screen') await captureAndDeliver(text, 'explain')
     else if (intent.kind === 'show_me_where') await captureAndDeliver(text, 'highlight')
     else await deliver(text, 'voice', capture, highlightMode ? 'highlight' : 'explain')
   }
@@ -301,6 +361,9 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
           {detail.messages.map((message) => <div className={message.role === 'user' ? 'user-message' : 'assistant-message'} key={message.id}>
             <span className="message-author">{message.role === 'user' ? (message.source === 'voice' ? 'You · voice' : 'You') : 'Triage'}</span>
             <p>{message.content}</p>
+            {message.role === 'assistant' && message.content &&
+              <button type="button" className="read-aloud" onClick={() => void speechPlayer.speak(prepareSpeech(message.content))}>
+                <span aria-hidden="true">🔊</span> Read aloud</button>}
             {message.role === 'user' && ['failed', 'stopped', 'interrupted'].includes(message.status) &&
               <div className={`request-outcome request-outcome--${message.status}`}>
                 <span>{message.status}: {message.error ?? 'No reply was saved.'}</span>
@@ -324,13 +387,21 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
           <span className="eyebrow">A LITTLE COMPANY FOR YOUR COMPUTER</span>
           <h1>Hello, I'm Triage<span>.</span></h1>
           <p>Ask a question, or ask me to search Alaska Airlines flights.</p>
-          {!ready ? <button className="primary-button welcome-connect" onClick={() => setView('settings')}>Connect your Anthropic key</button> :
+          {!ready ? <button className="primary-button welcome-connect" onClick={() => setView('settings')}>Connect your AI key</button> :
             <div className="welcome-note"><span className="note-symbol">↗</span><div><strong>Pick up where you left off</strong><p>Your conversations are saved here.<br />Find them any time in History.</p></div></div>}
         </div>}
       {view === 'chat' && <div ref={bottom} />}
     </div>
     {view === 'chat' && <footer className="chat-footer">
       <VoiceButton bridge={bridge} onTranscript={(record) => void handleTranscript(record)} />
+      {screenHelp && <ScreenHelpCard analysis={screenHelp} disabled={capturing || busy || Boolean(active) || Boolean(analyzing)}
+        onClose={() => setScreenHelp(null)}
+        onAction={(action) => void captureAndDeliver(action.instruction, action.kind === 'show_me_where' ? 'highlight' : 'explain', 'chat')} />}
+      {analyzing && <p className="notice warning" role="status">{analyzing === 'simplify' ? 'Looking at your screen to simplify it…' : 'Checking your screen for scams or tricks…'}</p>}
+      <div className="screen-help-buttons">
+        <button type="button" className="secondary-button" disabled={Boolean(analyzing) || capturing || busy || Boolean(active)} onClick={() => void analyzeScreen('simplify', 'chat')}>Simplify this screen</button>
+        <button type="button" className="secondary-button safety-button" disabled={Boolean(analyzing) || capturing || busy || Boolean(active)} onClick={() => void analyzeScreen('safety', 'chat')}>Is this safe?</button>
+      </div>
       <div className="screen-controls">
         <button className="text-button" disabled={capturing || busy || Boolean(active)} onClick={() => void captureScreen()}>{capturing ? 'Capturing screen…' : 'Capture screen'}</button>
         <button className="text-button" disabled={Boolean(active) || busy} onClick={() => {
@@ -339,13 +410,13 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       </div>
       {capture && <div className="screen-preview">
         <img src={capture.dataUrl} alt="Current display screenshot preview" />
-        <div><strong>{capture.metadata.displayName}</strong><p>Sent to Anthropic only when you submit. Not saved; expires in one minute.</p>
+        <div><strong>{capture.metadata.displayName}</strong><p>Sent to your AI provider only when you submit. Not saved; expires in one minute.</p>
           {redactionNotice(capture.metadata.redactedRegions) && <p className={capture.metadata.redactedRegions === null ? 'redaction-note unchecked' : 'redaction-note'} role="status">{redactionNotice(capture.metadata.redactedRegions)}{capture.metadata.redactedRegions === null ? '. Look at the preview before you send it.' : '.'}</p>}
           <label className="checkbox-label"><input type="checkbox" checked={highlightMode} onChange={(event) => setHighlightMode(event.target.checked)} />Show me where to click</label>
           {highlightMode && <p>Describe the control below. The marker stays until you click the control or dismiss it. If the screen moves, dismiss and capture again.</p>}
           <button className="text-button" onClick={() => { setCapture(null); void bridge.discardScreen() }}>Discard screenshot</button></div>
       </div>}
-      <div className="preview-label"><span />{active ? activity : ready ? 'Connected to Claude' : 'Connect a key to start'}
+      <div className="preview-label"><span />{active ? activity : ready ? `Connected · ${assistant?.config.model}` : 'Connect a key to start'}
         <span className="preview-description">Saved on this Mac</span></div>
       <form className="composer" onSubmit={submit}>
         <label className="sr-only" htmlFor="message">Message Triage</label>

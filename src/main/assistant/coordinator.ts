@@ -11,10 +11,13 @@ import { Credentials } from './credentials.ts'
 import { HistoryStore } from './history.ts'
 import type { ModelGateway } from './model.ts'
 import { AppProblem, publicProblem } from './errors.ts'
-import { connectSchema, fastModelSchema, idSchema, modelSchema, rateSchema, sendSchema, validated } from './schemas.ts'
+import { analyzeSchema, connectSchema, fastModelSchema, idSchema, modelSchema, rateSchema, sendSchema, validated } from './schemas.ts'
+import { parseScreenAnalysis, type ScreenAnalysis } from '../../shared/screen-analysis-contracts.ts'
 import { pickModel, type RequestPurpose } from './tiers.ts'
 import { redact } from './redaction.ts'
 import { resolveDestination } from '../../shared/destinations.ts'
+import type { RequestLog } from '../logging/request-log.ts'
+import type { RequestOutcome, RequestRoute } from '../../shared/request-log-contracts.ts'
 import type { TrustService } from '../trust/service.ts'
 import type { SkillTutor } from '../skills/tutor.ts'
 import { describeResult, parseSimplifyCommand, type SimplifierService, type SimplifyCommand } from '../simplifier/service.ts'
@@ -29,6 +32,11 @@ interface RunningRequest extends ActiveRequest {
   expectedDisplayId?: string
   controller: AbortController
   deadline?: ReturnType<typeof setTimeout>
+  /** The request as saved in history (known secrets removed), for the opt-in request log. */
+  logText: string
+  source: 'chat' | 'voice' | 'shake'
+  route?: RequestRoute
+  destination?: string
   simplify?: SimplifyCommand
   /** Simplify the page frontmost in the user's own browser, without asking the model to route. */
   simplifyScreen?: boolean
@@ -61,6 +69,8 @@ export class AssistantCoordinator {
   private gestureRequest?: SendReceipt
   private browser?: BrowserRunner
   private openPage?: (url: string) => Promise<void>
+  private requestLog?: RequestLog
+  private analyzing: AbortController | null = null
   private screens?: ScreenAccess
   private simplifier?: SimplifierService
   private screenSimplifier?: Pick<ScreenSimplifier, 'simplify' | 'forget'>
@@ -83,6 +93,8 @@ export class AssistantCoordinator {
     tutor?: Pick<SkillTutor, 'guidance' | 'asked' | 'locateGuidance' | 'pointed' | 'resolved'>
     /** Opens a vetted https URL in the user's own browser. */
     openPage?: (url: string) => Promise<void>
+    /** Receives every finished request; it decides (consent) whether to keep it. */
+    requestLog?: RequestLog
   }) {
     this.simplifier = options.simplifier
     this.screenContext = options.screenContext
@@ -94,6 +106,7 @@ export class AssistantCoordinator {
     this.screenSimplifier = options.screenSimplifier
     this.browser = options.browser
     this.openPage = options.openPage
+    this.requestLog = options.requestLog
     this.highlights = options.highlights
     this.offHighlights = options.highlights?.onChange(() => this.emit())
     this.contexts = options.contexts
@@ -185,6 +198,43 @@ export class AssistantCoordinator {
 
   clearHighlight(): void { this.highlights?.clear() }
 
+  /**
+   * "What can I do here?" or "Is this safe?" for a captured screenshot. Returns
+   * structured help for a card in the chat window; nothing is saved to history.
+   */
+  async analyzeScreen(input: unknown): Promise<ScreenAnalysis> {
+    const { captureId, kind, source } = validated(analyzeSchema, input)
+    this.idle()
+    if (this.analyzing) throw new AppProblem('busy', 'I’m still looking at your screen. One moment.')
+    if (!this.gateway.analyze || !this.screens) throw new AppProblem('analysis_unavailable', 'Checking the screen is unavailable in this build.')
+    const key = this.credentials.getKey()
+    const model = this.credentials.snapshot().model
+    if (!model) throw new AppProblem('missing_model', 'Connect your key and choose an available model in Settings.')
+    const image = this.screens.take(captureId)
+    const controller = new AbortController()
+    this.analyzing = controller
+    const startedAt = Date.now()
+    const deadline = setTimeout(() => controller.abort(), this.requestTimeout)
+    try {
+      const text = await this.gateway.analyze(key, model, kind, controller.signal, image)
+      if (this.disposed) throw new AppProblem('closed', 'Triage is closing.')
+      const analysis = parseScreenAnalysis(kind, text)
+      if (!analysis) throw new AppProblem('invalid_analysis', kind === 'simplify' ? 'I couldn’t simplify this screen. Please try again.' : 'I couldn’t check this screen. Please try again.')
+      try {
+        this.requestLog?.record({ at: Date.now(), source: source ?? 'chat', text: kind === 'simplify' ? '[Simplify screen]' : '[Is this safe?]', route: kind,
+          outcome: 'completed', latencyMs: Date.now() - startedAt,
+          reply: redact(analysis.kind === 'simplify' ? analysis.view.summary : `${analysis.check.verdict}: ${analysis.check.headline}`, [key]) })
+      } catch { /* Logging must never break a request. */ }
+      return analysis
+    } catch (error) {
+      if (controller.signal.aborted && !this.disposed) throw new AppProblem('timeout', 'Looking at the screen took too long. Please try again.')
+      throw error
+    } finally {
+      clearTimeout(deadline)
+      this.analyzing = null
+    }
+  }
+
   learning(): LearningSummary {
     if (!this.simplifier) return { entries: [], rated: 0, averageReward: null, locked: [] }
     return this.simplifier.learning(LOCAL_USER)
@@ -256,8 +306,9 @@ export class AssistantCoordinator {
     simplify?: SimplifyCommand, simplifyScreen = false): SendReceipt {
     this.highlights?.clear()
     let receipt: SendReceipt
+    const logText = redact((gesture ? '[Shake to Help] ' : request.mode === 'highlight' ? '[Show me where] ' : image ? '[Screen explanation] ' : '') + request.text, [key])
     try {
-      receipt = this.history.begin(redact((gesture ? '[Shake to Help] ' : request.mode === 'highlight' ? '[Show me where] ' : image ? '[Screen explanation] ' : '') + request.text, [key]), model, request.conversationId, image?.metadata, gesture, source)
+      receipt = this.history.begin(logText, model, request.conversationId, image?.metadata, gesture, source)
       this.history.activity(receipt.taskId, 'request_status', capture ? 'Capturing screen…' : 'Thinking…', { stage: capture ? 'capturing' : 'thinking' })
     }
     catch (error) {
@@ -268,6 +319,7 @@ export class AssistantCoordinator {
       id: receipt.taskId, conversationId: receipt.conversationId, text: request.text,
       startedAt: Date.now(), stage: capture ? 'capturing' : 'thinking', controller: new AbortController(),
       expectedDisplayId: gesture?.displayId, highlight: request.mode === 'highlight', highlightRevision: this.highlights?.revision,
+      logText, source: gesture ? 'shake' : source,
       ...(simplify ? { simplify } : {}), ...(simplifyScreen ? { simplifyScreen } : {})
     }
     this.active = active
@@ -312,6 +364,7 @@ export class AssistantCoordinator {
       let plan: HighlightPlan | null = null
       let outcome = 'no_target'
       if (request.highlight) {
+        request.route = 'highlight'
         if (!image || !this.gateway.locate || !this.highlights) throw new AppProblem('highlight_unavailable', 'Screen highlighting is unavailable. Capture again or use Explain screen.')
         const snapshot = this.contexts?.forCapture(image.metadata.id)
         const candidates = snapshot ? locateElements(snapshot) : []
@@ -375,6 +428,8 @@ export class AssistantCoordinator {
         used = pick('route')
         const route = await this.gateway.route(key, used.model, context, request.controller.signal, screenContext, trusted)
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
+        request.route = route.kind
+        if (route.kind === 'open_page') request.destination = route.destination
         if (route.kind === 'reply') reply = route.text
         else if (route.kind === 'open_page') reply = await this.navigate(request, route.destination, route.query)
         else if (route.kind === 'simplify_page') {
@@ -429,16 +484,19 @@ export class AssistantCoordinator {
           }
         }
       } else {
+        request.route = image ? 'explain' : 'reply'
         used = pick(image ? 'vision' : 'reply')
         const screenContext = image || !this.screenContext ? undefined : await this.readScreenContext()
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         reply = await this.gateway.reply(key, used.model, context, request.controller.signal, image, screenContext, trusted)
       }
       if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
-      this.history.complete(request.id, redact(reply, [key]), result ? { captureId: image!.metadata.id, target: plan && !plan.anchor ? result.target : null, outcome, ...(plan ? { source: highlightSource(plan) } : {}) } : undefined,
+      const savedReply = redact(reply, [key])
+      this.history.complete(request.id, savedReply, result ? { captureId: image!.metadata.id, target: plan && !plan.anchor ? result.target : null, outcome, ...(plan ? { source: highlightSource(plan) } : {}) } : undefined,
         local ? undefined : { tier: used.tier, model: used.model, screenshotEscalation: escalated })
       clearTimeout(request.deadline)
       this.active = null
+      this.report(request, 'completed', savedReply)
       if (plan && this.highlights?.present(plan)) this.tutor?.pointed(LOCAL_USER, request.conversationId, request.id)
       this.emit()
     } catch (error) {
@@ -530,7 +588,20 @@ If you can’t find something on the page, ask “show me where…” and I’ll
     this.active = null
     try { this.history.finish(request.id, status, message) }
     catch { this.blockStorage() }
+    this.report(request, status, undefined, message)
     this.emit()
+  }
+
+  private report(request: RunningRequest, outcome: RequestOutcome, reply?: string, error?: string | null): void {
+    try {
+      this.requestLog?.record({
+        at: Date.now(), source: request.source, text: request.logText, outcome, latencyMs: Date.now() - request.startedAt,
+        ...(request.route ? { route: request.route } : {}),
+        ...(request.destination ? { destination: request.destination } : {}),
+        ...(reply ? { reply } : {}),
+        ...(error ? { error: redact(error) } : {})
+      })
+    } catch { /* Logging must never break a request. */ }
   }
 
   stop(input: unknown): void {
@@ -573,6 +644,7 @@ If you can’t find something on the page, ask “show me where…” and I’ll
     if (this.disposed) return
     this.disposed = true
     this.connecting?.abort()
+    this.analyzing?.abort()
     try {
       if (this.active) this.finish(this.active, 'stopped', 'Stopped because Triage quit.')
       this.offHighlights?.()

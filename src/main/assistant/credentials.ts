@@ -62,7 +62,7 @@ export class Credentials {
   }
 
   getKey(): string {
-    if (!this.key) throw new AppProblem('missing_key', 'Connect your Anthropic API key in Settings first.')
+    if (!this.key) throw new AppProblem('missing_key', 'Connect your Anthropic or Gemini API key in Settings first.')
     return this.key
   }
 
@@ -85,8 +85,9 @@ export class Credentials {
       }
     }
     const preferred = models.find((item) => item.id === this.model) ??
-      models.find((item) => /sonnet/i.test(item.id)) ?? models.find((item) => /haiku/i.test(item.id)) ?? models[0]
-    if (!preferred) throw new AppProblem('no_models', 'No usable Claude models were returned for this key.')
+      models.find((item) => /sonnet/i.test(item.id)) ?? models.find((item) => /haiku/i.test(item.id)) ??
+      models.find((item) => item.id === 'gemini-2.5-flash') ?? models.find((item) => /^gemini-[\d.]+-flash$/.test(item.id)) ?? models[0]
+    if (!preferred) throw new AppProblem('no_models', 'No usable models were returned for this key.')
     try {
       this.atomicWrite('model-settings.json', JSON.stringify({ model: preferred.id, models, fastModel: this.fastModel }))
       if (encrypted) this.atomicWrite('credentials.enc', encrypted)

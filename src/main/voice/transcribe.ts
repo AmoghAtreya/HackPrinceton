@@ -6,6 +6,8 @@ import {
   type Result
 } from '@aws-sdk/client-transcribe-streaming'
 import { AppProblem } from '../assistant/errors.ts'
+import { awsRegionFromEnv } from '../aws/config.ts'
+import type { SpeechToTextResult, SpeechToTextService } from './speech-to-text.ts'
 
 export interface TranscribeConfig {
   region: string
@@ -13,14 +15,7 @@ export interface TranscribeConfig {
 }
 
 /** One parsed Transcribe result, independent of the SDK's shapes. */
-export interface TranscribeResult {
-  segmentId: string
-  text: string
-  isFinal: boolean
-  confidence: number | null
-  startTime: number
-  endTime: number
-}
+export type TranscribeResult = SpeechToTextResult
 
 /**
  * Reads configuration from the environment. Credentials are resolved by the
@@ -29,12 +24,13 @@ export interface TranscribeResult {
  */
 export function transcribeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): TranscribeConfig {
   return {
-    region: env.TRIAGE_TRANSCRIBE_REGION || env.AWS_REGION || env.AWS_DEFAULT_REGION || 'us-east-1',
+    region: awsRegionFromEnv(env, env.TRIAGE_TRANSCRIBE_REGION),
     languageCode: (env.TRIAGE_TRANSCRIBE_LANGUAGE || 'en-US') as LanguageCode
   }
 }
 
-export class TranscribeService {
+export class TranscribeService implements SpeechToTextService {
+  readonly name = 'Amazon Transcribe'
   private client: TranscribeStreamingClient | null = null
   readonly config: TranscribeConfig
 
@@ -48,7 +44,7 @@ export class TranscribeService {
   }
 
   /** Fails fast with a readable message when no AWS credentials are available. */
-  async verifyCredentials(): Promise<void> {
+  async verify(): Promise<void> {
     try {
       const credentials = await this.getClient().config.credentials()
       if (!credentials?.accessKeyId) throw new Error('empty credentials')

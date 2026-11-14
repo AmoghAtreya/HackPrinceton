@@ -2,10 +2,16 @@ import { PhishingMonitor } from './phishing/monitor'
 import { BrowserSupervisor } from './browser/supervisor'
 import { VoiceController, type VoiceEvent } from './voice/controller'
 import { TranscribeService, transcribeConfigFromEnv } from './voice/transcribe'
+import { AppleSpeechService } from './voice/apple-speech'
 import { LocalTranscriptStore } from './voice/transcript-store'
 import { ensureMicrophoneAccess } from './voice/microphone'
 import { installVoiceIpc } from './voice/ipc'
 import { voiceChannels } from '../shared/voice-contracts'
+import { PollyService } from './speech/polly'
+import { SpeechPreferences } from './speech/settings'
+import { installSpeechIpc } from './speech/ipc'
+import { LocalRequestLog } from './logging/request-log'
+import { installRequestLogIpc } from './logging/ipc'
 import { createSimplifier } from './simplifier/index'
 import { SimplifierService } from './simplifier/service'
 import { SimplifiedWindow } from './simplifier/window'
@@ -24,6 +30,7 @@ import { AssistantCoordinator } from './assistant/coordinator'
 import { Credentials } from './assistant/credentials'
 import { HistoryStore } from './assistant/history'
 import { ClaudeGateway } from './assistant/model'
+import { GeminiGateway, ProviderGateway } from './assistant/gemini'
 import { installAssistantIpc } from './assistant/ipc'
 import { ScreenService } from './screen/service'
 import { ContextService } from './context/service'
@@ -113,6 +120,9 @@ let voice: VoiceController | undefined
 let phishing: PhishingMonitor | undefined
 let phishingEnabled = false
 let removeVoiceIpc: (() => void) | undefined
+let polly: PollyService | undefined
+let removeSpeechIpc: (() => void) | undefined
+let removeRequestLogIpc: (() => void) | undefined
 
 function trusted(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
   if (!desktop || !desktop.owns(event.sender) || event.senderFrame !== event.sender.mainFrame) return false
@@ -222,6 +232,7 @@ if (!app.requestSingleInstanceLock()) {
       () => removeVoiceIpc?.(), () => voice?.dispose(), () => phishing?.stop(), () => setTrustMonitoring(false),
       () => removeTrustIpc?.(), () => trustContexts?.dispose(), () => trust?.dispose(),
       () => removeSkillsIpc?.(), () => tutor?.dispose(),
+      () => removeSpeechIpc?.(), () => polly?.dispose(), () => removeRequestLogIpc?.(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(), () => chatContexts?.dispose(),
@@ -331,9 +342,11 @@ if (!app.requestSingleInstanceLock()) {
     screenSimplifier = contexts && accessibility ? new ScreenSimplifier({
       contexts, engine: simplifierParts.engine, presenter: simplifiedWindow, highlights, probe: accessibility.frameOf
     }) : undefined
+    const requestLog = new LocalRequestLog(directory, app.getVersion())
     assistant = new AssistantCoordinator({
+      requestLog,
       history: new HistoryStore(join(directory, 'history.sqlite')),
-      credentials, gateway: new ClaudeGateway(), screens, contexts: captures, highlights, browser, simplifier, screenSimplifier,
+      credentials, gateway: new ProviderGateway(new ClaudeGateway(), new GeminiGateway()), screens, contexts: captures, highlights, browser, simplifier, screenSimplifier,
       // Labels only, and only what is frontmost. Without Accessibility access chat simply gets no block.
       screenContext: async () => {
         if (!chatContexts) return undefined
@@ -383,7 +396,12 @@ if (!app.requestSingleInstanceLock()) {
     removeAssistantIpc = installAssistantIpc(assistant, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
       captures, shake, () => shakeMonitor?.reset())
     voice = new VoiceController({
-      service: new TranscribeService(transcribeConfigFromEnv()),
+      // Free on-device Apple speech by default; TRIAGE_SPEECH_TO_TEXT=transcribe uses Amazon Transcribe.
+      service: process.env.TRIAGE_SPEECH_TO_TEXT === 'transcribe' || process.platform !== 'darwin'
+        ? new TranscribeService(transcribeConfigFromEnv())
+        : new AppleSpeechService(existsSync(join(process.resourcesPath, '../Helpers/TriageSpeechHelper.app'))
+          ? join(process.resourcesPath, '../Helpers/TriageSpeechHelper.app')
+          : join(app.getAppPath(), 'release/TriageSpeechHelper.app')),
       store: new LocalTranscriptStore(directory),
       ensureMicrophone: ensureMicrophoneAccess
     })
@@ -394,6 +412,10 @@ if (!app.requestSingleInstanceLock()) {
       // event.type === 'transcript': a finished, stored recording. The agent layer hooks in here.
     })
     removeVoiceIpc = installVoiceIpc(ipcMain, voice, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
+    removeRequestLogIpc = installRequestLogIpc(ipcMain, requestLog, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
+    polly = new PollyService()
+    removeSpeechIpc = installSpeechIpc(ipcMain, polly, new SpeechPreferences(directory),
+      (event) => trusted(event) && event.sender === desktop?.chat.webContents)
     await desktop.initialize()
     const interrupt = (message: string) => {
       assistant?.interrupt(message)

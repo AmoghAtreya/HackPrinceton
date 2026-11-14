@@ -38,7 +38,7 @@ export function HistoryPanel({ bridge, revision, page, active, busy, open, loadM
         <button className="text-button danger" disabled={Boolean(active) || busy} onClick={async () => { if (await clear() !== false) setConfirm(null) }}>Confirm clear history</button>
         <button className="text-button" disabled={busy} onClick={() => setConfirm(null)}>Cancel</button>
       </> : <button className="text-button danger" disabled={Boolean(active) || busy} onClick={() => setConfirm('all')}>Clear all history</button>}
-      <p className="field-hint">Deletion does not undo requests already sent to Anthropic and is not a guarantee of secure disk erasure.</p>
+      <p className="field-hint">Deletion does not undo requests already sent to your AI provider and is not a guarantee of secure disk erasure.</p>
     </div>}
   </section>
 }

@@ -13,6 +13,7 @@
     "dev": "electron-vite dev",
     "phishing:build": "node scripts/build-link-scanner.mjs",
     "context:build": "node scripts/build-context-snapshot.mjs",
+    "speech:build": "node scripts/build-speech-helper.mjs",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && electron-vite build",
     "prestart": "install-electron",
@@ -24,6 +25,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.7.0",
+    "@aws-sdk/client-polly": "3.1169.0",
     "@aws-sdk/client-transcribe-streaming": "3.1169.0",
     "electron": "^45.2.3",
     "playwright": "1.65.0",

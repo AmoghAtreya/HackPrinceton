@@ -2,6 +2,7 @@ import type { ActivityEvent } from './flight-contracts'
 import type { HighlightState } from './highlight-contracts'
 import type { ScreenPreview } from './screen-contracts'
 import type { ShakeSettings } from './shake-contracts'
+import type { ScreenAnalysis, ScreenAnalysisKind } from './screen-analysis-contracts'
 
 export type RequestStatus = 'running' | 'completed' | 'stopped' | 'failed' | 'interrupted'
 export interface Problem { code: string; message: string }
@@ -80,6 +81,8 @@ export interface AssistantBridge {
   getConversation(input: { id: string; before?: number; beforeEvent?: number }): Promise<Result<ConversationDetail>>
   deleteConversation(id: string): Promise<Result<void>>
   clearHistory(): Promise<Result<void>>
+  /** Simplified view or safety check for a captured screenshot (not saved to history). */
+  analyzeScreen(input: { captureId: string; kind: ScreenAnalysisKind; source?: 'chat' | 'voice' }): Promise<Result<ScreenAnalysis>>
   getLearning(): Promise<Result<LearningSummary>>
   rateSimplification(input: { decisionId: string; helpful: boolean }): Promise<Result<LearningSummary>>
 }
@@ -91,5 +94,6 @@ export const assistantChannels = {
   closeBrowser: 'assistant:close-browser',
   send: 'assistant:send', stop: 'assistant:stop', list: 'assistant:list',
   detail: 'assistant:detail', delete: 'assistant:delete', clear: 'assistant:clear',
+  analyze: 'assistant:analyze',
   learning: 'assistant:learning', rate: 'assistant:rate'
 } as const

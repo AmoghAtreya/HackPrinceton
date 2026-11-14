@@ -11,6 +11,11 @@ export const sendSchema = z.object({
   source: z.enum(['chat', 'voice']).optional(),
   text: z.string().trim().min(1).max(4000)
 }).strict().refine((request) => request.mode !== 'highlight' || Boolean(request.captureId))
+export const analyzeSchema = z.object({
+  captureId: idSchema,
+  kind: z.enum(['simplify', 'safety']),
+  source: z.enum(['chat', 'voice']).optional()
+}).strict()
 export const connectSchema = z.object({
   key: z.string().trim().min(20).max(512).regex(/^[\x21-\x7e]+$/),
   remember: z.boolean()
