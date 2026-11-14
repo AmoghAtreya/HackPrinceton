@@ -4,6 +4,7 @@ import { highlightChannels, type OverlayBridge, type HighlightState } from '../s
 import { channels, type DesktopBridge, type DesktopState } from '../shared/contracts'
 import { assistantChannels, type AssistantState } from '../shared/assistant-contracts'
 import { trustChannels, type TrustState } from '../shared/trust-contracts'
+import { skillChannels } from '../shared/skill-contracts'
 
 const bridge: DesktopBridge = {
   startVoice: () => ipcRenderer.invoke(voiceChannels.start),
@@ -45,6 +46,8 @@ const bridge: DesktopBridge = {
   clearHistory: () => ipcRenderer.invoke(assistantChannels.clear),
   getLearning: () => ipcRenderer.invoke(assistantChannels.learning),
   rateSimplification: (input) => ipcRenderer.invoke(assistantChannels.rate, input),
+  getSkills: () => ipcRenderer.invoke(skillChannels.view),
+  setSkillPractice: (input) => ipcRenderer.invoke(skillChannels.practice, input),
   getTrustGraph: () => ipcRenderer.invoke(trustChannels.graph),
   addTrustEntity: (input) => ipcRenderer.invoke(trustChannels.addEntity, input),
   updateTrustEntity: (input) => ipcRenderer.invoke(trustChannels.updateEntity, input),
