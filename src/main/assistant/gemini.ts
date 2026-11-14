@@ -11,9 +11,13 @@ import { modelSchema } from './schemas.ts'
 
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 
-/** Google AI Studio keys look like this; used to pick the provider for a key. */
+/**
+ * Google AI Studio keys: the classic "AIza…" format or the newer "AQ.…" format.
+ * Used to pick the provider for a key.
+ */
 export function isGeminiKey(key: string): boolean {
-  return /^AIza[0-9A-Za-z_-]{30,}$/.test(key.trim())
+  const trimmed = key.trim()
+  return /^AIza[0-9A-Za-z_-]{30,}$/.test(trimmed) || /^AQ\.[0-9A-Za-z_.-]{20,}$/.test(trimmed)
 }
 
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } }
@@ -35,7 +39,8 @@ const modelsResponse = z.object({
 
 export function geminiProblem(status: number | undefined, body = ''): AppProblem {
   if (status === 400 && /API key not valid|API_KEY_INVALID/i.test(body)) return new AppProblem('authentication', 'Google rejected the Gemini API key. Reconnect in Settings.')
-  if (status === 401 || status === 403) return new AppProblem('access_denied', 'This Gemini key does not have access to the requested model.')
+  if (status === 401) return new AppProblem('authentication', 'Google rejected this Gemini key. Check it was copied in full and created in Google AI Studio (aistudio.google.com/apikey) for the Gemini API.')
+  if (status === 403) return new AppProblem('access_denied', 'This Gemini key does not have access to the requested model.')
   if (status === 404) return new AppProblem('model_unavailable', 'The selected Gemini model is unavailable. Reconnect or choose another model.')
   if (status === 429) return new AppProblem('rate_limit', 'Gemini is rate-limiting requests. Wait a moment before trying again.')
   if (status === 400) return new AppProblem('request_rejected', 'Gemini could not accept this request. Check your model and message length.')
