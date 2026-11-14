@@ -46,6 +46,21 @@ export function parseSimplifyCommand(text: string): SimplifyCommand | null {
   return { kind: 'url', url: url.href }
 }
 
+/**
+ * Opens a real website in Triage's Chromium. Busy sites (ads, trackers) may
+ * never fire "load", so the page is used once its HTML is ready and has had a
+ * few seconds to finish drawing. A failure becomes a plain message.
+ */
+async function loadPage(page: Page, url: string): Promise<void> {
+  try { await page.goto(url, { waitUntil: 'domcontentloaded' }) }
+  catch { throw new AppProblem('page_load', 'I couldn’t open ' + hostOf(url) + ' in Triage’s browser. Check your internet connection, then try /simplify again.') }
+  await page.waitForLoadState('load', { timeout: 8000 }).catch(() => {})
+}
+
+function hostOf(url: string): string {
+  try { return new URL(url).host } catch { return 'that page' }
+}
+
 /** Implicit signals gathered while a simplified page is on screen. */
 interface ViewSession { decisionId: string; shownAt: number; closedAt?: number; linksFollowed: number }
 
@@ -122,7 +137,7 @@ export class SimplifierService {
     if (command.kind === 'current' && !url) throw new AppProblem('no_current_page', NO_CURRENT_TAB)
     if (signal.aborted) throw new AppProblem('stopped', 'Simplification stopped.')
     const page = await this.page()
-    if (url) await page.goto(url, { waitUntil: 'load' })
+    if (url) await loadPage(page, url)
     else await page.setContent(this.demoHtml, { waitUntil: 'load' })
     if (signal.aborted) throw new AppProblem('stopped', 'Simplification stopped.')
     await page.bringToFront().catch(() => {})
