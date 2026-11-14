@@ -35,6 +35,9 @@ import { TrustService } from './trust/service'
 import { seedStore } from './trust/seed'
 import { installTrustIpc } from './trust/ipc'
 import { trustChannels } from '../shared/trust-contracts'
+import { SkillStore } from './skills/store'
+import { SkillTutor } from './skills/tutor'
+import { installSkillsIpc } from './skills/ipc'
 import { electronCapture } from './screen/electron-capture'
 import { HighlightController } from './screen/highlight'
 import { OverlayWindow } from './screen/overlay-window'
@@ -71,6 +74,8 @@ let trustContexts: ContextService | undefined
 let trustTimer: ReturnType<typeof setInterval> | undefined
 let trustChecking = false
 let removeTrustIpc: (() => void) | undefined
+let tutor: SkillTutor | undefined
+let removeSkillsIpc: (() => void) | undefined
 let warnedAbout: string | undefined
 
 // Looks at what is in front every few seconds and compares it with the user's list. Reads only.
@@ -216,6 +221,7 @@ if (!app.requestSingleInstanceLock()) {
     const cleanup = [
       () => removeVoiceIpc?.(), () => voice?.dispose(), () => phishing?.stop(), () => setTrustMonitoring(false),
       () => removeTrustIpc?.(), () => trustContexts?.dispose(), () => trust?.dispose(),
+      () => removeSkillsIpc?.(), () => tutor?.dispose(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(), () => chatContexts?.dispose(),
@@ -307,7 +313,10 @@ if (!app.requestSingleInstanceLock()) {
       serviceName: 'Triage flight search', stdio: 'ignore',
       env: Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'LANG'].flatMap((name) => process.env[name] ? [[name, process.env[name]!]] : []))
     }), join(directory, 'browser-profile'), () => highlights?.clear(), configuredBrowserChannel())
-    const simplifierParts = createSimplifier(directory)
+    // Optional, like the trust graph: without it Triage explains everything and the learner sees neutral knowledge.
+    try { tutor = new SkillTutor(new SkillStore(join(directory, 'skill-knowledge.sqlite'))) }
+    catch { console.warn('The record of what you have learned is unavailable.') }
+    const simplifierParts = createSimplifier(directory, tutor ? { knowledge: (userId, pageType) => tutor!.features(userId, pageType) } : {})
     closeSimplifierLog = simplifierParts.close
     simplifiedWindow = new SimplifiedWindow((url) => { void simplifier?.open(url) },
       () => { simplifier?.viewClosed(); screenSimplifier?.viewClosed() }, (link) => screenSimplifier?.handle(link))
@@ -315,7 +324,8 @@ if (!app.requestSingleInstanceLock()) {
     simplifier = new SimplifierService({
       engine: simplifierParts.engine, presenter: simplifiedWindow, channel: configuredBrowserChannel(), demoHtml: demoPageHtml,
       log: simplifierParts.log, lockedLayouts: (userId) => (policy instanceof ThompsonPolicy ? policy.frozenArms(userId) : {}),
-      observed: (decisionId) => screenSimplifier?.signals(decisionId)
+      observed: (decisionId) => screenSimplifier?.signals(decisionId),
+      reported: (userId, pageType, signals) => tutor?.observePage(userId, pageType, signals)
     })
     // Needs the accessibility module; its only powers over the real page are reading it and drawing a highlight.
     screenSimplifier = contexts && accessibility ? new ScreenSimplifier({
@@ -332,7 +342,7 @@ if (!app.requestSingleInstanceLock()) {
         trust?.inspect(snapshot)
         return screenContextBlock(snapshot)
       },
-      captureScreen: () => captures!.capture(), trust,
+      captureScreen: () => captures!.capture(), trust, tutor,
       // The coordinator only passes URLs already checked against the destination allowlist.
       openPage: (url) => shell.openExternal(url, { activate: true }),
       changed: (state) => {
@@ -368,6 +378,7 @@ if (!app.requestSingleInstanceLock()) {
       }
     })
     installIpc()
+    if (tutor) removeSkillsIpc = installSkillsIpc(tutor, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
     if (trust) removeTrustIpc = installTrustIpc(trust, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
     removeAssistantIpc = installAssistantIpc(assistant, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
       captures, shake, () => shakeMonitor?.reset())
