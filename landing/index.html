@@ -279,7 +279,9 @@
     background: var(--card);
     color: #4a362c;
     display: flex; flex-direction: column;
-    transition: background-color .3s ease, color .3s ease, border-color .3s ease;
+    overflow: hidden;
+    contain: layout paint;
+    transition: background-color .25s ease, color .25s ease, border-color .25s ease;
   }
   .feature:not(.is-active):hover { --card: #f3e5da; }
   .feature.is-active { --card: #ffe6d2; color: var(--navy); border-color: rgba(217, 98, 54, .2); }
@@ -288,26 +290,36 @@
   .feature h3 button { all: unset; cursor: default; }
   .feature h3 button::after { content: ""; position: absolute; inset: 0; border-radius: 18px; }
   .feature h3 button:focus-visible::after { outline: 2px solid var(--ember); outline-offset: 3px; }
-  .art { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 10px 0 4px; }
+  .art {
+    flex: 1; min-height: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 10px 0 4px;
+    transform-origin: 50% 0;
+    transition: transform .38s cubic-bezier(.2, .7, .2, 1);
+    will-change: transform;
+  }
+  .feature.is-active .art { transform: translateY(-4px) scale(.66); }
   .art svg { width: 100%; max-width: 210px; max-height: 100%; overflow: visible; }
   .art .ln { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
-  .art .fl { fill: var(--card); stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: fill .3s ease; }
+  .art .fl { fill: var(--card); stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: fill .25s ease; }
   .art .dot { fill: currentColor; }
   .art .dash { stroke-dasharray: 4 6; }
   .art text { fill: currentColor; font-family: var(--sans); }
   .feature p {
+    position: absolute; left: 24px; right: 24px; bottom: 22px;
     margin: 0;
     font-size: 15.5px;
     line-height: 1.5;
-    max-height: 0;
     opacity: 0;
-    overflow: hidden;
-    transition: opacity .2s ease, max-height .4s cubic-bezier(.2, .7, .2, 1);
+    transform: translateY(10px);
+    transition: opacity .18s ease, transform .3s cubic-bezier(.2, .7, .2, 1);
+    will-change: opacity, transform;
+    pointer-events: none;
   }
-  .feature.is-active p { max-height: 96px; opacity: 1; transition: opacity .3s ease .12s, max-height .4s cubic-bezier(.2, .7, .2, 1); }
+  .feature.is-active p { opacity: 1; transform: none; transition: opacity .26s ease .08s, transform .38s cubic-bezier(.2, .7, .2, 1); }
 
   @media (prefers-reduced-motion: reduce) {
-    .feature, .feature p, .feature.is-active p, .art .fl { transition: none; }
+    .feature, .feature p, .feature.is-active p, .art, .art .fl { transition: none; }
   }
 
   /* ---------- Responsive ---------- */
@@ -347,7 +359,8 @@
     .feature-group { margin-top: 44px; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; max-width: 680px; }
     .feature { height: auto; min-height: 340px; }
     .art { flex: none; height: 190px; }
-    .feature p, .feature.is-active p { max-height: none; opacity: 1; margin-top: 8px; }
+    .feature p, .feature.is-active p { position: static; opacity: 1; transform: none; margin-top: 8px; }
+    .feature.is-active .art { transform: none; }
   }
   @media (max-width: 640px) {
     .feature-group { grid-template-columns: 1fr; max-width: 440px; }
@@ -645,26 +658,32 @@
     window.addEventListener('scroll', onScroll, { passive: true });
 
     // The card under the mouse opens and the other five close.
-    // Cards open on real mouse movement (not just pointerenter), and stay put while
-    // the row is resizing, so a still cursor never makes cards flip back and forth.
-    const RESIZE_MS = 450;
+    // Cards no longer resize, so no lock is needed. A short pause before opening means a
+    // quick sweep across several cards only opens the one the cursor settles on.
+    const HOVER_INTENT_MS = 70;
+    const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
     document.querySelectorAll('.feature-group').forEach(group => {
       const cards = [...group.querySelectorAll('.feature')];
-      let lockedUntil = 0;
+      let active = group.querySelector('.feature.is-active');
+      let timer = 0;
       const open = card => {
-        if (card.classList.contains('is-active')) return;
-        lockedUntil = performance.now() + RESIZE_MS;
-        cards.forEach(c => {
-          const on = c === card;
-          c.classList.toggle('is-active', on);
-          c.querySelector('h3 button').setAttribute('aria-expanded', String(on));
-        });
+        if (card === active) return;
+        if (active) {
+          active.classList.remove('is-active');
+          active.querySelector('h3 button').setAttribute('aria-expanded', 'false');
+        }
+        card.classList.add('is-active');
+        card.querySelector('h3 button').setAttribute('aria-expanded', 'true');
+        active = card;
       };
       cards.forEach(card => {
         const btn = card.querySelector('h3 button');
-        card.addEventListener('pointermove', e => {
-          if (e.pointerType === 'mouse' && performance.now() > lockedUntil) open(card);
+        card.addEventListener('pointerenter', e => {
+          if (e.pointerType !== 'mouse' || !finePointer.matches) return;
+          clearTimeout(timer);
+          timer = setTimeout(() => open(card), HOVER_INTENT_MS);
         });
+        card.addEventListener('pointerleave', () => clearTimeout(timer));
         btn.addEventListener('click', () => open(card));   // touch and keyboard
         btn.addEventListener('focus', () => open(card));
       });
