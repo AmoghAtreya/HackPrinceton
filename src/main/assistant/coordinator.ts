@@ -12,6 +12,8 @@ import { AppProblem, publicProblem } from './errors.ts'
 import { connectSchema, idSchema, modelSchema, sendSchema, validated } from './schemas.ts'
 import { redact } from './redaction.ts'
 import { resolveDestination } from '../../shared/destinations.ts'
+import type { RequestLog } from '../logging/request-log.ts'
+import type { RequestOutcome, RequestRoute } from '../../shared/request-log-contracts.ts'
 
 interface RunningRequest extends ActiveRequest {
   highlight?: boolean
@@ -19,6 +21,11 @@ interface RunningRequest extends ActiveRequest {
   expectedDisplayId?: string
   controller: AbortController
   deadline?: ReturnType<typeof setTimeout>
+  /** The request as saved in history (known secrets removed), for the opt-in request log. */
+  logText: string
+  source: 'chat' | 'voice' | 'shake'
+  route?: RequestRoute
+  destination?: string
 }
 
 export class AssistantCoordinator {
@@ -37,6 +44,7 @@ export class AssistantCoordinator {
   private gestureRequest?: SendReceipt
   private browser?: BrowserRunner
   private openPage?: (url: string) => Promise<void>
+  private requestLog?: RequestLog
   private screens?: ScreenAccess
 
   constructor(options: {
@@ -44,9 +52,12 @@ export class AssistantCoordinator {
     changed: (state: AssistantState) => void; browser?: BrowserRunner; requestTimeout?: number; screens?: ScreenAccess; highlights?: HighlightController
     /** Opens a vetted https URL in the user's own browser. */
     openPage?: (url: string) => Promise<void>
+    /** Receives every finished request; it decides (consent) whether to keep it. */
+    requestLog?: RequestLog
   }) {
     this.browser = options.browser
     this.openPage = options.openPage
+    this.requestLog = options.requestLog
     this.highlights = options.highlights
     this.offHighlights = options.highlights?.onChange(() => this.emit())
     this.screens = options.screens
@@ -166,8 +177,9 @@ export class AssistantCoordinator {
     image?: ScreenImage, gesture?: ShakeTrigger & { instruction: string }, capture?: () => Promise<ScreenPreview>, source: 'chat' | 'voice' = 'chat'): SendReceipt {
     this.highlights?.clear()
     let receipt: SendReceipt
+    const logText = redact((gesture ? '[Shake to Help] ' : request.mode === 'highlight' ? '[Show me where] ' : image ? '[Screen explanation] ' : '') + request.text, [key])
     try {
-      receipt = this.history.begin(redact((gesture ? '[Shake to Help] ' : request.mode === 'highlight' ? '[Show me where] ' : image ? '[Screen explanation] ' : '') + request.text, [key]), model, request.conversationId, image?.metadata, gesture, source)
+      receipt = this.history.begin(logText, model, request.conversationId, image?.metadata, gesture, source)
       this.history.activity(receipt.taskId, 'request_status', capture ? 'Capturing screen…' : 'Thinking…', { stage: capture ? 'capturing' : 'thinking' })
     }
     catch (error) {
@@ -177,7 +189,8 @@ export class AssistantCoordinator {
     const active: RunningRequest = {
       id: receipt.taskId, conversationId: receipt.conversationId,
       startedAt: Date.now(), stage: capture ? 'capturing' : 'thinking', controller: new AbortController(),
-      expectedDisplayId: gesture?.displayId, highlight: request.mode === 'highlight', highlightRevision: this.highlights?.revision
+      expectedDisplayId: gesture?.displayId, highlight: request.mode === 'highlight', highlightRevision: this.highlights?.revision,
+      logText, source: gesture ? 'shake' : source
     }
     this.active = active
     if (gesture) this.gestureRequest = receipt
@@ -210,6 +223,7 @@ export class AssistantCoordinator {
       let plan: HighlightPlan | null = null
       let outcome = 'no_target'
       if (request.highlight) {
+        request.route = 'highlight'
         if (!image || !this.gateway.locate || !this.highlights) throw new AppProblem('highlight_unavailable', 'Screen highlighting is unavailable. Capture again or use Explain screen.')
         result = await this.gateway.locate(key, model, context, request.controller.signal, image)
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
@@ -225,6 +239,8 @@ export class AssistantCoordinator {
       } else if (!image && !capture && this.gateway.route) {
         const route = await this.gateway.route(key, model, context, request.controller.signal)
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
+        request.route = route.kind
+        if (route.kind === 'open_page') request.destination = route.destination
         if (route.kind === 'reply') reply = route.text
         else if (route.kind === 'open_page') reply = await this.navigate(request, route.destination, route.query)
         else {
@@ -252,11 +268,16 @@ export class AssistantCoordinator {
               (outcome.finalUrl ? `\n${outcome.finalUrl}` : '') + '\nThe browser remains open for review. No ticket was selected or purchased.'
           }
         }
-      } else reply = await this.gateway.reply(key, model, context, request.controller.signal, image)
+      } else {
+        request.route = image ? 'explain' : 'reply'
+        reply = await this.gateway.reply(key, model, context, request.controller.signal, image)
+      }
       if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
-      this.history.complete(request.id, redact(reply, [key]), result ? { captureId: image!.metadata.id, target: plan ? result.target : null, outcome } : undefined)
+      const savedReply = redact(reply, [key])
+      this.history.complete(request.id, savedReply, result ? { captureId: image!.metadata.id, target: plan ? result.target : null, outcome } : undefined)
       clearTimeout(request.deadline)
       this.active = null
+      this.report(request, 'completed', savedReply)
       if (plan) this.highlights?.present(plan)
       this.emit()
     } catch (error) {
@@ -303,7 +324,20 @@ If you can’t find something on the page, ask “show me where…” and I’ll
     this.active = null
     try { this.history.finish(request.id, status, message) }
     catch { this.blockStorage() }
+    this.report(request, status, undefined, message)
     this.emit()
+  }
+
+  private report(request: RunningRequest, outcome: RequestOutcome, reply?: string, error?: string | null): void {
+    try {
+      this.requestLog?.record({
+        at: Date.now(), source: request.source, text: request.logText, outcome, latencyMs: Date.now() - request.startedAt,
+        ...(request.route ? { route: request.route } : {}),
+        ...(request.destination ? { destination: request.destination } : {}),
+        ...(reply ? { reply } : {}),
+        ...(error ? { error: redact(error) } : {})
+      })
+    } catch { /* Logging must never break a request. */ }
   }
 
   stop(input: unknown): void {
