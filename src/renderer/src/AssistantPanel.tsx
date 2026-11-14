@@ -7,7 +7,7 @@ import { Character } from './Character'
 import { SettingsPanel } from './SettingsPanel'
 import { HistoryPanel } from './HistoryPanel'
 import { VoiceButton } from './VoiceButton'
-import { matchVoiceIntent } from './voice/intents'
+import { matchVoiceIntent, needsConfirmation } from './voice/intents'
 import { displayError, unwrap } from './assistant-ui'
 import { appendConversations, refreshConversations } from './history-state'
 
@@ -25,6 +25,8 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   const [history, setHistory] = useState<ConversationPage>({ items: [], next: null })
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  /** A gentle, non-error message about voice input (e.g. "Did I hear that right?"). */
+  const [voiceNotice, setVoiceNotice] = useState('')
   const input = useRef<HTMLTextAreaElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const keepScroll = useRef(false)
@@ -123,7 +125,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
 
   /** Shared by the Send button and voice input. A spoken message leaves any typed draft alone. */
   async function deliver(text: string, source: 'chat' | 'voice', shot: ScreenPreview | null, mode: 'explain' | 'highlight'): Promise<boolean> {
-    setBusy(true); setError('')
+    setBusy(true); setError(''); setVoiceNotice('')
     try {
       const receipt = unwrap(await bridge.sendMessage({ ...(selected ? { conversationId: selected } : {}), text, source, ...(shot ? { captureId: shot.metadata.id, mode } : {}) }))
       setSelected(receipt.conversationId); setCapture(null); setView('chat')
@@ -141,7 +143,15 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   }
 
   function newConversation() {
-    setCapture(null); void bridge.discardScreen(); setSelected(null); setDetail(null); setDraft(''); setError(''); setView('chat')
+    setCapture(null); void bridge.discardScreen(); setSelected(null); setDetail(null); setDraft(''); setError(''); setVoiceNotice(''); setView('chat')
+  }
+
+  /** Puts spoken words in the message box (after any typed text) instead of sending them. */
+  function holdForReview(text: string, notice: string) {
+    setDraft((current) => current.trim() ? current.trimEnd() + ' ' + text : text)
+    setVoiceNotice(notice)
+    setView('chat')
+    input.current?.focus()
   }
 
   /** Uses the screenshot already waiting in the composer, or takes a fresh one, then sends. */
@@ -168,7 +178,15 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     }
     if (intent.kind === 'new_conversation') { newConversation(); return }
     if (!assistant.config.configured) { setView('settings'); return }
-    if (assistant.active || busy || capturing || assistant.storageError) return
+    if (assistant.storageError) return
+    if (assistant.active || busy || capturing) {
+      holdForReview(text, 'I’m still working on your last request, so I didn’t send that yet. Your words are in the message box: press Send when I’m done, or say “stop”.')
+      return
+    }
+    if (intent.kind === 'chat' && needsConfirmation(record)) {
+      holdForReview(text, 'Did I hear that right? I put your words in the message box. Fix anything that’s wrong, then press Send.')
+      return
+    }
     if (intent.kind === 'explain_screen') await captureAndDeliver(text, 'explain')
     else if (intent.kind === 'show_me_where') await captureAndDeliver(text, 'highlight')
     else await deliver(text, 'voice', capture, highlightMode ? 'highlight' : 'explain')
@@ -267,6 +285,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     </div>}
     {assistant?.storageError && <p className="notice error persistent-error" role="alert">{assistant.storageError}</p>}
     {error && <p className="notice error persistent-error" role="alert">{error}</p>}
+    {voiceNotice && !error && <p className="notice warning" role="status">{voiceNotice}</p>}
 
     <div className="chat-content">
       {!assistant ? <p className="loading-note">Opening saved conversations…</p> :
@@ -329,7 +348,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
         <label className="sr-only" htmlFor="message">Message Triage</label>
         <textarea ref={input} id="message" value={draft} maxLength={4000} rows={2}
           placeholder={capture && highlightMode ? 'Which control should I find?' : 'Ask Triage anything…'} disabled={Boolean(active) || busy}
-          onChange={(event) => setDraft(event.target.value)}
+          onChange={(event) => { setDraft(event.target.value); if (!event.target.value.trim()) setVoiceNotice('') }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault(); event.currentTarget.form?.requestSubmit()
