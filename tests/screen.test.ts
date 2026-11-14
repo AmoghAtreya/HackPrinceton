@@ -18,7 +18,7 @@ function port(): CapturePort {
     capture: async () => ({
       data: DATA, mediaType: 'image/jpeg',
       metadata: {
-        displayId: 'fixture', displayName: 'Test display', width: 1280, height: 800,
+        displayId: 'fixture', redactedRegions: 0, displayName: 'Test display', width: 1280, height: 800,
         bounds: { x: -1440, y: 0, width: 1440, height: 900 }, cursor: { x: 640, y: 400 }
       }
     })

@@ -35,8 +35,9 @@ export function ShakeSettingsPanel({ bridge }: { bridge: DesktopBridge }) {
         onChange={(event) => { setSettings({ ...settings, enabled: event.target.checked }); setNotice('') }} />Enable Shake to Help</label>
       <label htmlFor="shake-action">Shake action</label>
       <select id="shake-action" value={settings.mode ?? 'explain'} disabled={busy} onChange={(event) => {
-        setSettings({ ...settings, mode: event.target.value as 'explain' | 'highlight' }); setNotice('')
-      }}><option value="explain">Explain the screen</option><option value="highlight">Show me where</option></select>
+        setSettings({ ...settings, mode: event.target.value as NonNullable<ShakeSettings['mode']> }); setNotice('')
+      }}><option value="explain">Explain the screen</option><option value="highlight">Show me where</option><option value="simplify">Simplify this page</option></select>
+      {settings.mode === 'simplify' && <p className="field-hint">Simplify this page reads the page in front through macOS Accessibility (no screenshot) and ignores the saved instruction. It never clicks anything.</p>}
       <label htmlFor="shake-instruction">Saved shake instruction</label>
       <textarea id="shake-instruction" rows={3} maxLength={4000} disabled={busy} value={settings.instruction}
         onChange={(event) => { setSettings({ ...settings, instruction: event.target.value }); setNotice('') }} />

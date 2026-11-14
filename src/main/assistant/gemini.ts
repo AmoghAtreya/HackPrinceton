@@ -1,11 +1,11 @@
 import { z } from 'zod'
 import { routeSchema, type AssistantRoute } from '../../shared/flight-contracts.ts'
 import type { ModelChoice } from '../../shared/assistant-contracts.ts'
-import type { HighlightReply } from '../../shared/highlight-contracts.ts'
+import type { HighlightReply, LocateElement } from '../../shared/highlight-contracts.ts'
 import type { ScreenImage } from '../../shared/screen-contracts.ts'
 import { parseHighlightReply } from '../screen/coordinates.ts'
 import { AppProblem } from './errors.ts'
-import { SYSTEM, analysisSystemPrompt, routeSystemPrompt, screenSystemPrompt, screenUserText, type DialogueTurn, type ModelGateway } from './model.ts'
+import { SYSTEM, analysisSystemPrompt, routeSystemPrompt, screenSystemPrompt, screenUserText, withScreenContext, withTrustedContext, type DialogueTurn, type ModelGateway } from './model.ts'
 import type { ScreenAnalysisKind } from '../../shared/screen-analysis-contracts.ts'
 import { modelSchema } from './schemas.ts'
 
@@ -81,7 +81,7 @@ export class GeminiGateway implements ModelGateway {
   }
 
   private async generate(key: string, model: string, system: string, messages: DialogueTurn[], signal: AbortSignal,
-    options: { image?: ScreenImage; json?: boolean } = {}): Promise<{ text: string; finishReason?: string }> {
+    options: { image?: ScreenImage; json?: boolean; elements?: LocateElement[] } = {}): Promise<{ text: string; finishReason?: string }> {
     if (!modelSchema.safeParse(model).success) throw new AppProblem('model_unavailable', 'Choose a Gemini model in Settings.')
     const contents = messages.map((turn) => ({ role: turn.role === 'assistant' ? 'model' : 'user', parts: [{ text: turn.content }] as Part[] }))
     if (options.image) {
@@ -89,7 +89,7 @@ export class GeminiGateway implements ModelGateway {
       if (!last || last.role !== 'user') throw new AppProblem('invalid_input', 'Screen explanations need a current question.')
       last.parts = [
         { inline_data: { mime_type: options.image.mediaType, data: options.image.data } },
-        { text: screenUserText(messages.at(-1)!.content, options.image) }
+        { text: screenUserText(messages.at(-1)!.content, options.image, options.elements) }
       ]
     }
     const raw = await this.call(key, `/models/${encodeURIComponent(model)}:generateContent`, signal, {
@@ -107,15 +107,16 @@ export class GeminiGateway implements ModelGateway {
     return { text, finishReason: candidate?.finishReason }
   }
 
-  async route(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal): Promise<AssistantRoute> {
-    const { text, finishReason } = await this.generate(key, model, routeSystemPrompt(), messages, signal, { json: true })
+  async route(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal, screenContext?: string, trustedContext?: string): Promise<AssistantRoute> {
+    const { text, finishReason } = await this.generate(key, model, withTrustedContext(routeSystemPrompt(), trustedContext), withScreenContext(messages, screenContext), signal, { json: true })
     if (finishReason && finishReason !== 'STOP') throw new AppProblem('invalid_route', 'The reply was incomplete. Please try again.')
     try { return routeSchema.parse(JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''))) }
     catch { throw new AppProblem('invalid_route', 'Gemini returned an invalid request. No browser action was started. Please rephrase.') }
   }
 
-  async reply(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal, image?: ScreenImage): Promise<string> {
-    const { text, finishReason } = await this.generate(key, model, image ? screenSystemPrompt(image, false) : SYSTEM, messages, signal, { image })
+  async reply(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal, image?: ScreenImage, screenContext?: string, trustedContext?: string): Promise<string> {
+    const system = withTrustedContext(image ? screenSystemPrompt(image, false) : SYSTEM, trustedContext)
+    const { text, finishReason } = await this.generate(key, model, system, withScreenContext(messages, screenContext), signal, { image })
     return finishReason === 'MAX_TOKENS' ? text + '\n\n[Reply reached the response length limit.]' : text
   }
 
@@ -124,10 +125,13 @@ export class GeminiGateway implements ModelGateway {
     return (await this.generate(key, model, analysisSystemPrompt(kind), [{ role: 'user', content: question }], signal, { image, json: true })).text
   }
 
-  async locate(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal, image: ScreenImage): Promise<HighlightReply> {
-    const { text, finishReason } = await this.generate(key, model, screenSystemPrompt(image, true), messages, signal, { image, json: true })
+  /** Same contract as the Claude gateway: with `elements`, prefer an element id over a pixel box. */
+  async locate(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal, image: ScreenImage, elements?: LocateElement[], guidance?: string): Promise<HighlightReply> {
+    const offered = elements?.length ? elements : undefined
+    const system = withTrustedContext(screenSystemPrompt(image, true, Boolean(offered)), guidance)
+    const { text, finishReason } = await this.generate(key, model, system, messages, signal, { image, json: true, elements: offered })
     if (finishReason && finishReason !== 'STOP') throw new AppProblem('invalid_target', 'The location response was incomplete. Try a fresh capture. No highlight was shown.')
-    return parseHighlightReply(text, image.metadata)
+    return parseHighlightReply(text, image.metadata, offered && new Set(offered.map((element) => element.id)))
   }
 }
 
@@ -140,20 +144,22 @@ export class ProviderGateway implements ModelGateway {
   private pick(key: string): ModelGateway { return isGeminiKey(key) ? this.gemini : this.claude }
 
   models(key: string, signal: AbortSignal) { return this.pick(key).models(key, signal) }
-  reply(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal, image?: ScreenImage) { return this.pick(key).reply(key, model, messages, signal, image) }
-  route(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal): Promise<AssistantRoute> {
+  reply(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal, image?: ScreenImage, screenContext?: string, trustedContext?: string) {
+    return this.pick(key).reply(key, model, messages, signal, image, screenContext, trustedContext)
+  }
+  route(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal, screenContext?: string, trustedContext?: string): Promise<AssistantRoute> {
     const gateway = this.pick(key)
     if (!gateway.route) throw new AppProblem('unsupported', 'This model provider cannot route requests.')
-    return gateway.route(key, model, messages, signal)
+    return gateway.route(key, model, messages, signal, screenContext, trustedContext)
   }
   analyze(key: string, model: string, kind: ScreenAnalysisKind, signal: AbortSignal, image: ScreenImage): Promise<string> {
     const gateway = this.pick(key)
     if (!gateway.analyze) throw new AppProblem('analysis_unavailable', 'This model provider cannot check the screen.')
     return gateway.analyze(key, model, kind, signal, image)
   }
-  locate(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal, image: ScreenImage): Promise<HighlightReply> {
+  locate(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal, image: ScreenImage, elements?: LocateElement[], guidance?: string): Promise<HighlightReply> {
     const gateway = this.pick(key)
     if (!gateway.locate) throw new AppProblem('highlight_unavailable', 'This model provider cannot point at controls.')
-    return gateway.locate(key, model, messages, signal, image)
+    return gateway.locate(key, model, messages, signal, image, elements, guidance)
   }
 }

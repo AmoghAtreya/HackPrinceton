@@ -32,6 +32,11 @@ export class ScreenService implements ScreenAccess {
       const captured = await this.port.capture(options)
       if (this.disposed) throw new AppProblem('closed', 'Triage closed during capture.')
       if (generation !== this.generation) throw new AppProblem('capture_canceled', 'This capture was discarded before it finished.')
+      // Every image must come out of the redaction step, which always sets this: a count, or null for "could not check".
+      const redacted = captured.metadata.redactedRegions
+      if (redacted !== null && !(Number.isInteger(redacted) && redacted >= 0)) {
+        throw new AppProblem('capture_failed', 'The screen image was not checked for private fields, so it was discarded. Try capturing again.')
+      }
       if (!captured.data || captured.data.length > 5500000 ||
           captured.metadata.width < 1 || captured.metadata.height < 1) {
         throw new AppProblem('capture_failed', 'The screen image is empty or too large. Try capturing again.')

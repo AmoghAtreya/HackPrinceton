@@ -3,6 +3,7 @@ import type { DesktopBridge } from '../../shared/contracts'
 import type { PublicConfig } from '../../shared/assistant-contracts'
 import { displayError, unwrap } from './assistant-ui'
 import { ShakeSettingsPanel } from './ShakeSettingsPanel'
+import { TrustPanel } from './TrustPanel'
 import { SpeechSettingsPanel } from './SpeechSettingsPanel'
 import { RequestLogSettingsPanel } from './RequestLogSettingsPanel'
 
@@ -28,6 +29,13 @@ export function SettingsPanel({ bridge, config, active }: {
   async function select(model: string) {
     setBusy(true); setError('')
     try { unwrap(await bridge.selectModel(model)) }
+    catch (problem) { setError(displayError(problem)) }
+    finally { setBusy(false) }
+  }
+
+  async function setFast(enabled: boolean) {
+    setBusy(true); setError('')
+    try { unwrap(await bridge.setFastModel(enabled)) }
     catch (problem) { setError(displayError(problem)) }
     finally { setBusy(false) }
   }
@@ -69,16 +77,20 @@ export function SettingsPanel({ bridge, config, active }: {
         {config.models.map((model) => <option value={model.id} key={model.id}>{model.label}</option>)}
       </select>
       <p className="field-hint">Models are loaded from your provider for this key. API usage may incur charges; check your account’s pricing.</p>
+      <label className="checkbox-label"><input type="checkbox" checked={config.fastModel} disabled={busy || active}
+        onChange={(event) => void setFast(event.target.checked)} />Use faster model for simple requests</label>
+      <p className="field-hint">On: ordinary chat replies and routing use a Haiku model when your key has one. Screenshots, “show me where” and page simplifying use the model chosen above, or a Sonnet model if you chose Haiku.</p>
     </div>
     {(config.configured || config.keyStorage === 'locked') &&
       <button className="text-button danger" disabled={busy || active} onClick={() => void remove()}>Remove key from Triage</button>}
     <SpeechSettingsPanel bridge={bridge} />
+    <TrustPanel bridge={bridge} />
     <ShakeSettingsPanel bridge={bridge} />
     <RequestLogSettingsPanel bridge={bridge} />
     <div className="privacy-note">
       <strong>Your data</strong>
       <p>Messages and recent context go to your AI provider (Anthropic or Google) for replies. Conversations are saved unencrypted on this Mac. Recognized keys and tokens are redacted, but avoid sharing secrets.</p>
-      <p>Triage uses a bounded recent context, not your entire saved history. Screen capture is available from Chat: preview locally, then explicitly send it for explanation. With Shake to Help enabled, a shake sends a screen capture automatically using your saved instruction. Images are not saved. Alaska flight searches run in a separate visible browser; Triage never selects a fare or purchases a ticket.</p>
+      <p>Each chat message also carries a short text description of the app in front: its name, window title, website name and the labels of visible buttons and fields, never what you typed into them. If that is not enough to answer, Triage may take one screenshot, with password and card fields blacked out, and send it. Your list of people and organizations stays on this Mac. When it is relevant, the AI is told a contact’s name and relationship and a partly hidden hint (such as the first letter of an email), never the full address or number. Triage uses a bounded recent context, not your entire saved history. Screen capture is available from Chat: preview locally, then explicitly send it for explanation. With Shake to Help enabled, a shake sends a screen capture automatically using your saved instruction. Images are not saved. Alaska flight searches run in a separate visible browser; Triage never selects a fare or purchases a ticket.</p>
       <p>Voice input is sent to Amazon Transcribe to write down what you said, and spoken replies are sent to Amazon Polly to generate audio. Transcripts are saved unencrypted on this Mac; audio is not saved.</p>
     </div>
   </section>

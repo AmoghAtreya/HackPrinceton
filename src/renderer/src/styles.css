@@ -104,6 +104,8 @@ kbd { padding: 0 2px; font: inherit; color: #9c8c7c; }
 .screen-preview img { width: 80px; max-height: 70px; object-fit: contain; align-self: flex-start; border-radius: 4px; }
 .screen-preview strong { font-size: 10px; color: #795a40; }
 .screen-preview p { margin: 3px 0; font-size: 9px; line-height: 1.5; color: #967b63; }
+.screen-preview .redaction-note { font-weight: 700; color: #4f6b3a; }
+.screen-preview .redaction-note.unchecked { color: #a3401c; }
 
 /* Phase 2: conversation, history, and connection settings. */
 .panel-tabs { display: flex; align-items: center; gap: 4px; padding: 7px 16px; border-bottom: 1px solid #e9e2d7; flex-shrink: 0; }
@@ -259,6 +261,26 @@ button:disabled { opacity: .55; cursor: default; }
 .learning-rate { display: flex; flex-direction: column; align-items: stretch; gap: 4px; flex-shrink: 0; }
 .learning-rate .secondary-button { padding: 7px 10px; }
 .learning-score { flex-shrink: 0; font-size: 11px; font-weight: 600; color: #4f6b3d; background: #eaf2e2; border-radius: 999px; padding: 4px 10px; }
+
+.trust-warning { margin: 6px 12px; padding: 10px 12px; border: 2px solid #b3261e; border-radius: 10px; background: #fff1ee; color: #5c1a14; font-size: 12px; line-height: 1.5; }
+.trust-warning.reported_scam { border-color: #7a4a00; background: #fff6e0; color: #5a3a00; }
+.trust-warning strong { display: block; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+.trust-warning .trust-message { margin: 4px 0 6px; font-size: 14px; font-weight: 600; }
+.trust-warning summary { cursor: pointer; font-size: 11px; }
+.trust-warning ul { margin: 4px 0 0; padding-left: 18px; font-size: 11px; }
+.trust-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.trust-settings h4 { margin: 12px 0 4px; font-size: 11px; color: #795a40; }
+.trust-list, .trust-channels { list-style: none; margin: 0; padding: 0; }
+.trust-entity { padding: 8px 0; border-bottom: 1px solid #eadbc8; }
+.trust-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.trust-channels { margin-top: 4px; padding-left: 10px; font-size: 11px; }
+.trust-channels li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+.skills-view { margin: 16px 0; }
+.skills-view h4 { margin: 12px 0 4px; font-size: 11px; color: #795a40; }
+.skills-view ul { list-style: none; margin: 0; padding: 0; }
+.skills-view li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 5px 0; border-bottom: 1px solid #eadbc8; font-size: 12px; }
+.skills-view li label { display: flex; align-items: center; gap: 4px; font-size: 10px; color: #795a40; white-space: nowrap; }
 
 /* Task progress and memory (History tab) */
 .task-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 12px 13px; }

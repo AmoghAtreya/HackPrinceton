@@ -5,7 +5,7 @@ import { DEFAULT_SHAKE_INSTRUCTION, type ShakeSettings } from '../../shared/shak
 import { AppProblem } from '../assistant/errors.ts'
 import { redact } from '../assistant/redaction.ts'
 
-const schema = z.object({ enabled: z.boolean(), instruction: z.string().trim().min(1).max(4000), mode: z.enum(['explain', 'highlight']).optional() }).strict()
+const schema = z.object({ enabled: z.boolean(), instruction: z.string().trim().min(1).max(4000), mode: z.enum(['explain', 'highlight', 'simplify']).optional() }).strict()
 
 export class ShakePreferences {
   private value: ShakeSettings = { enabled: false, instruction: DEFAULT_SHAKE_INSTRUCTION }
