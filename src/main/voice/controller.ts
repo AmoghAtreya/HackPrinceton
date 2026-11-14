@@ -46,7 +46,11 @@ export class VoiceController {
   /** Finished sessions, so a late or repeated finish() gets the same answer. */
   private finished = new Map<string, Promise<TranscriptRecord>>()
 
-  constructor(private readonly options: VoiceControllerOptions) {}
+  private readonly options: VoiceControllerOptions
+
+  constructor(options: VoiceControllerOptions) {
+    this.options = options
+  }
 
   subscribe(listener: (event: VoiceEvent) => void): () => void {
     this.listeners.add(listener)

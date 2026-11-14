@@ -15,8 +15,10 @@ export interface TranscriptStore {
 export class LocalTranscriptStore implements TranscriptStore {
   readonly file: string
   private writes: Promise<void> = Promise.resolve()
+  private readonly directory: string
 
-  constructor(private readonly directory: string) {
+  constructor(directory: string) {
+    this.directory = directory
     this.file = join(directory, 'voice-transcripts.jsonl')
   }
 

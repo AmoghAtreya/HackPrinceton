@@ -8,9 +8,12 @@ export class AudioQueue implements AsyncIterable<Uint8Array> {
   private waiting: ((result: IteratorResult<Uint8Array>) => void) | null = null
   private ended = false
   private buffered = 0
+  private readonly maxBufferedBytes: number
 
   /** @param maxBufferedBytes drop audio rather than grow without bound if the network stalls. */
-  constructor(private readonly maxBufferedBytes = 16000 * 2 * 10) {}
+  constructor(maxBufferedBytes = 16000 * 2 * 10) {
+    this.maxBufferedBytes = maxBufferedBytes
+  }
 
   push(chunk: Uint8Array): boolean {
     if (this.ended) return false

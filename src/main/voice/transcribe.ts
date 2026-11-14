@@ -36,8 +36,11 @@ export function transcribeConfigFromEnv(env: NodeJS.ProcessEnv = process.env): T
 
 export class TranscribeService {
   private client: TranscribeStreamingClient | null = null
+  readonly config: TranscribeConfig
 
-  constructor(readonly config: TranscribeConfig) {}
+  constructor(config: TranscribeConfig) {
+    this.config = config
+  }
 
   private getClient(): TranscribeStreamingClient {
     this.client ??= new TranscribeStreamingClient({ region: this.config.region })
