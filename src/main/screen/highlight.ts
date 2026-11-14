@@ -95,7 +95,7 @@ export class HighlightController {
     if (!display) throw new AppProblem('stale_highlight', 'No highlight: that display is no longer connected.')
     const capture: CaptureMetadata = {
       id: randomUUID(), capturedAt: Date.now(), displayId, displayName: '', width: display.bounds.width, height: display.bounds.height,
-      bounds: { ...display.bounds }, cursor: { x: 0, y: 0 },
+      bounds: { ...display.bounds }, cursor: { x: 0, y: 0 }, redactedRegions: 0,
       ...(display.scaleFactor === undefined ? {} : { scaleFactor: display.scaleFactor }),
       ...(display.rotation === undefined ? {} : { rotation: display.rotation })
     }
