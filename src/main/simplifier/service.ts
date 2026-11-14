@@ -63,6 +63,9 @@ function hostOf(url: string): string {
   try { return new URL(url).host } catch { return 'that page' }
 }
 
+/** How many headings, links and controls are read from a page opened in Triage's browser (the schema allows 400). */
+const PAGE_ELEMENT_LIMIT = 400
+
 /** Implicit signals gathered while a simplified page is on screen. */
 interface ViewSession { decisionId: string; shownAt: number; closedAt?: number; linksFollowed: number }
 
@@ -144,7 +147,8 @@ export class SimplifierService {
     else await page.setContent(this.demoHtml, { waitUntil: 'load' })
     if (signal.aborted) throw new AppProblem('stopped', 'Simplification stopped.')
     await page.bringToFront().catch(() => {})
-    const distilled = await distillPage(page)
+    // Busy sites (shops, portals) have hundreds of links; read up to the schema's limit so footer and menu links survive.
+    const distilled = await distillPage(page, PAGE_ELEMENT_LIMIT)
     const result = await this.engine.simplify({ page: distilled, userId, voiceEnabled: false, credentials, signal })
     const html = renderSimplifiedView(result.view, result.arm, distilled, {
       pageType: result.pageType, policyMode: result.mode, hiddenRemoved: distilled.stats.hiddenRemoved,
