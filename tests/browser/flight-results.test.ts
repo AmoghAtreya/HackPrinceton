@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { chromium } from 'playwright'
-import { verifyResults } from '../src/worker/alaska.ts'
+import { launchTestBrowser } from '../helpers/browser.ts'
+import { verifyResults } from '../../src/worker/alaska.ts'
 const input = { originAirport: 'SEA', destinationAirport: 'SFO', tripType: 'one_way' as const, departureDate: '2026-12-10', adults: 1 }
 const url = 'https://www.alaskaair.com/search/results?O=SEA&D=SFO&OD=2026-12-10&A=1&RT=false'
 async function fixture(html: string, run: (page: import('playwright').Page) => Promise<void>) {
-  const browser = await chromium.launch({ headless: true })
+  const browser = await launchTestBrowser()
   try {
     const page = await browser.newPage(); page.setDefaultTimeout(500)
     await page.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body: html }))
