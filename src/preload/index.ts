@@ -1,10 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { voiceChannels, type SpeechStateMessage, type UserUtterance } from '../shared/voice-contracts'
+import { speechChannels } from '../shared/speech-contracts'
 import { highlightChannels, type OverlayBridge, type HighlightState } from '../shared/highlight-contracts'
 import { channels, type DesktopBridge, type DesktopState } from '../shared/contracts'
 import { assistantChannels, type AssistantState } from '../shared/assistant-contracts'
 
 const bridge: DesktopBridge = {
+  getSpeechSettings: () => ipcRenderer.invoke(speechChannels.getSettings),
+  saveSpeechSettings: (input) => ipcRenderer.invoke(speechChannels.saveSettings, input),
+  synthesizeSpeech: (text) => ipcRenderer.invoke(speechChannels.synthesize, text),
   startVoice: () => ipcRenderer.invoke(voiceChannels.start),
   sendVoiceAudio: (sessionId, chunk) => ipcRenderer.send(voiceChannels.audio, sessionId, chunk),
   finishVoice: (sessionId) => ipcRenderer.invoke(voiceChannels.finish, sessionId),

@@ -5,6 +5,9 @@ import { LocalTranscriptStore } from './voice/transcript-store'
 import { ensureMicrophoneAccess } from './voice/microphone'
 import { installVoiceIpc } from './voice/ipc'
 import { voiceChannels } from '../shared/voice-contracts'
+import { PollyService } from './speech/polly'
+import { SpeechPreferences } from './speech/settings'
+import { installSpeechIpc } from './speech/ipc'
 import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -51,6 +54,8 @@ let removeShakeListeners: (() => void) | undefined
 let presentedGesture: string | undefined
 let voice: VoiceController | undefined
 let removeVoiceIpc: (() => void) | undefined
+let polly: PollyService | undefined
+let removeSpeechIpc: (() => void) | undefined
 
 function trusted(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
   if (!desktop || !desktop.owns(event.sender) || event.senderFrame !== event.sender.mainFrame) return false
@@ -138,6 +143,7 @@ if (!app.requestSingleInstanceLock()) {
     // Each cleanup runs even when another resource has already failed.
     const cleanup = [
       () => removeVoiceIpc?.(), () => voice?.dispose(),
+      () => removeSpeechIpc?.(), () => polly?.dispose(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(),
@@ -240,6 +246,9 @@ if (!app.requestSingleInstanceLock()) {
       // event.type === 'transcript': a finished, stored recording. The agent layer hooks in here.
     })
     removeVoiceIpc = installVoiceIpc(ipcMain, voice, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
+    polly = new PollyService()
+    removeSpeechIpc = installSpeechIpc(ipcMain, polly, new SpeechPreferences(directory),
+      (event) => trusted(event) && event.sender === desktop?.chat.webContents)
     await desktop.initialize()
     const interrupt = (message: string) => {
       assistant?.interrupt(message)
