@@ -6,7 +6,7 @@ import {
 } from '../../shared/voice-contracts.ts'
 import { AppProblem, publicProblem } from '../assistant/errors.ts'
 import { AudioQueue } from './audio-queue.ts'
-import type { TranscribeResult, TranscribeService } from './transcribe.ts'
+import type { SpeechToTextResult, SpeechToTextService } from './speech-to-text.ts'
 import type { TranscriptStore } from './transcript-store.ts'
 
 /** Everything the voice layer publishes. The agent layer subscribes to `transcript`. */
@@ -26,7 +26,7 @@ interface ActiveSession {
 }
 
 export interface VoiceControllerOptions {
-  service: TranscribeService
+  service: SpeechToTextService
   store: TranscriptStore
   /** Resolves when the OS allows microphone use; throws an AppProblem otherwise. */
   ensureMicrophone: () => Promise<void>
@@ -67,7 +67,7 @@ export class VoiceController {
     this.starting = true
     try {
       await this.options.ensureMicrophone()
-      await this.options.service.verifyCredentials()
+      await this.options.service.verify()
       if (this.disposed) throw new AppProblem('closed', 'Triage is closing.')
     } finally {
       this.starting = false
@@ -182,7 +182,7 @@ export class VoiceController {
     return record
   }
 
-  private receive(session: ActiveSession, result: TranscribeResult): void {
+  private receive(session: ActiveSession, result: SpeechToTextResult): void {
     if (this.session !== session) return
     if (result.isFinal) {
       if (result.text) {

@@ -12,7 +12,8 @@ import { parseResult, type TranscribeResult } from '../src/main/voice/transcribe
 function fakeService(options: { fail?: Error } = {}) {
   return {
     config: { region: 'test', languageCode: 'en-US' as const },
-    verifyCredentials: async () => {},
+    name: 'fake',
+    verify: async () => {},
     dispose() {},
     async stream(audio: AsyncIterable<Uint8Array>, _rate: number, signal: AbortSignal, onResult: (result: TranscribeResult) => void) {
       let bytes = 0
@@ -30,7 +31,7 @@ function fakeService(options: { fail?: Error } = {}) {
 function setup(service = fakeService()) {
   const directory = mkdtempSync(join(tmpdir(), 'triage-voice-'))
   const store = new LocalTranscriptStore(directory)
-  // The fake has the parts of TranscribeService the controller uses.
+  // The fake implements SpeechToTextService.
   const voice = new VoiceController({ service: service as never, store, ensureMicrophone: async () => {} })
   const events: VoiceEvent[] = []
   voice.subscribe((event) => events.push(event))
