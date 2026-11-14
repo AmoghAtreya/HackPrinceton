@@ -8,6 +8,9 @@ import { SettingsPanel } from './SettingsPanel'
 import { HistoryPanel } from './HistoryPanel'
 import { VoiceButton } from './VoiceButton'
 import { matchVoiceIntent, needsConfirmation } from './voice/intents'
+import { speechPlayer } from './voice/speech-player'
+import { failureSpeech, prepareSpeech } from '../../shared/speech-text'
+import type { ReadAloud } from '../../shared/speech-contracts'
 import { displayError, unwrap } from './assistant-ui'
 import { appendConversations, refreshConversations } from './history-state'
 
@@ -31,6 +34,9 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   const bottom = useRef<HTMLDivElement>(null)
   const keepScroll = useRef(false)
   const lastGesture = useRef<string | undefined>(undefined)
+  /** Task ids whose reply should be read aloud when it arrives. */
+  const speakTasks = useRef(new Set<string>())
+  const readAloud = useRef<ReadAloud>('voice')
   const historyVersion = useRef(0)
   const selection = useRef(selected)
   selection.current = selected
@@ -50,9 +56,33 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   }, [bridge])
 
   useEffect(() => {
+    // Re-read on every view change so a change saved in Settings applies right away.
+    let active = true
+    bridge.getSpeechSettings().then((result) => { if (active && result.ok) readAloud.current = result.value.readAloud })
+      .catch(() => { /* Keep the default. */ })
+    return () => { active = false }
+  }, [bridge, view])
+
+  useEffect(() => {
+    for (const message of detail?.messages ?? []) {
+      if (!speakTasks.current.has(message.taskId)) continue
+      if (message.role === 'assistant' && message.status === 'completed') {
+        speakTasks.current.delete(message.taskId)
+        void speechPlayer.speak(prepareSpeech(message.content))
+      } else if (message.role === 'user' && ['failed', 'interrupted', 'stopped'].includes(message.status)) {
+        speakTasks.current.delete(message.taskId)
+        // The user stopped it themselves, so there is nothing to announce.
+        if (message.status !== 'stopped') void speechPlayer.speak(failureSpeech(message.error))
+      }
+    }
+  }, [detail?.messages])
+
+  useEffect(() => {
     const gesture = assistant?.gestureRequest
     if (!gesture || lastGesture.current === gesture.taskId) return
     lastGesture.current = gesture.taskId
+    // Shake to Help is hands-free, so its answer is spoken unless replies are muted.
+    if (readAloud.current !== 'off') queueSpeech(gesture.taskId)
     setCapture(null); setDetail(null); setSelected(gesture.conversationId); setView('chat'); setError('')
   }, [assistant?.gestureRequest?.taskId])
 
@@ -128,6 +158,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     setBusy(true); setError(''); setVoiceNotice('')
     try {
       const receipt = unwrap(await bridge.sendMessage({ ...(selected ? { conversationId: selected } : {}), text, source, ...(shot ? { captureId: shot.metadata.id, mode } : {}) }))
+      if (readAloud.current === 'always' || (readAloud.current === 'voice' && source === 'voice')) queueSpeech(receipt.taskId)
       setSelected(receipt.conversationId); setCapture(null); setView('chat')
       if (source === 'chat') setDraft('')
       return true
@@ -142,7 +173,14 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     await deliver(draft.trim() || 'Explain what is happening on this screen. Be specific about visible content and uncertainty.', 'chat', capture, highlightMode ? 'highlight' : 'explain')
   }
 
+  function queueSpeech(taskId: string) {
+    speakTasks.current.add(taskId)
+    // Forget requests whose replies never showed up (e.g. the user switched conversations).
+    while (speakTasks.current.size > 20) speakTasks.current.delete(speakTasks.current.values().next().value!)
+  }
+
   function newConversation() {
+    speechPlayer.stop()
     setCapture(null); void bridge.discardScreen(); setSelected(null); setDetail(null); setDraft(''); setError(''); setVoiceNotice(''); setView('chat')
   }
 
@@ -172,6 +210,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     if (!text || !assistant) return
     const intent = matchVoiceIntent(text)
     if (intent.kind === 'stop') {
+      speechPlayer.stop()
       if (assistant.active) await stop()
       else if (capture) { setCapture(null); void bridge.discardScreen() }
       return
@@ -299,6 +338,9 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
           {detail.messages.map((message) => <div className={message.role === 'user' ? 'user-message' : 'assistant-message'} key={message.id}>
             <span className="message-author">{message.role === 'user' ? (message.source === 'voice' ? 'You · voice' : 'You') : 'Triage'}</span>
             <p>{message.content}</p>
+            {message.role === 'assistant' && message.content &&
+              <button type="button" className="read-aloud" onClick={() => void speechPlayer.speak(prepareSpeech(message.content))}>
+                <span aria-hidden="true">🔊</span> Read aloud</button>}
             {message.role === 'user' && ['failed', 'stopped', 'interrupted'].includes(message.status) &&
               <div className={`request-outcome request-outcome--${message.status}`}>
                 <span>{message.status}: {message.error ?? 'No reply was saved.'}</span>
