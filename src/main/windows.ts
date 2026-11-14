@@ -62,7 +62,6 @@ export class DesktopWindows {
     for (const window of [this.companion, this.chat]) {
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
       window.webContents.on('will-navigate', (event) => event.preventDefault())
-      window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
       window.on('close', (event) => {
         if (!this.quitting) {
           event.preventDefault()
@@ -71,6 +70,14 @@ export class DesktopWindows {
         }
       })
     }
+
+    // All windows share one session. Only the chat window's main frame may use
+    // the microphone (for voice input); every other permission stays denied.
+    this.chat.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => {
+      const mediaTypes = 'mediaTypes' in details ? details.mediaTypes ?? [] : []
+      callback(contents === this.chat.webContents && details.isMainFrame && permission === 'media' &&
+        mediaTypes.length > 0 && mediaTypes.every((type) => type === 'audio'))
+    })
 
     this.companion.setIgnoreMouseEvents(true, { forward: true })
     this.companion.on('move', () => { if (this.chat.isVisible()) this.positionChat() })
