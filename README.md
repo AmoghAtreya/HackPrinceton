@@ -68,3 +68,13 @@ Triage keeps a local list of the people and organizations you really deal with a
 2. Turn on **Warn About Impersonation (Preview)** in the menu bar menu.
 3. Open [the demo message](demos/impersonation-ravi.html) in Chrome and keep it in front. Triage should open with: "This says it's from Ravi, but Ravi uses a different email. Call Ravi at the number you have." Open "Why Triage says this" to see the two addresses, the phone number on your list, and that the message asks for gift cards, says it is urgent and asks you to keep it secret.
 4. Press **This is a scam**. The same sender is then flagged as a scam you reported, whatever name it uses.
+
+## What I've learned (the skill graph)
+
+Triage keeps a fixed catalogue of everyday computer skills and what each builds on (for example, attaching a photo to an email builds on writing an email and choosing a file). For each skill it keeps an estimate of whether you know it, updated by Bayesian Knowledge Tracing from what you actually do: asking how to do something, clicking the control Triage pointed at on the first try, losing a highlight, or going back on a simplified page. The estimates and their evidence live in `skill-knowledge.sqlite` on this Mac. An evidence row records a skill, the kind of chance and whether it went right; never your question or the page.
+
+When you ask how to do something, Triage skips the steps you already do comfortably and explains the missing ones first, in order. Claude can only choose skills from the catalogue; anything else it names is dropped. Scores are never shown and never sent to the chat window.
+
+**History → What I've learned** lists the skills in three plain groups. A caregiver can tick **Practice this** to have Triage walk through a skill every time, whatever the estimate says.
+
+The page simplifier's learner now uses this per-skill knowledge instead of generic user traits. That is a new feature layout (version 2). Decisions and learned state from version 1 are kept as they were and are never trained on, loaded or evaluated together with version 2.
