@@ -20,6 +20,7 @@ import type { RequestLog } from '../logging/request-log.ts'
 import type { RequestOutcome, RequestRoute } from '../../shared/request-log-contracts.ts'
 import type { TrustService } from '../trust/service.ts'
 import type { SkillTutor } from '../skills/tutor.ts'
+import { webUrl } from '../simplifier/current-tab.ts'
 import { describeResult, parseSimplifyCommand, type SimplifierService, type SimplifyCommand } from '../simplifier/service.ts'
 import { describeScreenResult, type ScreenSimplifier } from '../simplifier/screen.ts'
 import { parseRememberCommand, type MemoryService, type MemoryStatement } from '../memory/service.ts'
@@ -84,6 +85,8 @@ export class AssistantCoordinator {
   private contexts?: ContextLookup
   private gestureRequest?: SendReceipt
   private browser?: BrowserRunner
+  /** Where links followed from a rebuilt page are added, so one browsing trip stays one conversation. */
+  private simplifyConversation?: string
   private openPage?: (url: string) => Promise<void>
   private requestLog?: RequestLog
   private analyzing: AbortController | null = null
@@ -286,6 +289,26 @@ export class AssistantCoordinator {
     return this.start({ text: 'Simplify this page' }, key, model, undefined, undefined, undefined, 'chat', undefined, true)
   }
 
+  /**
+   * A link pressed in a rebuilt page: open it in Triage's browser and rebuild
+   * that page too, in the same conversation as the page it came from.
+   */
+  simplifyLink(link: string): SendReceipt {
+    this.idle()
+    if (this.storageError) throw new AppProblem('storage', this.storageError)
+    if (!this.simplifier) throw new AppProblem('simplifier_unavailable', 'Page simplification is unavailable in this build.')
+    const url = webUrl(link)
+    if (!url) throw new AppProblem('invalid_url', 'Only http and https pages can be simplified.')
+    const key = this.credentials.getKey()
+    const model = this.credentials.snapshot().model
+    if (!model) throw new AppProblem('missing_model', 'Connect your key and choose an available model in Settings.')
+    // Start a new conversation if the person deleted the one the page came from.
+    let conversationId = this.simplifyConversation
+    if (conversationId) { try { this.history.summary(conversationId) } catch { conversationId = undefined } }
+    return this.start({ text: '/simplify ' + url, conversationId }, key, model,
+      undefined, undefined, undefined, 'chat', { kind: 'url', url })
+  }
+
   private accept(input: unknown): SendReceipt {
     const request = validated(sendSchema, input)
     this.idle()
@@ -411,6 +434,7 @@ export class AssistantCoordinator {
     }
     this.active = active
     if (gesture) this.gestureRequest = receipt
+    if (simplify) this.simplifyConversation = receipt.conversationId
     active.deadline = setTimeout(() => {
       if (this.active?.id !== active.id) return
       this.finish(active, 'failed', 'The reply timed out. You can try again.')
