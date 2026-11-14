@@ -18,6 +18,8 @@ interface ActiveSession {
   queue: AudioQueue
   abort: AbortController
   segments: Map<string, TranscriptSegment>
+  /** Latest live caption per segment: kept if the engine's final result comes back empty. */
+  partials: Map<string, TranscriptSegment>
   stream: Promise<void>
   error?: AppProblem
   limit: ReturnType<typeof setTimeout>
@@ -90,7 +92,7 @@ export class VoiceController {
     const queue = new AudioQueue()
     const abort = new AbortController()
     const session: ActiveSession = {
-      id: randomUUID(), startedAt: Date.now(), queue, abort, segments: new Map(),
+      id: randomUUID(), startedAt: Date.now(), queue, abort, segments: new Map(), partials: new Map(),
       stream: Promise.resolve(), recording: [], recordedBytes: 0, finalAbort: new AbortController(),
       limit: setTimeout(() => { void this.finish(session.id).catch(() => undefined) }, VOICE_MAX_SECONDS * 1000)
     }
@@ -165,6 +167,9 @@ export class VoiceController {
     clearTimeout(timer)
     if (outcome === 'timeout') session.abort.abort()
 
+    // Captions the user saw but that never got a final result (the engine ended early or said "no speech").
+    for (const [id, partial] of session.partials) if (!session.segments.has(id)) session.segments.set(id, partial)
+    session.partials.clear()
     const segments = [...session.segments.values()].sort((a, b) => a.startTime - b.startTime)
     const liveText = segments.map((segment) => segment.text).filter(Boolean).join(' ')
     let record: TranscriptRecord = {
@@ -224,13 +229,16 @@ export class VoiceController {
 
   private receive(session: ActiveSession, result: SpeechToTextResult): void {
     if (this.session !== session) return
-    if (result.isFinal) {
-      if (result.text) {
-        session.segments.set(result.segmentId, {
-          id: result.segmentId, text: result.text, confidence: result.confidence,
-          startTime: result.startTime, endTime: result.endTime
-        })
-      } else session.segments.delete(result.segmentId)
+    const segment = { id: result.segmentId, text: result.text, confidence: result.confidence, startTime: result.startTime, endTime: result.endTime }
+    if (!result.isFinal) {
+      if (result.text) session.partials.set(result.segmentId, { ...segment, confidence: null })
+    } else if (result.text) {
+      session.segments.set(result.segmentId, segment)
+      session.partials.delete(result.segmentId)
+    } else {
+      // An empty final after live captions means the engine gave up, not that nothing was said:
+      // keep the last caption (complete() uses it) unless there never was one.
+      session.segments.delete(result.segmentId)
     }
     this.emit({
       type: 'user_utterance', sessionId: session.id, segmentId: result.segmentId, text: result.text,
