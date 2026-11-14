@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import type { ConversationPage } from '../../shared/assistant-contracts'
+import type { AssistantBridge, ConversationPage } from '../../shared/assistant-contracts'
+import { LearningHistory } from './LearningHistory'
 
-export function HistoryPanel({ page, active, busy, open, loadMore, remove, clear }: {
+export function HistoryPanel({ bridge, revision, page, active, busy, open, loadMore, remove, clear }: {
+  bridge: AssistantBridge; revision: number
   page: ConversationPage; active: boolean | string; busy: boolean
   open: (id: string) => void; loadMore: () => void
   remove: (id: string) => Promise<boolean | void>; clear: () => Promise<boolean | void>
@@ -26,6 +28,7 @@ export function HistoryPanel({ page, active, busy, open, loadMore, remove, clear
       </div>)}
     </div>
     {page.next && <button className="secondary-button" disabled={busy} onClick={loadMore}>Load older conversations</button>}
+    <LearningHistory bridge={bridge} revision={revision} />
     {page.items.length > 0 && <div className="clear-history">
       {confirm === 'all' ? <>
         <p>Delete all saved conversations from this Mac?</p>

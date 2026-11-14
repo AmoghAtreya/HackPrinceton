@@ -255,7 +255,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     <div className="chat-content">
       {!assistant ? <p className="loading-note">Opening saved conversations…</p> :
         view === 'settings' ? <SettingsPanel bridge={bridge} config={assistant.config} active={Boolean(active)} /> :
-        view === 'history' ? <HistoryPanel page={history} active={active?.conversationId ?? false} busy={busy}
+        view === 'history' ? <HistoryPanel bridge={bridge} revision={assistant.revision} page={history} active={active?.conversationId ?? false} busy={busy}
           open={openConversation} loadMore={() => void loadHistory()} remove={(id) => remove(id)} clear={() => remove()} /> :
         selected && !detail ? <p className="loading-note">Opening conversation…</p> :
         detail?.messages.length ? <section className="message-list" role="log" aria-label="Conversation messages">
