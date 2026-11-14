@@ -105,3 +105,19 @@ test('cancelling stops without trying the lighter model', async () => {
   assert.equal(await new GeminiTranscriber({ fetcher }).transcribe(key, audio, 16000, controller.signal), null)
   assert.equal(calls, 1)
 })
+
+test('thinking is switched off, and a model that refuses that setting is asked again without it', async () => {
+  const bodies: Array<{ generationConfig: { thinkingConfig?: unknown } }> = []
+  const fetcher = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body))
+    bodies.push(body)
+    if (body.generationConfig.thinkingConfig) return new Response('{"error":{"message":"Thinking budget is not supported for this model."}}', { status: 400 })
+    return answer('{"text":"Open Gmail.","clarity":"clear"}')
+  }) as unknown as typeof fetch
+  const transcriber = new GeminiTranscriber({ fetcher, fallbackModel: null })
+  assert.deepEqual(await transcriber.transcribe(key, audio, 16000, signal), { text: 'Open Gmail.', clarity: 'clear' })
+  assert.deepEqual(bodies.map((body) => Boolean(body.generationConfig.thinkingConfig)), [true, false])
+  await transcriber.transcribe(key, audio, 16000, signal)
+  assert.equal(bodies.length, 3, 'remembered: the next request skips the refused setting')
+  assert.equal(bodies[2].generationConfig.thinkingConfig, undefined)
+})
