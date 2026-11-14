@@ -15,6 +15,7 @@ import { connectSchema, fastModelSchema, idSchema, modelSchema, rateSchema, send
 import { pickModel, type RequestPurpose } from './tiers.ts'
 import { redact } from './redaction.ts'
 import { resolveDestination } from '../../shared/destinations.ts'
+import type { TrustService } from '../trust/service.ts'
 import { describeResult, parseSimplifyCommand, type SimplifierService, type SimplifyCommand } from '../simplifier/service.ts'
 import { describeScreenResult, type ScreenSimplifier } from '../simplifier/screen.ts'
 
@@ -32,6 +33,8 @@ interface RunningRequest extends ActiveRequest {
   simplifyScreen?: boolean
   /** A screenshot was already requested for this request; a second one is never taken. */
   escalated?: boolean
+  /** The user's own words for this request, exactly as typed or spoken. */
+  text: string
 }
 
 export class AssistantCoordinator {
@@ -50,6 +53,7 @@ export class AssistantCoordinator {
   private offLost?: () => void
   private screenContext?: () => Promise<string | undefined>
   private captureScreen?: () => Promise<ScreenPreview>
+  private trust?: Pick<TrustService, 'propose' | 'answer' | 'context'>
   private contexts?: ContextLookup
   private gestureRequest?: SendReceipt
   private browser?: BrowserRunner
@@ -70,12 +74,15 @@ export class AssistantCoordinator {
     screenContext?: () => Promise<string | undefined>
     /** Takes a redacted screenshot when the model says the text snapshot is not enough. */
     captureScreen?: () => Promise<ScreenPreview>
+    /** The local list of people and organizations the user really deals with. */
+    trust?: Pick<TrustService, 'propose' | 'answer' | 'context'>
     /** Opens a vetted https URL in the user's own browser. */
     openPage?: (url: string) => Promise<void>
   }) {
     this.simplifier = options.simplifier
     this.screenContext = options.screenContext
     this.captureScreen = options.captureScreen
+    this.trust = options.trust
     this.screenSimplifier = options.screenSimplifier
     this.browser = options.browser
     this.openPage = options.openPage
@@ -249,7 +256,7 @@ export class AssistantCoordinator {
       throw error
     }
     const active: RunningRequest = {
-      id: receipt.taskId, conversationId: receipt.conversationId,
+      id: receipt.taskId, conversationId: receipt.conversationId, text: request.text,
       startedAt: Date.now(), stage: capture ? 'capturing' : 'thinking', controller: new AbortController(),
       expectedDisplayId: gesture?.displayId, highlight: request.mode === 'highlight', highlightRevision: this.highlights?.revision,
       ...(simplify ? { simplify } : {}), ...(simplifyScreen ? { simplifyScreen } : {})
@@ -285,6 +292,12 @@ export class AssistantCoordinator {
       const pick = (purpose: RequestPurpose) => pickModel(purpose, config.models, model, config.fastModel)
       let used = pick(image ? 'vision' : 'reply')
       let escalated = false
+      let local = false
+      const plainChat = !image && !capture && !request.highlight && !request.simplify && !request.simplifyScreen
+      // A yes/no to "Should I remember this?" is read by code, not by the model.
+      const answered = plainChat ? this.trust?.answer(request.conversationId, request.text) ?? null : null
+      // Facts from the user's own list: sent as trusted context, apart from anything read off the screen.
+      const trusted = this.trust?.context(request.text)
       let reply: string
       let result: HighlightReply | undefined
       let plan: HighlightPlan | null = null
@@ -342,12 +355,15 @@ export class AssistantCoordinator {
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         this.history.activity(request.id, 'page_simplified', 'Simplified a page.', {})
         reply = describeResult(simplified)
+      } else if (answered !== null) {
+        reply = answered
+        local = true
       } else if (!image && !capture && this.gateway.route) {
         // Awaited only when there is something to read, so dispatch stays immediate otherwise.
         const screenContext = this.screenContext ? await this.readScreenContext() : undefined
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         used = pick('route')
-        const route = await this.gateway.route(key, used.model, context, request.controller.signal, screenContext)
+        const route = await this.gateway.route(key, used.model, context, request.controller.signal, screenContext, trusted)
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         if (route.kind === 'reply') reply = route.text
         else if (route.kind === 'open_page') reply = await this.navigate(request, route.destination, route.query)
@@ -356,9 +372,14 @@ export class AssistantCoordinator {
           reply = await this.simplifyFront(request, key, used.model)
           if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         }
+        else if (route.kind === 'remember_contact') {
+          // Only a suggestion from the model. It becomes a question only if the user's own words back it, and is saved only on "yes".
+          reply = this.trust?.propose(request.conversationId, route.contact, request.text) ??
+            'I can only save contact details that you tell me yourself. Say the name with their email, phone number or website, or add them in Settings.'
+        }
         else if (route.kind === 'needs_screenshot') {
           const vision = pick('vision')
-          const answer = await this.escalate(request, key, vision.model, context, screenContext)
+          const answer = await this.escalate(request, key, vision.model, context, screenContext, trusted)
           if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
           reply = answer.reply
           if (answer.sent) { used = vision; escalated = true }
@@ -392,11 +413,11 @@ export class AssistantCoordinator {
         used = pick(image ? 'vision' : 'reply')
         const screenContext = image || !this.screenContext ? undefined : await this.readScreenContext()
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
-        reply = await this.gateway.reply(key, used.model, context, request.controller.signal, image, screenContext)
+        reply = await this.gateway.reply(key, used.model, context, request.controller.signal, image, screenContext, trusted)
       }
       if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
       this.history.complete(request.id, redact(reply, [key]), result ? { captureId: image!.metadata.id, target: plan && !plan.anchor ? result.target : null, outcome, ...(plan ? { source: highlightSource(plan) } : {}) } : undefined,
-        { tier: used.tier, model: used.model, screenshotEscalation: escalated })
+        local ? undefined : { tier: used.tier, model: used.model, screenshotEscalation: escalated })
       clearTimeout(request.deadline)
       this.active = null
       if (plan) this.highlights?.present(plan)
@@ -432,7 +453,7 @@ export class AssistantCoordinator {
    * so a request can never escalate twice.
    */
   private async escalate(request: RunningRequest, key: string, model: string, context: Array<{ role: 'user' | 'assistant'; content: string }>,
-    screenContext?: string): Promise<{ reply: string; sent: boolean }> {
+    screenContext?: string, trusted?: string): Promise<{ reply: string; sent: boolean }> {
     if (request.escalated) throw new AppProblem('invalid_route', 'The reply could not be completed. Please try again.')
     request.escalated = true
     if (!this.captureScreen || !this.screens) return { sent: false, reply: 'I’d need to look at your screen to answer that. Use Capture screen below, then ask again.' }
@@ -450,7 +471,7 @@ export class AssistantCoordinator {
     }
     this.history.attachCapture(request.id, image.metadata)
     this.history.activity(request.id, 'screenshot_escalation', 'Looked at the screen to answer.', {})
-    return { sent: true, reply: await this.gateway.reply(key, model, context, request.controller.signal, image, screenContext) }
+    return { sent: true, reply: await this.gateway.reply(key, model, context, request.controller.signal, image, screenContext, trusted) }
   }
 
   /** Reads the page in front, simplifies it and shows it. Nothing on the real page is clicked or typed into. */
