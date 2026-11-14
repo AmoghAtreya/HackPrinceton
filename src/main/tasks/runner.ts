@@ -121,12 +121,15 @@ export class TaskRunner {
   }
 
   /** "Where was I?" for this conversation, from saved progress. */
-  whereWasI(conversationId: string): string {
-    const task = this.waiting(conversationId) ?? this.list(conversationId)[0]
-    if (!task) return 'There is no task in progress in this conversation.'
+  whereWasI(conversationId?: string): string {
+    // Prefer this conversation's task; otherwise the most recent paused task anywhere.
+    const local = conversationId ? this.waiting(conversationId) ?? this.list(conversationId)[0] : undefined
+    const task = local ?? this.list().find((item) => item.status === 'waiting') ?? this.list()[0]
+    if (!task) return 'You have no tasks in progress.'
+    const elsewhere = task.conversationId !== conversationId ? ' (in an earlier conversation; open it from History to continue)' : ''
     const done = task.steps.length
     const head = task.status === 'waiting'
-      ? `You were working on: ${task.title}. ${Math.min(done, REFILL_STEP_COUNT)} of about ${REFILL_STEP_COUNT} steps are done.`
+      ? `You were working on: ${task.title}${elsewhere}. ${Math.min(done, REFILL_STEP_COUNT)} of about ${REFILL_STEP_COUNT} steps are done.`
       : `Your last task, "${task.title}", is ${task.status === 'submitted' ? 'finished' : task.status}.`
     const last = task.steps.at(-1)
     return [head, last ? `Last step: ${last}.` : '', task.question ? `I was asking:\n${task.question}` : ''].filter(Boolean).join('\n')
