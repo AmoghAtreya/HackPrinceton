@@ -7,7 +7,9 @@ export default defineConfig({
     build: { rollupOptions: { input: { index: 'src/main/index.ts', 'browser-worker': 'src/worker/browser-worker.ts' } } }
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    // The sandboxed preload can only require('electron'), so libraries it uses
+    // (zod, via the shared contracts) must be bundled into it.
+    plugins: [externalizeDepsPlugin({ exclude: ['zod'] })],
     build: {
       rollupOptions: {
         input: 'src/preload/index.ts',
