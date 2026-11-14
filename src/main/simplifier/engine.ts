@@ -4,7 +4,8 @@ import { AppProblem } from '../assistant/errors.ts'
 import { allowedArms, armById } from './arms.ts'
 import { classifyPage, isSensitive, rankElements } from './classify.ts'
 import type { DecisionLog } from './decision-log.ts'
-import { contextVector, FEATURE_VERSION } from './features.ts'
+import { contextVector, FEATURE_VERSION, policyStateKey } from './features.ts'
+import { neutralSkillFeatures, type SkillFeatures } from '../../shared/skill-contracts.ts'
 import type { SimplifierModel } from './llm.ts'
 import { inputFor } from './off-policy.ts'
 import type { PresentationPolicy } from './policy.ts'
@@ -52,12 +53,16 @@ export class SimplificationEngine {
   private readonly llmTimeoutMs: number
   private readonly now: () => number
   private readonly timeoutSignal: (ms: number) => AbortSignal
+  private readonly knowledge: (userId: string, pageType: PageType) => SkillFeatures
 
   constructor(options: {
     log: DecisionLog; policy: PresentationPolicy; model?: SimplifierModel; llmTimeoutMs?: number; now?: () => number
     /** Source of the LLM deadline signal. Injectable so tests can fire the timeout instantly instead of waiting. */
     timeoutSignal?: (ms: number) => AbortSignal
+    /** What the person knows about the skill a page of this type needs (the skill graph). Neutral when absent. */
+    knowledge?: (userId: string, pageType: PageType) => SkillFeatures
   }) {
+    this.knowledge = options.knowledge ?? (() => neutralSkillFeatures)
     this.log = options.log
     this.policy = options.policy
     this.model = options.model
@@ -72,14 +77,13 @@ export class SimplificationEngine {
     const page = input.page
     const pageType = classifyPage(page)
     const sensitive = isSensitive(pageType)
-    const traits = this.log.traits(input.userId)
     const now = this.now()
     const x = contextVector(page, pageType, {
       userId: input.userId, now, voiceEnabled: input.voiceEnabled, recentErrorRate: this.log.recentErrorRate(input.userId)
-    }, traits)
+    }, this.knowledge(input.userId, pageType))
     const policyInput = { userId: input.userId, x, arms: allowedArms(input.voiceEnabled), pageType, sensitive }
     const decision = this.policy.choose(policyInput)
-    this.log.savePolicy(this.policy.name, this.policy.serialize(), now)
+    this.log.savePolicy(policyStateKey(this.policy.name), this.policy.serialize(), now)
     const arm = armById(decision.armId)
     const ranked = rankElements(page)
 
@@ -125,12 +129,15 @@ export class SimplificationEngine {
     if (!this.log.reward(decisionId, reward, REWARD_VERSION, signals, this.now())) return null
     if (decision.featureVersion === FEATURE_VERSION) {
       this.policy.learn(inputFor(decision), decision.armId, reward)
-      this.log.savePolicy(this.policy.name, this.policy.serialize(), this.now())
+      this.log.savePolicy(policyStateKey(this.policy.name), this.policy.serialize(), this.now())
     }
     return reward
   }
 
-  /** Update what memory knows about the person (e.g. from settings or a caregiver). */
+  /**
+   * Legacy: generic traits fed the learner under feature version 1. They are kept
+   * readable for old records but no longer influence decisions; see main/skills.
+   */
   setTraits(userId: string, traits: Partial<UserTraits>): UserTraits {
     return this.log.setTraits(userId, traits, this.now())
   }

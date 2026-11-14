@@ -43,7 +43,7 @@ async function fixture(locate?: () => Promise<HighlightReply>) {
   const screens = new ScreenService({
     permission: () => 'granted', capture: async () => ({
       data: DATA, mediaType: 'image/jpeg',
-      metadata: { displayId: 'fixture', displayName: 'Fixture', width: 1000, height: 500,
+      metadata: { displayId: 'fixture', redactedRegions: 0, displayName: 'Fixture', width: 1000, height: 500,
         bounds, cursor: { x: 100, y: 100 } }
     })
   })

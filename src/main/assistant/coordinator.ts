@@ -1,7 +1,9 @@
 import type { BrowserRunner } from '../browser/supervisor.ts'
 import { validateFlight } from '../browser/validation.ts'
-import type { HighlightController, HighlightPlan } from '../screen/highlight.ts'
-import type { HighlightReply } from '../../shared/highlight-contracts.ts'
+import { HIGHLIGHT_LOST_MESSAGE, highlightSource, type HighlightController, type HighlightPlan } from '../screen/highlight.ts'
+import type { ElementAnchor, HighlightReply } from '../../shared/highlight-contracts.ts'
+import { locateElements } from '../context/locate.ts'
+import type { ContextLookup } from '../context/paired-capture.ts'
 import type { ShakeTrigger } from '../../shared/shake-contracts.ts'
 import type { ScreenAccess, ScreenImage, ScreenPreview } from '../../shared/screen-contracts.ts'
 import type { ActiveRequest, AssistantState, LearningSummary, SendReceipt } from '../../shared/assistant-contracts.ts'
@@ -9,13 +11,17 @@ import { Credentials } from './credentials.ts'
 import { HistoryStore } from './history.ts'
 import type { ModelGateway } from './model.ts'
 import { AppProblem, publicProblem } from './errors.ts'
-import { analyzeSchema, connectSchema, idSchema, modelSchema, rateSchema, sendSchema, validated } from './schemas.ts'
+import { analyzeSchema, connectSchema, fastModelSchema, idSchema, modelSchema, rateSchema, sendSchema, validated } from './schemas.ts'
 import { parseScreenAnalysis, type ScreenAnalysis } from '../../shared/screen-analysis-contracts.ts'
+import { pickModel, type RequestPurpose } from './tiers.ts'
 import { redact } from './redaction.ts'
 import { resolveDestination } from '../../shared/destinations.ts'
 import type { RequestLog } from '../logging/request-log.ts'
 import type { RequestOutcome, RequestRoute } from '../../shared/request-log-contracts.ts'
+import type { TrustService } from '../trust/service.ts'
+import type { SkillTutor } from '../skills/tutor.ts'
 import { describeResult, parseSimplifyCommand, type SimplifierService, type SimplifyCommand } from '../simplifier/service.ts'
+import { describeScreenResult, type ScreenSimplifier } from '../simplifier/screen.ts'
 
 // Triage is single-user on this Mac; the simplifier keys its learning by this ID.
 const LOCAL_USER = 'local-user'
@@ -32,6 +38,12 @@ interface RunningRequest extends ActiveRequest {
   route?: RequestRoute
   destination?: string
   simplify?: SimplifyCommand
+  /** Simplify the page frontmost in the user's own browser, without asking the model to route. */
+  simplifyScreen?: boolean
+  /** A screenshot was already requested for this request; a second one is never taken. */
+  escalated?: boolean
+  /** The user's own words for this request, exactly as typed or spoken. */
+  text: string
 }
 
 export class AssistantCoordinator {
@@ -47,6 +59,13 @@ export class AssistantCoordinator {
   private requestTimeout: number
   private highlights?: HighlightController
   private offHighlights?: () => void
+  private offLost?: () => void
+  private screenContext?: () => Promise<string | undefined>
+  private captureScreen?: () => Promise<ScreenPreview>
+  private trust?: Pick<TrustService, 'propose' | 'answer' | 'context'>
+  private tutor?: Pick<SkillTutor, 'guidance' | 'asked' | 'locateGuidance' | 'pointed' | 'resolved'>
+  private offClicked?: () => void
+  private contexts?: ContextLookup
   private gestureRequest?: SendReceipt
   private browser?: BrowserRunner
   private openPage?: (url: string) => Promise<void>
@@ -54,22 +73,49 @@ export class AssistantCoordinator {
   private analyzing: AbortController | null = null
   private screens?: ScreenAccess
   private simplifier?: SimplifierService
+  private screenSimplifier?: Pick<ScreenSimplifier, 'simplify' | 'forget'>
 
   constructor(options: {
     history: HistoryStore; credentials: Credentials; gateway: ModelGateway
     changed: (state: AssistantState) => void; browser?: BrowserRunner; requestTimeout?: number; screens?: ScreenAccess; highlights?: HighlightController
     simplifier?: SimplifierService
+    /** Simplifies the page in front of the user from an accessibility snapshot. */
+    screenSimplifier?: Pick<ScreenSimplifier, 'simplify' | 'forget'>
+    /** Accessibility snapshots paired with screenshots; without it highlights are pixel boxes only. */
+    contexts?: ContextLookup
+    /** A <screen_context> text block describing what is frontmost right now, for plain chat. */
+    screenContext?: () => Promise<string | undefined>
+    /** Takes a redacted screenshot when the model says the text snapshot is not enough. */
+    captureScreen?: () => Promise<ScreenPreview>
+    /** The local list of people and organizations the user really deals with. */
+    trust?: Pick<TrustService, 'propose' | 'answer' | 'context'>
+    /** What the person already knows how to do; shapes how-to answers and learns from what they do. */
+    tutor?: Pick<SkillTutor, 'guidance' | 'asked' | 'locateGuidance' | 'pointed' | 'resolved'>
     /** Opens a vetted https URL in the user's own browser. */
     openPage?: (url: string) => Promise<void>
     /** Receives every finished request; it decides (consent) whether to keep it. */
     requestLog?: RequestLog
   }) {
     this.simplifier = options.simplifier
+    this.screenContext = options.screenContext
+    this.captureScreen = options.captureScreen
+    this.trust = options.trust
+    this.tutor = options.tutor
+    // Clicking the outlined control first try is evidence the person can do it; losing it is evidence they could not.
+    this.offClicked = options.highlights?.onClicked((state) => this.tutor?.resolved(state.taskId, true))
+    this.screenSimplifier = options.screenSimplifier
     this.browser = options.browser
     this.openPage = options.openPage
     this.requestLog = options.requestLog
     this.highlights = options.highlights
     this.offHighlights = options.highlights?.onChange(() => this.emit())
+    this.contexts = options.contexts
+    this.offLost = options.highlights?.onLost((state) => {
+      if (this.disposed) return
+      this.tutor?.resolved(state.taskId, false)
+      try { if (this.history.note(state.taskId, 'highlight_lost', HIGHLIGHT_LOST_MESSAGE)) this.emit() }
+      catch { this.blockStorage() }
+    })
     this.screens = options.screens
     this.history = options.history
     this.credentials = options.credentials
@@ -143,6 +189,13 @@ export class AssistantCoordinator {
     return config
   }
 
+  setFastModel(input: unknown) {
+    this.idle()
+    const config = this.credentials.setFastModel(validated(fastModelSchema, input))
+    this.emit()
+    return config
+  }
+
   clearHighlight(): void { this.highlights?.clear() }
 
   /**
@@ -155,8 +208,10 @@ export class AssistantCoordinator {
     if (this.analyzing) throw new AppProblem('busy', 'I’m still looking at your screen. One moment.')
     if (!this.gateway.analyze || !this.screens) throw new AppProblem('analysis_unavailable', 'Checking the screen is unavailable in this build.')
     const key = this.credentials.getKey()
-    const model = this.credentials.snapshot().model
-    if (!model) throw new AppProblem('missing_model', 'Connect your key and choose an available model in Settings.')
+    const config = this.credentials.snapshot()
+    if (!config.model) throw new AppProblem('missing_model', 'Connect your key and choose an available model in Settings.')
+    // Reading a screenshot is a vision request, so it follows the same model tier as Explain screen.
+    const model = pickModel('vision', config.models, config.model, config.fastModel).model
     const image = this.screens.take(captureId)
     const controller = new AbortController()
     this.analyzing = controller
@@ -191,11 +246,23 @@ export class AssistantCoordinator {
     const { decisionId, helpful } = validated(rateSchema, input)
     if (!this.simplifier) throw new AppProblem('simplifier_unavailable', 'Page simplification is unavailable in this build.')
     const summary = this.simplifier.rate(LOCAL_USER, decisionId, helpful)
+    this.screenSimplifier?.forget(decisionId)
     this.emit()
     return summary
   }
 
   send(input: unknown): SendReceipt { return this.accept(input) }
+
+  /** "Simplify this page" from the menu bar or a shake: the same flow the model can route to from chat. */
+  simplifyPage(): SendReceipt {
+    this.idle()
+    if (this.storageError) throw new AppProblem('storage', this.storageError)
+    if (!this.screenSimplifier) throw new AppProblem('simplifier_unavailable', 'Simplifying the page in front is unavailable in this build.')
+    const key = this.credentials.getKey()
+    const model = this.credentials.snapshot().model
+    if (!model) throw new AppProblem('missing_model', 'Connect your key and choose an available model in Settings.')
+    return this.start({ text: 'Simplify this page' }, key, model, undefined, undefined, undefined, 'chat', undefined, true)
+  }
 
   private accept(input: unknown): SendReceipt {
     const request = validated(sendSchema, input)
@@ -238,7 +305,7 @@ export class AssistantCoordinator {
 
   private start(request: { text: string; conversationId?: string; mode?: 'explain' | 'highlight' }, key: string, model: string,
     image?: ScreenImage, gesture?: ShakeTrigger & { instruction: string }, capture?: () => Promise<ScreenPreview>, source: 'chat' | 'voice' = 'chat',
-    simplify?: SimplifyCommand): SendReceipt {
+    simplify?: SimplifyCommand, simplifyScreen = false): SendReceipt {
     this.highlights?.clear()
     let receipt: SendReceipt
     const logText = redact((gesture ? '[Shake to Help] ' : request.mode === 'highlight' ? '[Show me where] ' : image ? '[Screen explanation] ' : '') + request.text, [key])
@@ -251,11 +318,11 @@ export class AssistantCoordinator {
       throw error
     }
     const active: RunningRequest = {
-      id: receipt.taskId, conversationId: receipt.conversationId,
+      id: receipt.taskId, conversationId: receipt.conversationId, text: request.text,
       startedAt: Date.now(), stage: capture ? 'capturing' : 'thinking', controller: new AbortController(),
       expectedDisplayId: gesture?.displayId, highlight: request.mode === 'highlight', highlightRevision: this.highlights?.revision,
       logText, source: gesture ? 'shake' : source,
-      ...(simplify ? { simplify } : {})
+      ...(simplify ? { simplify } : {}), ...(simplifyScreen ? { simplifyScreen } : {})
     }
     this.active = active
     if (gesture) this.gestureRequest = receipt
@@ -283,6 +350,17 @@ export class AssistantCoordinator {
         this.transition(request, 'thinking')
       }
       const context = this.history.context(request.conversationId, request.id)
+      const config = this.credentials.snapshot()
+      // `model` is the person's selected model; each call goes to the tier its purpose needs.
+      const pick = (purpose: RequestPurpose) => pickModel(purpose, config.models, model, config.fastModel)
+      let used = pick(image ? 'vision' : 'reply')
+      let escalated = false
+      let local = false
+      const plainChat = !image && !capture && !request.highlight && !request.simplify && !request.simplifyScreen
+      // A yes/no to "Should I remember this?" is read by code, not by the model.
+      const answered = plainChat ? this.trust?.answer(request.conversationId, request.text) ?? null : null
+      // Facts from the user's own list: sent as trusted context, apart from anything read off the screen.
+      const trusted = this.trust?.context(request.text)
       let reply: string
       let result: HighlightReply | undefined
       let plan: HighlightPlan | null = null
@@ -290,31 +368,98 @@ export class AssistantCoordinator {
       if (request.highlight) {
         request.route = 'highlight'
         if (!image || !this.gateway.locate || !this.highlights) throw new AppProblem('highlight_unavailable', 'Screen highlighting is unavailable. Capture again or use Explain screen.')
-        result = await this.gateway.locate(key, model, context, request.controller.signal, image)
+        const snapshot = this.contexts?.forCapture(image.metadata.id)
+        const candidates = snapshot ? locateElements(snapshot) : []
+        used = pick('locate')
+        result = await this.gateway.locate(key, used.model, context, request.controller.signal, image, candidates.length ? candidates : undefined,
+          this.tutor?.locateGuidance(LOCAL_USER, request.conversationId))
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         reply = result.explanation
         try {
-          plan = this.highlights.plan(result, image.metadata, request.id, request.highlightRevision!)
+          let anchor: ElementAnchor | undefined
+          let rejected: AppProblem | undefined
+          if (result.elementId) {
+            // The id is only meaningful for the snapshot it was offered from: the
+            // lookup refuses ids that snapshot never had, and any snapshot that
+            // has since expired or been replaced by a newer generation.
+            try {
+              if (!snapshot || !this.contexts) throw new AppProblem('context_element', 'No element list was offered.')
+              const element = this.contexts.element(snapshot.id, snapshot.generation, result.elementId)
+              anchor = { frame: element.frame, pid: snapshot.app.pid, path: element.path, role: element.role }
+            } catch (error) {
+              if (!(error instanceof AppProblem)) throw error
+              rejected = error.code === 'context_expired'
+                ? new AppProblem('stale_element', 'No highlight: the view of the screen expired or was replaced. Capture again before asking where to click.')
+                : new AppProblem('unknown_element', 'No highlight: the reply named an item that is not on the captured screen. Try a fresh capture.')
+            }
+          }
+          if (anchor) {
+            try { plan = this.highlights.plan(result, image.metadata, request.id, request.highlightRevision!, anchor) }
+            // An element that is off this display can still be marked from the model's pixel box, if it gave one.
+            catch (error) { if (!(error instanceof AppProblem) || error.code !== 'invalid_target' || !result.target) throw error }
+          }
+          if (!plan) {
+            if (rejected && !result.target) throw rejected
+            plan = this.highlights.plan(result, image.metadata, request.id, request.highlightRevision!)
+          }
           outcome = plan ? 'prepared' : 'no_target'
         } catch (error) {
           if (!(error instanceof AppProblem)) throw error
           outcome = error.code
           reply += '\n\n' + error.message
         }
+      } else if (request.simplifyScreen) {
+        used = pick('simplify')
+        reply = await this.simplifyFront(request, key, used.model)
+        if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
       } else if (request.simplify && this.simplifier) {
         request.progress = request.simplify.url ? 'Opening and simplifying the page…' : 'Simplifying the demo page…'
         this.emit()
-        const simplified = await this.simplifier.simplify(request.simplify, LOCAL_USER, { key, model }, request.controller.signal)
+        used = pick('simplify')
+        const simplified = await this.simplifier.simplify(request.simplify, LOCAL_USER, { key, model: used.model }, request.controller.signal)
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         this.history.activity(request.id, 'page_simplified', 'Simplified a page.', {})
         reply = describeResult(simplified)
+      } else if (answered !== null) {
+        reply = answered
+        local = true
       } else if (!image && !capture && this.gateway.route) {
-        const route = await this.gateway.route(key, model, context, request.controller.signal)
+        // Awaited only when there is something to read, so dispatch stays immediate otherwise.
+        const screenContext = this.screenContext ? await this.readScreenContext() : undefined
+        if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
+        used = pick('route')
+        const route = await this.gateway.route(key, used.model, context, request.controller.signal, screenContext, trusted)
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         request.route = route.kind
         if (route.kind === 'open_page') request.destination = route.destination
         if (route.kind === 'reply') reply = route.text
         else if (route.kind === 'open_page') reply = await this.navigate(request, route.destination, route.query)
+        else if (route.kind === 'simplify_page') {
+          used = pick('simplify')
+          reply = await this.simplifyFront(request, key, used.model)
+          if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
+        }
+        else if (route.kind === 'remember_contact') {
+          // Only a suggestion from the model. It becomes a question only if the user's own words back it, and is saved only on "yes".
+          reply = this.trust?.propose(request.conversationId, route.contact, request.text) ??
+            'I can only save contact details that you tell me yourself. Say the name with their email, phone number or website, or add them in Settings.'
+        }
+        else if (route.kind === 'how_to') {
+          // The plan is made before this question counts as evidence, from catalogue skills only.
+          const guidance = this.tutor?.guidance(LOCAL_USER, route.skills)
+          this.tutor?.asked(LOCAL_USER, request.conversationId, route.skills)
+          used = pick('reply')
+          reply = await this.gateway.reply(key, used.model, context, request.controller.signal, undefined, screenContext,
+            [trusted, guidance].filter(Boolean).join('\n\n') || undefined)
+          if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
+        }
+        else if (route.kind === 'needs_screenshot') {
+          const vision = pick('vision')
+          const answer = await this.escalate(request, key, vision.model, context, screenContext, trusted)
+          if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
+          reply = answer.reply
+          if (answer.sent) { used = vision; escalated = true }
+        }
         else {
           const checked = validateFlight(route.flight)
           const parentTaskId = this.history.clarificationParent(request.conversationId)
@@ -342,15 +487,19 @@ export class AssistantCoordinator {
         }
       } else {
         request.route = image ? 'explain' : 'reply'
-        reply = await this.gateway.reply(key, model, context, request.controller.signal, image)
+        used = pick(image ? 'vision' : 'reply')
+        const screenContext = image || !this.screenContext ? undefined : await this.readScreenContext()
+        if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
+        reply = await this.gateway.reply(key, used.model, context, request.controller.signal, image, screenContext, trusted)
       }
       if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
       const savedReply = redact(reply, [key])
-      this.history.complete(request.id, savedReply, result ? { captureId: image!.metadata.id, target: plan ? result.target : null, outcome } : undefined)
+      this.history.complete(request.id, savedReply, result ? { captureId: image!.metadata.id, target: plan && !plan.anchor ? result.target : null, outcome, ...(plan ? { source: highlightSource(plan) } : {}) } : undefined,
+        local ? undefined : { tier: used.tier, model: used.model, screenshotEscalation: escalated })
       clearTimeout(request.deadline)
       this.active = null
       this.report(request, 'completed', savedReply)
-      if (plan) this.highlights?.present(plan)
+      if (plan && this.highlights?.present(plan)) this.tutor?.pointed(LOCAL_USER, request.conversationId, request.id)
       this.emit()
     } catch (error) {
       if (this.disposed || this.active?.id !== request.id) return
@@ -368,6 +517,51 @@ export class AssistantCoordinator {
       // it settles so the gesture conversation can be opened without spoiling capture.
       if (capture && !this.disposed) this.emit()
     }
+  }
+
+  /** What is on screen right now, as text. Chat works without it, so any failure just means no block. */
+  private async readScreenContext(): Promise<string | undefined> {
+    if (!this.screenContext) return undefined
+    try { return await this.screenContext() } catch { return undefined }
+  }
+
+  /**
+   * The model said the text snapshot is not enough. Takes one screenshot (with
+   * private fields blacked out by the capture path) and asks the same question
+   * again with the image. The second call is a plain reply, which cannot route,
+   * so a request can never escalate twice.
+   */
+  private async escalate(request: RunningRequest, key: string, model: string, context: Array<{ role: 'user' | 'assistant'; content: string }>,
+    screenContext?: string, trusted?: string): Promise<{ reply: string; sent: boolean }> {
+    if (request.escalated) throw new AppProblem('invalid_route', 'The reply could not be completed. Please try again.')
+    request.escalated = true
+    if (!this.captureScreen || !this.screens) return { sent: false, reply: 'I’d need to look at your screen to answer that. Use Capture screen below, then ask again.' }
+    request.progress = 'Looking at your screen…'
+    this.emit()
+    const preview = await this.captureScreen()
+    if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) {
+      this.screens.discard?.(preview.metadata.id)
+      return { sent: false, reply: '' }
+    }
+    const image = this.screens.take(preview.metadata.id)
+    // Nobody previews this screenshot, so it is only sent when the private-field check actually ran.
+    if (image.metadata.redactedRegions === null) {
+      return { sent: false, reply: 'I’d need to look at your screen to answer that, but I couldn’t check it for private fields, so I didn’t send it. Use Capture screen below to preview it and send it yourself.' }
+    }
+    this.history.attachCapture(request.id, image.metadata)
+    this.history.activity(request.id, 'screenshot_escalation', 'Looked at the screen to answer.', {})
+    return { sent: true, reply: await this.gateway.reply(key, model, context, request.controller.signal, image, screenContext, trusted) }
+  }
+
+  /** Reads the page in front, simplifies it and shows it. Nothing on the real page is clicked or typed into. */
+  private async simplifyFront(request: RunningRequest, key: string, model: string): Promise<string> {
+    if (!this.screenSimplifier) throw new AppProblem('simplifier_unavailable', 'Simplifying the page in front is unavailable in this build.')
+    request.progress = 'Reading and simplifying the page in front…'
+    this.emit()
+    const simplified = await this.screenSimplifier.simplify(LOCAL_USER, { key, model }, request.controller.signal)
+    if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return ''
+    this.history.activity(request.id, 'page_simplified', 'Simplified the page in front.', {})
+    return describeScreenResult(simplified)
   }
 
   /** Opens a curated destination in the user's browser; never a model-supplied URL. */
@@ -456,6 +650,8 @@ If you can’t find something on the page, ask “show me where…” and I’ll
     try {
       if (this.active) this.finish(this.active, 'stopped', 'Stopped because Triage quit.')
       this.offHighlights?.()
+      this.offLost?.()
+      this.offClicked?.()
       this.highlights?.clear()
     } finally {
       this.credentials.dispose()

@@ -1,5 +1,5 @@
 import type { ShakePreferences } from '../gestures/settings'
-import type { ScreenService } from '../screen/service'
+import type { ScreenPreview } from '../../shared/screen-contracts.ts'
 import { ipcMain, type IpcMainInvokeEvent } from 'electron'
 import { assistantChannels } from '../../shared/assistant-contracts.ts'
 import { AssistantCoordinator } from './coordinator.ts'
@@ -9,7 +9,7 @@ import { detailSchema, listSchema, validated } from './schemas.ts'
 export function installAssistantIpc(
   assistant: AssistantCoordinator,
   trusted: (event: IpcMainInvokeEvent) => boolean,
-  screens: ScreenService,
+  screens: { capture(): Promise<ScreenPreview>; clear(): void },
   shake: ShakePreferences,
   resetShake: () => void
 ): () => void {
@@ -36,6 +36,7 @@ export function installAssistantIpc(
   register(assistantChannels.connect, (input) => assistant.connect(input))
   register(assistantChannels.removeKey, () => assistant.removeKey())
   register(assistantChannels.selectModel, (input) => assistant.selectModel(input))
+  register(assistantChannels.setFastModel, (input) => assistant.setFastModel(input))
   register(assistantChannels.send, (input) => assistant.send(input))
   register(assistantChannels.closeBrowser, () => assistant.closeBrowser())
   register(assistantChannels.stop, (input) => assistant.stop(input))

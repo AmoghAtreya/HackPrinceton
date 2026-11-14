@@ -1,0 +1,24 @@
+{
+  "app": {"bundleId": "com.google.Chrome", "name": "Google Chrome", "pid": 6021},
+  "window": {"title": "Inbox - Need a quick favor - Google Chrome", "frame": {"x": 0, "y": 25, "width": 1200, "height": 800}},
+  "url": "file:///Users/demo/triage/demos/impersonation-ravi.html",
+  "elements": [
+    {"role": "AXButton", "label": "Reload", "frame": {"x": 84, "y": 64, "width": 28, "height": 28}, "secure": false, "enabled": true, "depth": 0, "path": [0, 0, 2]},
+    {"role": "AXTextField", "label": "Address and search bar", "frame": {"x": 130, "y": 62, "width": 900, "height": 32}, "secure": false, "enabled": true, "depth": 0, "path": [0, 0, 4]},
+    {"role": "AXWebArea", "label": "Inbox - Need a quick favor", "url": "file:///Users/demo/triage/demos/impersonation-ravi.html", "frame": {"x": 0, "y": 112, "width": 1200, "height": 713}, "secure": false, "enabled": true, "depth": 0, "path": [0, 1, 0]},
+    {"role": "AXGroup", "subrole": "AXLandmarkBanner", "label": "", "frame": {"x": 0, "y": 112, "width": 1200, "height": 48}, "secure": false, "enabled": true, "depth": 1, "path": [0, 1, 0, 0]},
+    {"role": "AXStaticText", "label": "", "value": "Demo Mail", "frame": {"x": 24, "y": 124, "width": 100, "height": 24}, "secure": false, "enabled": true, "depth": 2, "path": [0, 1, 0, 0, 0]},
+    {"role": "AXGroup", "subrole": "AXLandmarkMain", "label": "", "frame": {"x": 220, "y": 184, "width": 760, "height": 560}, "secure": false, "enabled": true, "depth": 1, "path": [0, 1, 0, 1]},
+    {"role": "AXHeading", "label": "Need a quick favor", "value": "1", "frame": {"x": 248, "y": 208, "width": 704, "height": 32}, "secure": false, "enabled": true, "depth": 2, "path": [0, 1, 0, 1, 0]},
+    {"role": "AXStaticText", "label": "", "value": "From", "frame": {"x": 248, "y": 256, "width": 36, "height": 22}, "secure": false, "enabled": true, "depth": 2, "path": [0, 1, 0, 1, 1, 0, 0]},
+    {"role": "AXStaticText", "label": "", "value": "Ravi Kumar", "frame": {"x": 290, "y": 256, "width": 90, "height": 22}, "secure": false, "enabled": true, "depth": 2, "path": [0, 1, 0, 1, 1, 1, 0]},
+    {"role": "AXStaticText", "label": "", "value": "<ravi.kumar.urgent@mail-helpdesk.example>", "frame": {"x": 386, "y": 256, "width": 330, "height": 22}, "secure": false, "enabled": true, "depth": 2, "path": [0, 1, 0, 1, 1, 2, 0]},
+    {"role": "AXStaticText", "label": "", "value": "To: me", "frame": {"x": 248, "y": 300, "width": 60, "height": 22}, "secure": false, "enabled": true, "depth": 2, "path": [0, 1, 0, 1, 2, 0]},
+    {"role": "AXStaticText", "label": "", "value": "Hi, it's Ravi. I'm stuck in a meeting and can't talk on the phone, and I lost my old email so I'm writing from this new one.", "frame": {"x": 248, "y": 338, "width": 704, "height": 44}, "secure": false, "enabled": true, "depth": 2, "path": [0, 1, 0, 1, 3, 0]},
+    {"role": "AXStaticText", "label": "", "value": "I need you to do something for me right away. Please buy four $100 gift cards from the store, scratch off the backs, and email me photos of the codes. It's urgent. I'll pay you back tonight.", "frame": {"x": 248, "y": 396, "width": 704, "height": 66}, "secure": false, "enabled": true, "depth": 2, "path": [0, 1, 0, 1, 4, 0]},
+    {"role": "AXStaticText", "label": "", "value": "Please don't tell anyone yet, it's meant to be a surprise.", "frame": {"x": 248, "y": 476, "width": 704, "height": 22}, "secure": false, "enabled": true, "depth": 2, "path": [0, 1, 0, 1, 5, 0]},
+    {"role": "AXStaticText", "label": "", "value": "Thanks,", "frame": {"x": 248, "y": 512, "width": 704, "height": 22}, "secure": false, "enabled": true, "depth": 2, "path": [0, 1, 0, 1, 6, 0]},
+    {"role": "AXStaticText", "label": "", "value": "Ravi", "frame": {"x": 248, "y": 548, "width": 704, "height": 22}, "secure": false, "enabled": true, "depth": 2, "path": [0, 1, 0, 1, 7, 0]},
+    {"role": "AXButton", "label": "Reply", "frame": {"x": 248, "y": 584, "width": 80, "height": 34}, "secure": false, "enabled": true, "depth": 2, "path": [0, 1, 0, 1, 9]}
+  ]
+}

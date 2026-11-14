@@ -99,10 +99,11 @@ export class DecisionLog {
   }
 
   /** Rewarded decisions, oldest first. The input for off-policy evaluation and offline training. */
-  rewarded(options: { userId?: string; since?: number; limit?: number } = {}): LoggedDecision[] {
+  rewarded(options: { userId?: string; since?: number; limit?: number; featureVersion?: number } = {}): LoggedDecision[] {
+    // Pass featureVersion to get one layout only: context vectors from different versions must never be trained on together.
     const rows = this.db.prepare(`SELECT * FROM decisions WHERE reward IS NOT NULL
-      AND (? IS NULL OR user_id = ?) AND created_at >= ? ORDER BY created_at, step LIMIT ?`)
-      .all(options.userId ?? null, options.userId ?? null, options.since ?? 0, options.limit ?? 100000)
+      AND (? IS NULL OR user_id = ?) AND (? IS NULL OR feature_version = ?) AND created_at >= ? ORDER BY created_at, step LIMIT ?`)
+      .all(options.userId ?? null, options.userId ?? null, options.featureVersion ?? null, options.featureVersion ?? null, options.since ?? 0, options.limit ?? 100000)
     return rows.map((row) => this.decode(row))
   }
 
@@ -118,9 +119,9 @@ export class DecisionLog {
   }
 
   /** Decisions grouped into ordered episodes: the trajectory format offline RL needs. */
-  episodes(options: { userId?: string; limit?: number } = {}): LoggedDecision[][] {
+  episodes(options: { userId?: string; limit?: number; featureVersion?: number } = {}): LoggedDecision[][] {
     const groups = new Map<string, LoggedDecision[]>()
-    for (const decision of this.rewarded({ userId: options.userId, limit: options.limit })) {
+    for (const decision of this.rewarded({ userId: options.userId, limit: options.limit, featureVersion: options.featureVersion })) {
       const list = groups.get(decision.episodeId) ?? []
       list.push(decision)
       groups.set(decision.episodeId, list)

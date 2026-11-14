@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { BrowserChannel } from './browser-config.ts'
 import { destinationIds } from './destinations.ts'
+import { contactDraftSchema } from './trust-contracts.ts'
 
 export const flightDraftSchema = z.object({
   originAirport: z.string().max(80).nullable(), destinationAirport: z.string().max(80).nullable(),
@@ -17,6 +18,14 @@ export const routeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reply'), text: z.string().trim().min(1).max(16000) }).strict(),
   z.object({ kind: z.literal('flight_search'), flight: flightDraftSchema }).strict(),
   // Opens a curated destination in the user's own browser; the model never supplies a URL.
+  // Simplify whatever page is frontmost in the user's own browser. Carries no arguments: the app reads the page itself.
+  z.object({ kind: z.literal('simplify_page') }).strict(),
+  // The text snapshot of the screen is not enough; the app may take one redacted screenshot and ask again.
+  z.object({ kind: z.literal('needs_screenshot'), reason: z.string().trim().min(1).max(300) }).strict(),
+  // The user stated how someone they know reaches them. A suggestion only: the app verifies it against the user's own words and asks before saving.
+  z.object({ kind: z.literal('remember_contact'), contact: contactDraftSchema }).strict(),
+  // A how-to question. `skills` are meant to be catalogue ids; anything that is not is dropped by the app, never stored.
+  z.object({ kind: z.literal('how_to'), skills: z.array(z.string().max(60)).max(5) }).strict(),
   z.object({ kind: z.literal('open_page'), destination: z.enum(destinationIds), query: z.string().trim().min(1).max(200).optional() }).strict()
 ])
 export type AssistantRoute = z.infer<typeof routeSchema>

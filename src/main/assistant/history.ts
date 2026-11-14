@@ -1,5 +1,5 @@
 import type { ActivityEvent } from '../../shared/flight-contracts.ts'
-import type { HighlightReply } from '../../shared/highlight-contracts.ts'
+import type { HighlightReply, HighlightSource } from '../../shared/highlight-contracts.ts'
 import type { ShakeTrigger } from '../../shared/shake-contracts.ts'
 import type { CaptureMetadata } from '../../shared/screen-contracts.ts'
 import { DatabaseSync } from 'node:sqlite'
@@ -141,7 +141,9 @@ export class HistoryStore {
     })
   }
 
-  complete(taskId: string, content: string, highlight?: Omit<HighlightReply, 'explanation'> & { outcome: string }): boolean {
+  complete(taskId: string, content: string, highlight?: Omit<HighlightReply, 'explanation' | 'elementId'> & { outcome: string; source?: HighlightSource },
+    /** Which model tier answered and whether a screenshot was taken to do it. Never any content. */
+    usage?: { tier: 'fast' | 'strong'; model: string; screenshotEscalation: boolean }): boolean {
     return this.transaction(() => {
       const task = this.db.prepare("SELECT conversation_id FROM tasks WHERE id=? AND status='running'").get(taskId) as { conversation_id: string } | undefined
       if (!task) return false
@@ -151,7 +153,22 @@ export class HistoryStore {
       this.db.prepare("UPDATE tasks SET status='completed',finished_at=? WHERE id=?").run(now, taskId)
       this.db.prepare('UPDATE conversations SET updated_at=? WHERE id=?').run(now, task.conversation_id)
       this.unknownActions(taskId, task.conversation_id)
-      this.event(task.conversation_id, taskId, 'reply_completed', highlight ? { highlight } : {})
+      this.event(task.conversation_id, taskId, 'reply_completed', { ...(highlight ? { highlight } : {}), ...(usage ? { usage } : {}) })
+      return true
+    })
+  }
+
+  /** Adds a follow-up assistant message to an already completed task, e.g. when its highlight was lost. */
+  note(taskId: string, type: string, content: string): boolean {
+    return this.transaction(() => {
+      const task = this.db.prepare("SELECT conversation_id FROM tasks WHERE id=? AND status='completed'").get(taskId) as { conversation_id: string } | undefined
+      if (!task) return false
+      const now = Date.now()
+      const safe = redact(content).slice(0, 1500)
+      this.db.prepare("INSERT INTO messages(id,conversation_id,task_id,role,content,created_at) VALUES(?,?,?,'assistant',?,?)")
+        .run(randomUUID(), task.conversation_id, taskId, safe, now)
+      this.db.prepare('UPDATE conversations SET updated_at=? WHERE id=?').run(now, task.conversation_id)
+      this.event(task.conversation_id, taskId, type, { detail: safe })
       return true
     })
   }

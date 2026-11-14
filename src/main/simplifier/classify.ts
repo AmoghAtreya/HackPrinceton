@@ -9,13 +9,24 @@ const CREDENTIALS = /\b(password|passcode|pin|sign in|log ?in|security code|cvv|
 const COMMIT = /\b(submit|send|confirm|book|schedule|save|apply|continue|next|finish|complete|refill|order|delete|remove|cancel)\b/i
 const MAIL_HOSTS = /(^|\.)(mail\.google\.com|outlook\.(live|office)\.com|mail\.yahoo\.com|mail\.aol\.com|icloud\.com)$/i
 const CARD_AUTOCOMPLETE = /^(cc-|transaction-)/
+const CARD_LABEL = /\b(card number|credit card|debit card|expir|cvv|cvc)\b/i
+
+/** A field label that asks for a password, PIN, card detail or SSN. Also used to black such fields out of screenshots. */
+export function isPrivateLabel(label: string): boolean {
+  return CARD_LABEL.test(label) || CREDENTIALS.test(label)
+}
 
 function host(url: string): string {
   try { return new URL(url).hostname } catch { return '' }
 }
 
+/** True for the webmail sites Triage recognises. */
+export function isMailHost(url: string): boolean {
+  return MAIL_HOSTS.test(host(url))
+}
+
 function isCardField(el: PageElement): boolean {
-  return Boolean(el.autocomplete && CARD_AUTOCOMPLETE.test(el.autocomplete)) || /\b(card number|credit card|debit card|expir|cvv|cvc)\b/i.test(el.label)
+  return Boolean(el.autocomplete && CARD_AUTOCOMPLETE.test(el.autocomplete)) || CARD_LABEL.test(el.label)
 }
 function isPasswordField(el: PageElement): boolean {
   return el.inputType === 'password' || el.autocomplete === 'current-password' || el.autocomplete === 'new-password'
