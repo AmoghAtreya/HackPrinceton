@@ -42,13 +42,13 @@ export function SettingsPanel({ bridge, config, active }: {
   return <section className="settings-view">
     <span className="eyebrow">MAKE TRIAGE YOURS</span>
     <h2>Connect your AI</h2>
-    <p className="section-description">Use your own Anthropic (Claude) or Google AI Studio (Gemini) API key. Triage picks the provider from the key. Your key never appears in saved conversations.</p>
+    <p className="section-description">Paste a free Google Gemini key from aistudio.google.com/apikey. Gemini Flash answers quickly, which suits short everyday requests. An Anthropic (Claude) key also works; Triage picks the provider from the key. Your key never appears in saved conversations.</p>
     <div className="connection-status"><i className={config.configured ? 'connected' : ''} />
       {config.configured ? `Connected · ${config.keyStorage === 'session' ? 'this session only' : 'encrypted on this Mac'}` : 'Not connected'}
     </div>
     {config.warning && <p className="notice warning" role="status">{config.warning}</p>}
     <form className="settings-form" onSubmit={connect}>
-      <label htmlFor="api-key">Anthropic or Gemini API key</label>
+      <label htmlFor="api-key">Gemini API key (or Anthropic)</label>
       <input id="api-key" type="password" autoComplete="off" spellCheck={false}
         placeholder={config.configured ? 'Enter a replacement key…' : 'Paste your API key…'}
         value={key} maxLength={512} onChange={(event) => setKey(event.target.value)} disabled={busy || active} />
@@ -68,7 +68,7 @@ export function SettingsPanel({ bridge, config, active }: {
         {!config.models.length && <option value="">Connect to load available models</option>}
         {config.models.map((model) => <option value={model.id} key={model.id}>{model.label}</option>)}
       </select>
-      <p className="field-hint">Models are loaded from your provider for this key. API usage may incur charges; check your account’s pricing.</p>
+      <p className="field-hint">Models are loaded from your provider for this key. For Gemini, “Gemini Flash Latest” is the quickest and always current. API usage may incur charges; check your account’s pricing.</p>
     </div>
     {(config.configured || config.keyStorage === 'locked') &&
       <button className="text-button danger" disabled={busy || active} onClick={() => void remove()}>Remove key from Triage</button>}
