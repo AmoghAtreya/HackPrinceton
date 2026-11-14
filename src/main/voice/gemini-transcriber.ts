@@ -2,7 +2,8 @@ import { z } from 'zod'
 import { destinations } from '../../shared/destinations.ts'
 
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
-export const GEMINI_TRANSCRIBE_MODEL = 'gemini-2.5-flash'
+/** Google's alias for the current Flash model, so retired versions never break voice. */
+export const GEMINI_TRANSCRIBE_MODEL = 'gemini-flash-latest'
 /** Gemini must answer within this time, or Triage keeps Apple's transcript. */
 export const GEMINI_TRANSCRIBE_TIMEOUT_MS = 6000
 

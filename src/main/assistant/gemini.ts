@@ -10,6 +10,8 @@ import type { ScreenAnalysisKind } from '../../shared/screen-analysis-contracts.
 import { modelSchema } from './schemas.ts'
 
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
+/** Google's alias for the current Flash model; used when a pinned model has been retired. */
+export const GEMINI_FLASH_ALIAS = 'gemini-flash-latest'
 
 /**
  * Google AI Studio keys: the classic "AIza…" format or the newer "AQ.…" format.
@@ -97,11 +99,20 @@ export class GeminiGateway implements ModelGateway {
         { text: screenUserText(messages.at(-1)!.content, options.image) }
       ]
     }
-    const raw = await this.call(key, `/models/${encodeURIComponent(model)}:generateContent`, signal, {
+    const body = {
       systemInstruction: { parts: [{ text: system }] },
       contents,
       generationConfig: { maxOutputTokens: 2048, ...(options.json ? { responseMimeType: 'application/json' } : {}) }
-    })
+    }
+    let raw: unknown
+    try {
+      raw = await this.call(key, `/models/${encodeURIComponent(model)}:generateContent`, signal, body)
+    } catch (error) {
+      // Google retires model versions (they still appear in the list but return 404); use the current Flash instead.
+      if (!(error instanceof AppProblem) || error.code !== 'model_unavailable' || model === GEMINI_FLASH_ALIAS) throw error
+      console.warn(`Gemini model ${model} is unavailable; using ${GEMINI_FLASH_ALIAS}.`)
+      raw = await this.call(key, `/models/${GEMINI_FLASH_ALIAS}:generateContent`, signal, body)
+    }
     if (signal.aborted) throw new AppProblem('stopped', 'Reply stopped.')
     const parsed = generateResponse.safeParse(raw)
     if (!parsed.success) throw new AppProblem('invalid_response', 'Gemini returned an unreadable reply. Please try again.')

@@ -82,7 +82,7 @@ export class Credentials {
     }
     const preferred = models.find((item) => item.id === this.model) ??
       models.find((item) => /sonnet/i.test(item.id)) ?? models.find((item) => /haiku/i.test(item.id)) ??
-      models.find((item) => item.id === 'gemini-2.5-flash') ?? models.find((item) => /^gemini-[\d.]+-flash$/.test(item.id)) ?? models[0]
+      models.find((item) => item.id === 'gemini-flash-latest') ?? models.find((item) => /^gemini-[\d.]+-flash$/.test(item.id)) ?? models[0]
     if (!preferred) throw new AppProblem('no_models', 'No usable models were returned for this key.')
     try {
       this.atomicWrite('model-settings.json', JSON.stringify({ model: preferred.id, models }))
