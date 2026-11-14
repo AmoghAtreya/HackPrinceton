@@ -244,6 +244,65 @@
   @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04, .97); } }
   @media (prefers-reduced-motion: reduce) { .buddy svg .body { animation: none; } }
 
+  /* ---------- Features (after the hero) ---------- */
+  .features { padding: 104px 24px 20px; background: linear-gradient(var(--bg), #fffbf8 320px); }
+  .trio { max-width: 1240px; margin: 0 auto; padding-bottom: 150px; scroll-margin-top: 64px; }
+  .trio h2 {
+    margin: 0;
+    text-align: center;
+    font-family: var(--serif);
+    font-weight: 500;
+    font-variation-settings: "opsz" 72;
+    font-size: clamp(44px, 5vw, 70px);
+    line-height: 1;
+    letter-spacing: -.022em;
+    color: var(--ink);
+  }
+  .trio h2 span { display: block; }
+  .feature-row { margin-top: 70px; display: flex; justify-content: center; align-items: flex-end; gap: 24px; }
+  .feature {
+    --card: #f7efe8;
+    position: relative;
+    flex: 0 1 345px;
+    height: 432px;
+    padding: 30px 30px 32px;
+    border-radius: 20px;
+    background: var(--card);
+    color: #4a362c;
+    display: flex; flex-direction: column;
+    transition: flex-basis .45s cubic-bezier(.2, .7, .2, 1), height .45s cubic-bezier(.2, .7, .2, 1), padding .45s cubic-bezier(.2, .7, .2, 1), background-color .3s ease, color .3s ease;
+  }
+  .feature:not(.is-active):hover { --card: #f3e5da; }
+  .feature.is-active { --card: #ffe6d2; flex-basis: 422px; height: 528px; padding: 38px 36px 36px; color: var(--navy); }
+  .feature h3 { margin: 0; font-size: 24px; font-weight: 500; line-height: 1.28; letter-spacing: -.012em; max-width: 13ch; }
+  .feature.is-active h3 { font-weight: 600; font-size: 26px; max-width: none; }
+  .feature h3 button { all: unset; cursor: pointer; }
+  .feature.is-active h3 button { cursor: default; }
+  .feature h3 button::after { content: ""; position: absolute; inset: 0; border-radius: 20px; }
+  .feature h3 button:focus-visible::after { outline: 2px solid var(--ember); outline-offset: 3px; }
+  .art { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 8px 0; }
+  .art svg { width: 100%; max-width: 250px; max-height: 100%; overflow: visible; }
+  .art .ln { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .art .fl { fill: var(--card); stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transition: fill .3s ease; }
+  .art .dot { fill: currentColor; }
+  .art .dash { stroke-dasharray: 4 6; }
+  .art text { fill: currentColor; font-family: var(--sans); }
+  .feature p {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.5;
+    font-weight: 400;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: opacity .2s ease, max-height .45s ease;
+  }
+  .feature.is-active p { max-height: 170px; opacity: 1; transition: opacity .35s ease .15s, max-height .45s ease; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .feature, .feature p, .feature.is-active p, .art .fl { transition: none; }
+  }
+
   /* ---------- Responsive ---------- */
   @media (max-width: 1500px) {
     .activity { left: -40px; }
@@ -274,6 +333,17 @@
     h1 { font-size: 52px; }
     .ctas { flex-direction: column; gap: 14px; }
   }
+  /* Feature cards stack on narrow screens, every card open */
+  @media (max-width: 1000px) {
+    .features { padding: 72px 16px 0; }
+    .trio { padding-bottom: 96px; }
+    .feature-row { flex-direction: column; align-items: center; gap: 16px; margin-top: 44px; }
+    .feature, .feature.is-active { flex: none; width: 100%; max-width: 520px; height: auto; padding: 28px 28px 30px; }
+    .feature h3, .feature.is-active h3 { font-size: 23px; max-width: none; }
+    .feature h3 button { cursor: default; }
+    .art { height: 220px; flex: none; }
+    .feature p, .feature.is-active p { max-height: none; opacity: 1; }
+  }
 </style>
 </head>
 <body>
@@ -294,8 +364,8 @@
       Triage
     </a>
     <div class="nav-links">
-      <a href="#">How it works</a>
-      <a href="#">Safety</a>
+      <a href="#t1">How it works</a>
+      <a href="#t3">Safety</a>
       <a href="#">For families</a>
       <a href="#">Pricing</a>
     </div>
@@ -427,5 +497,230 @@
   </svg>
   </div>
 </header>
+
+<!-- Line-art version of the Triage character, reused inside the feature drawings -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="blob" viewBox="0 0 120 116">
+    <path d="M61 13C71 7 80 15 83 25C98 22 108 33 103 48C115 58 109 75 98 80C97 96 82 105 69 96C57 107 41 101 36 90C20 93 10 80 16 65C5 52 13 37 27 34C26 19 42 10 54 17L61 13Z" style="fill:var(--card)" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>
+    <rect x="31" y="43" width="59" height="35" rx="17.5" style="fill:var(--card)" stroke="currentColor" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+    <rect x="46" y="53" width="7" height="14" rx="3.5" fill="currentColor"/>
+    <rect x="68" y="53" width="7" height="14" rx="3.5" fill="currentColor"/>
+    <path d="M56 86Q61 90 66 86" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+  </symbol>
+</svg>
+
+<main class="features">
+
+  <!-- Explain, guide, act -->
+  <section class="trio" aria-labelledby="t1">
+    <h2 id="t1"><span>A new kind of</span><span>helper for your Mac</span></h2>
+    <div class="feature-row">
+      <article class="feature">
+        <h3><button type="button" aria-expanded="false">Explains your screen</button></h3>
+        <div class="art" aria-hidden="true">
+          <svg viewBox="0 0 240 220">
+            <rect class="fl" x="30" y="30" width="150" height="110" rx="10"/>
+            <path class="ln" d="M30 52h150"/>
+            <circle class="ln" cx="44" cy="41" r="3"/><circle class="ln" cx="55" cy="41" r="3"/><circle class="ln" cx="66" cy="41" r="3"/>
+            <path class="ln" d="M46 72h70M46 86h96M46 100h58M46 114h80"/>
+            <use href="#blob" x="12" y="126" width="66" height="64"/>
+            <path class="fl" d="M118 112h82a14 14 0 0 1 14 14v34a14 14 0 0 1-14 14h-46l-16 14v-14h-20a14 14 0 0 1-14-14v-34a14 14 0 0 1 14-14z"/>
+            <path class="ln" d="M118 134h70M118 148h78M118 162h32"/>
+            <path class="ln" d="M206 42v12M200 48h12M20 20v8M16 24h8"/>
+          </svg>
+        </div>
+        <p>Ask what something means. Triage reads the window you’re in and answers in plain words, and tells you when part of the screen is hidden.</p>
+      </article>
+
+      <article class="feature is-active">
+        <h3><button type="button" aria-expanded="true">Shows you where to click</button></h3>
+        <div class="art" aria-hidden="true">
+          <svg viewBox="0 0 240 220">
+            <rect class="fl" x="22" y="34" width="196" height="132" rx="10"/>
+            <path class="ln" d="M22 56h196"/>
+            <circle class="ln" cx="36" cy="45" r="3"/><circle class="ln" cx="47" cy="45" r="3"/><circle class="ln" cx="58" cy="45" r="3"/>
+            <path class="ln" d="M40 78h80M40 92h110M40 106h56"/>
+            <use href="#blob" x="160" y="0" width="50" height="48"/>
+            <rect class="fl" x="118" y="122" width="76" height="26" rx="13"/>
+            <path class="ln" d="M134 135h44"/>
+            <ellipse class="ln dash" cx="156" cy="135" rx="58" ry="28"/>
+            <path class="fl" d="M188 150v34l9-8 7 15 7-3-7-15h12z"/>
+            <path class="ln" d="M84 128v10M79 133h10M226 98v10M221 103h10"/>
+          </svg>
+        </div>
+        <p>Say “show me where” and Triage draws a ring around the right button on your screen. You still do the clicking, so you learn the way.</p>
+      </article>
+
+      <article class="feature">
+        <h3><button type="button" aria-expanded="false">Does it for you</button></h3>
+        <div class="art" aria-hidden="true">
+          <svg viewBox="0 0 240 220">
+            <path class="ln dash" d="M20 204C48 196 70 174 80 148"/>
+            <path class="fl" d="M36 80h46a12 12 0 0 0-8-21 16 16 0 0 0-30 4 10 10 0 0 0-8 17z"/>
+            <g transform="rotate(40 130 100) translate(10 0)">
+              <path class="fl" d="M112 84L58 112v11l54-14zM128 84l54 28v11l-54-14z"/>
+              <path class="fl" d="M113 140l-19 12v6l20-6zM127 140l19 12v6l-20-6z"/>
+              <path class="fl" d="M120 38c6 0 8 10 8 22v80c0 10-4 18-8 20-4-2-8-10-8-20V60c0-12 2-22 8-22z"/>
+              <circle class="ln" cx="120" cy="62" r="4"/>
+            </g>
+            <path class="ln" d="M200 40v12M194 46h12M210 152v10M205 157h10"/>
+          </svg>
+        </div>
+        <p>Ask for Alaska Airlines flights and Triage fills in the search in its own browser, showing each step. Ask for “my Amazon orders” and it opens the real site, never a lookalike.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- Ways to ask -->
+  <section class="trio" aria-labelledby="t2">
+    <h2 id="t2"><span>Ask the way</span><span>that feels easiest</span></h2>
+    <div class="feature-row">
+      <article class="feature">
+        <h3><button type="button" aria-expanded="false">Type a question</button></h3>
+        <div class="art" aria-hidden="true">
+          <svg viewBox="0 0 240 220">
+            <use href="#blob" x="34" y="30" width="62" height="60"/>
+            <path class="fl" d="M126 30h66a16 16 0 0 1 16 16v16a16 16 0 0 1-16 16h-58l-14 12v-12a16 16 0 0 1-10-15v-17a16 16 0 0 1 16-16z"/>
+            <circle class="dot" cx="142" cy="54" r="3.5"/><circle class="dot" cx="158" cy="54" r="3.5"/><circle class="dot" cx="174" cy="54" r="3.5"/>
+            <path class="fl" d="M54 122l26-13 26 13v10l-26 13-26-13z"/><path class="ln" d="M54 122l26 13 26-13M80 135v10"/>
+            <path class="fl" d="M112 122l26-13 26 13v10l-26 13-26-13z"/><path class="ln" d="M112 122l26 13 26-13M138 135v10"/>
+            <path class="fl" d="M83 152l26-13 26 13v10l-26 13-26-13z"/><path class="ln" d="M83 152l26 13 26-13M109 165v10"/>
+            <path class="fl" d="M141 152l26-13 26 13v10l-26 13-26-13z"/><path class="ln" d="M141 152l26 13 26-13M167 165v10"/>
+            <text transform="translate(80 126) scale(1 .62)" text-anchor="middle" font-size="15" font-weight="600">H</text>
+            <text transform="translate(138 126) scale(1 .62)" text-anchor="middle" font-size="15" font-weight="600">i</text>
+            <text transform="translate(109 156) scale(1 .62)" text-anchor="middle" font-size="15" font-weight="600">?</text>
+            <text transform="translate(167 156) scale(1 .62)" text-anchor="middle" font-size="15" font-weight="600">↵</text>
+          </svg>
+        </div>
+        <p>Click the companion and type, like texting a friend. Follow-ups such as “explain that more simply” keep the conversation going.</p>
+      </article>
+
+      <article class="feature is-active">
+        <h3><button type="button" aria-expanded="true">Hold to talk</button></h3>
+        <div class="art" aria-hidden="true">
+          <svg viewBox="0 0 240 220">
+            <path class="ln" d="M64 62a34 34 0 0 0 0 52M50 52a52 52 0 0 0 0 72M176 62a34 34 0 0 1 0 52M190 52a52 52 0 0 1 0 72"/>
+            <path class="ln" d="M80 100a40 40 0 0 0 80 0M120 140v22M100 164h40"/>
+            <rect class="fl" x="96" y="32" width="48" height="86" rx="24"/>
+            <path class="ln" d="M108 58h24M108 70h24M108 82h24"/>
+            <rect class="fl" x="34" y="180" width="128" height="28" rx="14"/>
+            <path class="ln" d="M50 194h62M120 194h26"/>
+            <use href="#blob" x="168" y="150" width="56" height="54"/>
+          </svg>
+        </div>
+        <p>Hold the talk button and speak. Live captions show what Triage heard, and phrases like “stop” or “what’s on my screen” work right away.</p>
+      </article>
+
+      <article class="feature">
+        <h3><button type="button" aria-expanded="false">Shake your cursor</button></h3>
+        <div class="art" aria-hidden="true">
+          <svg viewBox="0 0 240 220">
+            <path class="ln dash" d="M78 64v84l20-19 15 33 15-7-15-32h27z" opacity=".55"/>
+            <path class="ln dash" d="M146 64v84l20-19 15 33 15-7-15-32h27z" opacity=".55"/>
+            <path class="fl" d="M112 56v84l20-19 15 33 15-7-15-32h27z"/>
+            <path class="ln" d="M48 70c-8 6-8 16 0 22M36 62c-13 10-13 28 0 38"/>
+            <path class="ln" d="M60 196l14-10 14 10 14-10 14 10 14-10 14 10 14-10 14 10"/>
+            <use href="#blob" x="176" y="132" width="54" height="52"/>
+            <path class="ln" d="M216 118v10M211 123h10M96 36v10M91 41h10"/>
+          </svg>
+        </div>
+        <p>Stuck? Wiggle the mouse back and forth. Triage runs the instruction you saved, like “explain what’s near my cursor,” with no typing.</p>
+      </article>
+    </div>
+  </section>
+
+  <!-- Safety -->
+  <section class="trio" aria-labelledby="t3">
+    <h2 id="t3"><span>Looks out for you</span><span>while you browse</span></h2>
+    <div class="feature-row">
+      <article class="feature">
+        <h3><button type="button" aria-expanded="false">Warns about scam links</button></h3>
+        <div class="art" aria-hidden="true">
+          <svg viewBox="0 0 240 220">
+            <rect class="fl" x="26" y="44" width="92" height="26" rx="13"/>
+            <circle class="ln" cx="42" cy="57" r="6"/><path class="ln" d="M42 54v3"/><circle class="dot" cx="42" cy="60" r=".9"/>
+            <path class="ln" d="M56 57h48"/>
+            <g transform="rotate(-35 76 146)">
+              <rect class="fl" x="34" y="134" width="52" height="24" rx="12"/>
+              <rect class="fl" x="68" y="134" width="52" height="24" rx="12"/>
+              <path class="ln" d="M80 146h-14"/>
+            </g>
+            <path class="fl" d="M158 38l46 16v38c0 34-22 54-46 64-24-10-46-30-46-64V54z"/>
+            <path class="ln" d="M158 72v36"/><circle class="dot" cx="158" cy="124" r="3"/>
+            <use href="#blob" x="176" y="150" width="52" height="50"/>
+            <path class="ln" d="M216 34v10M211 39h10"/>
+          </svg>
+        </div>
+        <p>Triage checks links in Chrome and labels risky ones “Potential phishing” or “Unencrypted HTTP” before you click. The checks run on your Mac.</p>
+      </article>
+
+      <article class="feature is-active">
+        <h3><button type="button" aria-expanded="true">Simplifies busy pages</button></h3>
+        <div class="art" aria-hidden="true">
+          <svg viewBox="0 0 240 220">
+            <rect class="fl" x="20" y="44" width="90" height="122" rx="8"/>
+            <path class="ln" d="M30 58h40"/>
+            <rect class="ln" x="30" y="68" width="70" height="22" rx="3"/><path class="ln" d="M90 72l6 6M96 72l-6 6"/>
+            <path class="ln" d="M30 100h70M30 108h50"/>
+            <rect class="ln" x="30" y="118" width="30" height="20" rx="3"/><rect class="ln" x="66" y="118" width="34" height="36" rx="3"/>
+            <path class="ln" d="M30 146h30M30 154h22"/>
+            <path class="ln" d="M118 104h18M130 98l6 6-6 6"/>
+            <rect class="fl" x="144" y="30" width="80" height="150" rx="8"/>
+            <text x="158" y="80" font-size="36" style="font-family:var(--serif)">Aa</text>
+            <path class="ln" d="M158 104h52M158 120h52M158 136h36" style="stroke-width:2.6"/>
+            <use href="#blob" x="94" y="156" width="54" height="52"/>
+            <path class="ln" d="M232 18v10M227 23h10"/>
+          </svg>
+        </div>
+        <p>Type /simplify and a cluttered page becomes a large-print version without the ads and pop-ups. Rate it, and Triage learns which layout suits you.</p>
+      </article>
+
+      <article class="feature">
+        <h3><button type="button" aria-expanded="false">Keeps a record</button></h3>
+        <div class="art" aria-hidden="true">
+          <svg viewBox="0 0 240 220">
+            <rect class="fl" x="52" y="40" width="128" height="152" rx="10"/>
+            <rect class="fl" x="88" y="30" width="56" height="20" rx="6"/>
+            <path class="ln dash" d="M78 90v14M78 124v14"/>
+            <circle class="ln" cx="78" cy="78" r="9"/><path class="ln" d="M74 78l3 3 6-6"/>
+            <path class="ln" d="M96 74h64M96 84h40"/>
+            <circle class="ln" cx="78" cy="114" r="9"/><path class="ln" d="M74 114l3 3 6-6"/>
+            <path class="ln" d="M96 110h56M96 120h46"/>
+            <circle class="ln" cx="78" cy="150" r="9"/><path class="ln" d="M74 150l3 3 6-6"/>
+            <path class="ln" d="M96 146h60M96 156h32"/>
+            <use href="#blob" x="166" y="136" width="58" height="56"/>
+            <path class="ln" d="M206 50v10M201 55h10"/>
+          </svg>
+        </div>
+        <p>Every question, answer and action is saved on your Mac. Open History to see what Triage did, step by step, or delete any entry.</p>
+      </article>
+    </div>
+  </section>
+</main>
+
+<script>
+  (() => {
+    // Nav gets a background once the page scrolls under it
+    const bar = document.getElementById('topbar');
+    const onScroll = () => bar.classList.toggle('scrolled', window.scrollY > 8);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+
+    // In each row, the chosen card opens and the others close
+    document.querySelectorAll('.feature-row').forEach(row => {
+      const cards = [...row.querySelectorAll('.feature')];
+      const open = card => cards.forEach(c => {
+        const on = c === card;
+        c.classList.toggle('is-active', on);
+        c.querySelector('h3 button').setAttribute('aria-expanded', String(on));
+      });
+      cards.forEach(card => {
+        const btn = card.querySelector('h3 button');
+        btn.addEventListener('click', () => open(card));
+        btn.addEventListener('focus', () => open(card));
+      });
+    });
+  })();
+</script>
 </body>
 </html>
