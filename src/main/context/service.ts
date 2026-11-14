@@ -13,8 +13,8 @@ export interface ContextPort {
   permissionHelp?(): string
   /** JSON text matching axSnapshotSchema. */
   snapshot(): Promise<string> | string
-  /** The display that holds most of the window. */
-  displayIdFor(frame: ContextFrame): string
+  /** The display under `cursor` when one is given (so it matches a paired screenshot), else the one holding most of the window. */
+  displayIdFor(frame: ContextFrame, cursor?: { x: number; y: number }): string
 }
 
 const ROLE_KINDS: Record<string, ElementKind> = {
@@ -51,7 +51,7 @@ export class ContextService {
    * Snapshots the frontmost app's focused window. The result has no elements
    * when there is no focused window or the person switched apps mid-capture.
    */
-  async capture(): Promise<ContextSnapshot> {
+  async capture(options?: { cursor?: { x: number; y: number } }): Promise<ContextSnapshot> {
     if (this.disposed) throw new AppProblem('closed', 'Triage is closing.')
     if (this.pending) throw new AppProblem('busy', 'A context capture is already in progress.')
     this.clear()
@@ -76,7 +76,7 @@ export class ContextService {
       }))
       const snapshot: ContextSnapshot = {
         ...parsed.data, elements, id: randomUUID(), capturedAt: this.now(),
-        displayId: this.port.displayIdFor(parsed.data.window.frame).slice(0, 64), generation
+        displayId: this.port.displayIdFor(parsed.data.window.frame, options?.cursor).slice(0, 64), generation
       }
       this.snapshot = snapshot
       this.expires = setTimeout(() => this.clear(), CONTEXT_TTL_MS)
