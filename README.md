@@ -76,6 +76,8 @@ npm run browser:install     # Chromium for the flight-search task browser
 npm run speech:build        # free on-device speech helper (voice input)
 ```
 
+> **After every `git pull`, run `npm install` again.** Teammates add packages (for example LangChain and LangGraph for memory and tasks); without them Triage fails to build or start. Re-run `npm run speech:build` too if `native/speech/` changed.
+
 AWS credentials for spoken replies (Amazon Polly). Create an IAM user that has only these permissions (Transcribe is only needed if you opt into it):
 
 ```json
