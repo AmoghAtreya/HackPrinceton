@@ -1,4 +1,10 @@
 import { BrowserSupervisor } from './browser/supervisor'
+import { VoiceController, type VoiceEvent } from './voice/controller'
+import { TranscribeService, transcribeConfigFromEnv } from './voice/transcribe'
+import { LocalTranscriptStore } from './voice/transcript-store'
+import { ensureMicrophoneAccess } from './voice/microphone'
+import { installVoiceIpc } from './voice/ipc'
+import { voiceChannels } from '../shared/voice-contracts'
 import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -43,6 +49,8 @@ let removeAssistantIpc: (() => void) | undefined
 let shakeMonitor: ShakeMonitor | undefined
 let removeShakeListeners: (() => void) | undefined
 let presentedGesture: string | undefined
+let voice: VoiceController | undefined
+let removeVoiceIpc: (() => void) | undefined
 
 function trusted(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
   if (!desktop || !desktop.owns(event.sender) || event.senderFrame !== event.sender.mainFrame) return false
@@ -129,6 +137,7 @@ if (!app.requestSingleInstanceLock()) {
     // Reject input and stop native timers immediately, before waiting for Chromium.
     // Each cleanup runs even when another resource has already failed.
     const cleanup = [
+      () => removeVoiceIpc?.(), () => voice?.dispose(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(),
@@ -217,6 +226,18 @@ if (!app.requestSingleInstanceLock()) {
     installIpc()
     removeAssistantIpc = installAssistantIpc(assistant, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
       screens, shake, () => shakeMonitor?.reset())
+    voice = new VoiceController({
+      service: new TranscribeService(transcribeConfigFromEnv()),
+      store: new LocalTranscriptStore(directory),
+      ensureMicrophone: ensureMicrophoneAccess
+    })
+    voice.subscribe((event: VoiceEvent) => {
+      if (quitting || !desktop || desktop.chat.isDestroyed()) return
+      if (event.type === 'speech_state') desktop.chat.webContents.send(voiceChannels.state, event)
+      else if (event.type === 'user_utterance') desktop.chat.webContents.send(voiceChannels.utterance, event)
+      // event.type === 'transcript': a finished, stored recording. The agent layer hooks in here.
+    })
+    removeVoiceIpc = installVoiceIpc(ipcMain, voice, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
     await desktop.initialize()
     const interrupt = (message: string) => {
       assistant?.interrupt(message)
@@ -225,8 +246,8 @@ if (!app.requestSingleInstanceLock()) {
     }
     const reset = () => { shakeMonitor?.reset(); interrupt('Interrupted because the display configuration changed.') }
     const paused = new Set<string>()
-    const sleep = () => { paused.add('sleep'); shakeMonitor?.pause(); interrupt('Interrupted because this Mac went to sleep.') }
-    const lock = () => { paused.add('lock'); shakeMonitor?.pause(); interrupt('Interrupted because this Mac was locked.') }
+    const sleep = () => { paused.add('sleep'); voice?.interrupt(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac went to sleep.') }
+    const lock = () => { paused.add('lock'); voice?.interrupt(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac was locked.') }
     const wake = () => { paused.delete('sleep'); if (!paused.size) { shakeMonitor?.resume(); } }
     const unlock = () => { paused.delete('lock'); if (!paused.size) { shakeMonitor?.resume(); } }
     powerMonitor.on('suspend', sleep)
