@@ -4,18 +4,27 @@ import type { HighlightController, HighlightPlan } from '../screen/highlight.ts'
 import type { HighlightReply } from '../../shared/highlight-contracts.ts'
 import type { ShakeTrigger } from '../../shared/shake-contracts.ts'
 import type { ScreenAccess, ScreenImage, ScreenPreview } from '../../shared/screen-contracts.ts'
-import type { ActiveRequest, AssistantState, LearningSummary, SendReceipt } from '../../shared/assistant-contracts.ts'
+import type { ActiveRequest, AssistantState, LearningSummary, MemorySnapshot, SendReceipt } from '../../shared/assistant-contracts.ts'
 import { Credentials } from './credentials.ts'
 import { HistoryStore } from './history.ts'
 import type { ModelGateway } from './model.ts'
 import { AppProblem, publicProblem } from './errors.ts'
-import { analyzeSchema, connectSchema, idSchema, modelSchema, rateSchema, sendSchema, validated } from './schemas.ts'
+import { analyzeSchema, connectSchema, idSchema, memoryIdSchema, modelSchema, rateSchema, sendSchema, validated } from './schemas.ts'
 import { parseScreenAnalysis, type ScreenAnalysis } from '../../shared/screen-analysis-contracts.ts'
 import { redact } from './redaction.ts'
 import { resolveDestination } from '../../shared/destinations.ts'
 import type { RequestLog } from '../logging/request-log.ts'
 import type { RequestOutcome, RequestRoute } from '../../shared/request-log-contracts.ts'
 import { describeResult, parseSimplifyCommand, type SimplifierService, type SimplifyCommand } from '../simplifier/service.ts'
+import { parseRememberCommand, type MemoryService, type MemoryStatement } from '../memory/service.ts'
+import { parseRefillCommand, WHERE_WAS_I, type TaskRunner } from '../tasks/runner.ts'
+
+/** Chat requests Triage handles itself, without asking a model to route them. */
+type LocalCommand =
+  | { kind: 'remember'; statement: MemoryStatement }
+  | { kind: 'refill'; request: string }
+  | { kind: 'resume'; answer: string }
+  | { kind: 'where' }
 
 // Triage is single-user on this Mac; the simplifier keys its learning by this ID.
 const LOCAL_USER = 'local-user'
@@ -32,6 +41,7 @@ interface RunningRequest extends ActiveRequest {
   route?: RequestRoute
   destination?: string
   simplify?: SimplifyCommand
+  local?: LocalCommand
 }
 
 export class AssistantCoordinator {
@@ -54,17 +64,23 @@ export class AssistantCoordinator {
   private analyzing: AbortController | null = null
   private screens?: ScreenAccess
   private simplifier?: SimplifierService
+  private memory?: MemoryService
+  private tasks?: TaskRunner
 
   constructor(options: {
     history: HistoryStore; credentials: Credentials; gateway: ModelGateway
     changed: (state: AssistantState) => void; browser?: BrowserRunner; requestTimeout?: number; screens?: ScreenAccess; highlights?: HighlightController
     simplifier?: SimplifierService
+    memory?: MemoryService
+    tasks?: TaskRunner
     /** Opens a vetted https URL in the user's own browser. */
     openPage?: (url: string) => Promise<void>
     /** Receives every finished request; it decides (consent) whether to keep it. */
     requestLog?: RequestLog
   }) {
     this.simplifier = options.simplifier
+    this.memory = options.memory
+    this.tasks = options.tasks
     this.browser = options.browser
     this.openPage = options.openPage
     this.requestLog = options.requestLog
@@ -212,7 +228,69 @@ export class AssistantCoordinator {
     // Local command, handled without asking Claude to route it. Parsed here so a
     // bad address is reported immediately instead of after a model call.
     const simplify = !image && this.simplifier ? parseSimplifyCommand(request.text) : null
-    return this.start(request, key, model, image, undefined, undefined, request.source ?? 'chat', simplify ?? undefined)
+    const local = !image && !simplify ? this.localCommand(request.text, request.conversationId) : undefined
+    return this.start(request, key, model, image, undefined, undefined, request.source ?? 'chat', simplify ?? undefined, local)
+  }
+
+  /**
+   * A paused task in this conversation takes the next message as its answer
+   * (slash commands excepted). Otherwise: "where was I?", refill requests and
+   * "remember …" are recognised by rules here.
+   */
+  private localCommand(text: string, conversationId?: string): LocalCommand | undefined {
+    const trimmed = text.trim()
+    if (this.tasks) {
+      if (conversationId && !trimmed.startsWith('/') && this.tasks.waiting(conversationId)) return { kind: 'resume', answer: trimmed }
+      if (WHERE_WAS_I.test(trimmed)) return { kind: 'where' }
+      const refill = parseRefillCommand(trimmed)
+      if (refill) return { kind: 'refill', request: refill }
+    }
+    const statement = this.memory ? parseRememberCommand(trimmed) : null
+    return statement ? { kind: 'remember', statement } : undefined
+  }
+
+  memorySnapshot(): MemorySnapshot {
+    return {
+      tasks: (this.tasks?.list() ?? []).map(({ createdAt: _created, ...task }) => task),
+      memories: (this.memory?.list() ?? []).map((item) => ({ id: item.id, kind: item.kind, text: item.text }))
+    }
+  }
+
+  async forgetMemory(input: unknown): Promise<MemorySnapshot> {
+    const id = validated(memoryIdSchema, input)
+    if (!this.memory) throw new AppProblem('memory_unavailable', 'Memory is unavailable in this build.')
+    await this.memory.forget(id)
+    this.emit()
+    return this.memorySnapshot()
+  }
+
+  private async runLocal(request: RunningRequest, command: LocalCommand): Promise<string> {
+    const onStep = (step: string) => {
+      if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
+      this.history.activity(request.id, 'task_step', step, {})
+      request.progress = step
+      this.emit()
+    }
+    switch (command.kind) {
+      case 'remember': {
+        const { statement } = command
+        await this.memory!.remember(statement.kind, statement.text, { ...(statement.key ? { key: statement.key } : {}), ...(statement.extra ?? {}) })
+        this.history.activity(request.id, 'memory_saved', 'Saved to memory on this Mac.', {})
+        return `Got it. I'll remember: ${statement.text}.\nYou can see or remove what I remember in History.`
+      }
+      case 'where': return this.tasks!.whereWasI(request.conversationId)
+      case 'refill': {
+        // Multi-step tasks wait on the person between turns; the per-request
+        // deadline would otherwise cut off a slow first browser launch.
+        clearTimeout(request.deadline)
+        request.progress = 'Starting your refill…'
+        this.emit()
+        return (await this.tasks!.start(request.conversationId, command.request, onStep)).reply
+      }
+      case 'resume':
+        clearTimeout(request.deadline)
+        return (await this.tasks!.resume(request.conversationId, command.answer, onStep)).reply
+    }
   }
 
   shake(trigger: ShakeTrigger, instruction: string, capture: () => Promise<ScreenPreview>, mode: 'explain' | 'highlight' = 'explain'): SendReceipt | null {
@@ -238,7 +316,7 @@ export class AssistantCoordinator {
 
   private start(request: { text: string; conversationId?: string; mode?: 'explain' | 'highlight' }, key: string, model: string,
     image?: ScreenImage, gesture?: ShakeTrigger & { instruction: string }, capture?: () => Promise<ScreenPreview>, source: 'chat' | 'voice' = 'chat',
-    simplify?: SimplifyCommand): SendReceipt {
+    simplify?: SimplifyCommand, local?: LocalCommand): SendReceipt {
     this.highlights?.clear()
     let receipt: SendReceipt
     const logText = redact((gesture ? '[Shake to Help] ' : request.mode === 'highlight' ? '[Show me where] ' : image ? '[Screen explanation] ' : '') + request.text, [key])
@@ -255,7 +333,8 @@ export class AssistantCoordinator {
       startedAt: Date.now(), stage: capture ? 'capturing' : 'thinking', controller: new AbortController(),
       expectedDisplayId: gesture?.displayId, highlight: request.mode === 'highlight', highlightRevision: this.highlights?.revision,
       logText, source: gesture ? 'shake' : source,
-      ...(simplify ? { simplify } : {})
+      ...(simplify ? { simplify } : {}),
+      ...(local ? { local } : {})
     }
     this.active = active
     if (gesture) this.gestureRequest = receipt
@@ -301,6 +380,9 @@ export class AssistantCoordinator {
           outcome = error.code
           reply += '\n\n' + error.message
         }
+      } else if (request.local) {
+        reply = await this.runLocal(request, request.local)
+        if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
       } else if (request.simplify && this.simplifier) {
         request.progress = request.simplify.url ? 'Opening and simplifying the page…' : 'Simplifying the demo page…'
         this.emit()
