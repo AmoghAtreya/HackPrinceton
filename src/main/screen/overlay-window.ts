@@ -62,6 +62,11 @@ export class OverlayWindow implements HighlightPort {
     this.window.hide()
     this.updateGeometry(state)
   }
+  /** Moves a highlight that is already showing; unlike draw() the window is not hidden first. */
+  redraw(state: HighlightState): void {
+    if (this.window.isDestroyed()) throw new Error('Overlay window is closed.')
+    this.updateGeometry(state)
+  }
   private updateGeometry(state: HighlightState): void {
     const origin = state.warnings ? undefined : this.arrowOrigin?.()
     const bounds = state.bounds
