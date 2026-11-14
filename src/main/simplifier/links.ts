@@ -19,7 +19,7 @@ export interface LinkGroup {
 }
 
 /** Links people come back to a site for: their account, orders, returns, cart and help. */
-export const ACCOUNT_LINK = /\b(sign ?in|sign ?out|log ?in|log ?out|sign ?up|register|account|profile|orders?|returns?|cart|basket|wish ?list|track|deliver(y|ies)|subscriptions?|prime|help|customer service|support|contact us)\b/i
+export const ACCOUNT_LINK = /\b(sign ?in|sign ?out|log ?in|log ?out|sign ?up|register|account|profile|orders?|returns?|cart|basket|wish ?list|track|deliver(y|ies)|subscriptions?|prime|help|customer service|contact us)\b/i
 const NOISE = /^(skip to|back to top|close|menu|more|see more|show more|learn more|read more|click here|here|details)$/i
 
 const LIMITS: Record<LinkGroup['id'], number> = { account: 12, menu: 24, content: 40, footer: 20 }
