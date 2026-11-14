@@ -5,6 +5,10 @@ import { NativeSpeechAdapter } from './voice/native-adapter'
 import { installVoiceIpc } from './voice/ipc'
 import { voiceChannels } from '../shared/voice-contracts'
 import { BrowserSupervisor } from './browser/supervisor'
+import { createSimplifier } from './simplifier/index'
+import { SimplifierService } from './simplifier/service'
+import { SimplifiedWindow } from './simplifier/window'
+import demoPageHtml from '../../demo/sites/cluttered-news.html?raw'
 import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -51,6 +55,9 @@ let highlights: HighlightController | undefined
 let overlay: OverlayWindow | undefined
 let assistant: AssistantCoordinator | undefined
 let browser: BrowserSupervisor | undefined
+let simplifier: SimplifierService | undefined
+let simplifiedWindow: SimplifiedWindow | undefined
+let closeSimplifierLog: (() => void) | undefined
 let shutdownReady = false
 let removeAssistantIpc: (() => void) | undefined
 let shakeMonitor: ShakeMonitor | undefined
@@ -151,7 +158,7 @@ if (!app.requestSingleInstanceLock()) {
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(),
       () => highlights?.dispose(), () => overlay?.dispose(),
-      () => desktop?.dispose(), () => tray?.destroy(),
+      () => desktop?.dispose(), () => tray?.destroy(), () => simplifiedWindow?.dispose(),
       () => {
         ipcMain.removeHandler(channels.getState)
         for (const channel of Object.values(channels)) ipcMain.removeAllListeners(channel)
@@ -160,9 +167,12 @@ if (!app.requestSingleInstanceLock()) {
     for (const close of cleanup) {
       try { close() } catch { console.warn('A Triage resource could not finish closing.') }
     }
-    void Promise.resolve(voiceClosed).then(() => browser?.close()).catch(() => {
+    void Promise.resolve(voiceClosed).then(() => Promise.all([browser?.close(), simplifier?.close()])).catch(() => {
       console.warn('Triage browser shutdown failed.')
-    }).finally(() => { shutdownReady = true; app.quit() })
+    }).finally(() => {
+      try { closeSimplifierLog?.() } catch { /* The log may already be closed. */ }
+      shutdownReady = true; app.quit()
+    })
   })
 
   app.whenReady().then(async () => {
@@ -198,9 +208,15 @@ if (!app.requestSingleInstanceLock()) {
       serviceName: 'Triage flight search', stdio: 'ignore',
       env: Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'LANG'].flatMap((name) => process.env[name] ? [[name, process.env[name]!]] : []))
     }), join(directory, 'browser-profile'), () => highlights?.clear(), configuredBrowserChannel())
+    const simplifierParts = createSimplifier(directory)
+    closeSimplifierLog = simplifierParts.close
+    simplifiedWindow = new SimplifiedWindow((url) => { void simplifier?.open(url) })
+    simplifier = new SimplifierService({
+      engine: simplifierParts.engine, presenter: simplifiedWindow, channel: configuredBrowserChannel(), demoHtml: demoPageHtml
+    })
     assistant = new AssistantCoordinator({
       history: new HistoryStore(join(directory, 'history.sqlite')),
-      credentials, gateway: new ClaudeGateway(), screens, highlights, browser,
+      credentials, gateway: new ClaudeGateway(), screens, highlights, browser, simplifier,
       changed: (state) => {
         if (!desktop || quitting) return
         desktop.setThinking(Boolean(state.active))
