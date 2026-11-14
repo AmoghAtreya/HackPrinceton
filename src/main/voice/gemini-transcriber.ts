@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { destinations } from '../../shared/destinations.ts'
+import { googleReason, rejectsThinking } from '../assistant/gemini.ts'
 
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 /** Google's alias for the current Flash model, so retired versions never break voice. */
@@ -64,6 +65,8 @@ const responseSchema = z.object({
  * Returns null on any problem (no network, bad key, rate limit, timeout,
  * unreadable answer), so the caller keeps the on-device transcript.
  */
+/** Google's short error message, for the log (never includes the key). */
+
 export class GeminiTranscriber {
   private readonly fetcher: typeof globalThis.fetch
   private readonly models: string[]
@@ -128,14 +131,15 @@ export class GeminiTranscriber {
         signal: AbortSignal.any([signal, timer])
       })
       if (!response.ok) {
+        const detail = await response.text().catch(() => '')
         // A model that cannot skip thinking: ask the same model again without that setting.
-        if (response.status === 400 && !this.thinkingRefused.has(model) && /thinking/i.test(await response.text().catch(() => ''))) {
+        if (!this.thinkingRefused.has(model) && rejectsThinking(response.status, detail)) {
           this.thinkingRefused.add(model)
           return { kind: 'again' }
         }
         // Busy, rate-limited, retired or failing: worth trying the other model. A rejected key is not.
         if ([404, 408, 429].includes(response.status) || response.status >= 500) return { kind: 'retry', reason: `unavailable (HTTP ${response.status})` }
-        console.warn(`Gemini transcription refused (HTTP ${response.status}); using the on-device transcript.`)
+        console.warn(`Gemini ${model} refused transcription (HTTP ${response.status}: ${googleReason(detail)}); using the on-device transcript.`)
         return { kind: 'stop' }
       }
       const parsed = responseSchema.safeParse(await response.json())

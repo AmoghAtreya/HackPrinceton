@@ -9,8 +9,8 @@ import type { Result } from './assistant-contracts'
  */
 
 export const VOICE_SAMPLE_RATE = 16000
-/** Longest single recording; the session finishes itself after this. */
-export const VOICE_MAX_SECONDS = 60
+/** Longest single recording; the session finishes itself after this. Generous, because older speakers pause a lot. */
+export const VOICE_MAX_SECONDS = 90
 /** Upper bound for one audio chunk sent over IPC (about 1 s of audio). */
 export const VOICE_MAX_CHUNK_BYTES = 32000
 

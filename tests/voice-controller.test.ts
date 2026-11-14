@@ -200,3 +200,38 @@ test('Gemini rescues a recording when the live engine fails', async () => {
     assert.equal(transcript?.type === 'transcript' && transcript.record.status, 'completed')
   } finally { cleanup() }
 })
+
+test('an empty final after live captions keeps the last caption instead of losing it', async () => {
+  const service = {
+    ...fakeService(), id: 'apple' as const,
+    async stream(audio: AsyncIterable<Uint8Array>, _rate: number, _signal: AbortSignal, onResult: (result: TranscribeResult) => void) {
+      for await (const _chunk of audio) onResult({ segmentId: 's1', text: 'testing testing one two three', isFinal: false, confidence: null, startTime: 0, endTime: 1 })
+      onResult({ segmentId: 's1', text: '', isFinal: true, confidence: null, startTime: 0, endTime: 1 })
+    }
+  }
+  const { voice, cleanup } = setup(service, async () => null)
+  try {
+    const { sessionId } = await voice.start()
+    voice.pushAudio(sessionId, new Uint8Array(3200))
+    const record = await voice.finish(sessionId)
+    assert.equal(record.text, 'testing testing one two three')
+    assert.equal(record.transcribedBy, 'apple')
+    assert.equal(record.segments[0].confidence, null)
+  } finally { cleanup() }
+})
+
+test('truly silent recordings still come back empty', async () => {
+  const service = {
+    ...fakeService(), id: 'apple' as const,
+    async stream(audio: AsyncIterable<Uint8Array>, _rate: number, _signal: AbortSignal, onResult: (result: TranscribeResult) => void) {
+      for await (const _chunk of audio) { /* no speech */ }
+      onResult({ segmentId: 's1', text: '', isFinal: true, confidence: null, startTime: 0, endTime: 0 })
+    }
+  }
+  const { voice, cleanup } = setup(service, async () => null)
+  try {
+    const { sessionId } = await voice.start()
+    voice.pushAudio(sessionId, new Uint8Array(3200))
+    assert.equal((await voice.finish(sessionId)).text, '')
+  } finally { cleanup() }
+})

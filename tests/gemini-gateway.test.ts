@@ -121,3 +121,23 @@ test('Gemini gets screen context in the user turn and trusted context in the sys
   }
   assert.match(JSON.parse(String(calls[0].init.body)).systemInstruction.parts[0].text, /needs_screenshot/)
 })
+
+test('an out-of-quota or busy Flash hands the reply to Flash Lite, which has its own quota', async () => {
+  const { fetcher, calls } = fakeFetch((url) => url.includes('gemini-flash-latest:') ? { status: 429, body: '{"error":{"message":"You exceeded your current quota."}}' } : { body: textReply('Here you go.') })
+  assert.equal(await new GeminiGateway(fetcher).reply(key, 'gemini-flash-latest', [{ role: 'user', content: 'hi' }], signal), 'Here you go.')
+  assert.deepEqual(calls.map((call) => call.url.split('/models/')[1]), ['gemini-flash-latest:generateContent', 'gemini-flash-lite-latest:generateContent'])
+  const allLimited = fakeFetch(() => ({ status: 429, body: '{}' }))
+  await assert.rejects(new GeminiGateway(allLimited.fetcher).reply(key, 'gemini-flash-latest', [{ role: 'user', content: 'x' }], signal), { code: 'rate_limit' })
+  assert.equal(allLimited.calls.length, 2, 'Flash Lite is tried once')
+})
+
+test('a vague "invalid argument" is asked once more without the thinking setting', async () => {
+  const bodies: Array<{ generationConfig: { thinkingConfig?: unknown } }> = []
+  const { fetcher } = fakeFetch((_url, init) => {
+    const body = JSON.parse(String(init.body))
+    bodies.push(body)
+    return { status: 400, body: '{"error":{"message":"Request contains an invalid argument."}}' }
+  })
+  await assert.rejects(new GeminiGateway(fetcher).reply(key, 'gemini-flash-latest', [{ role: 'user', content: 'hi' }], signal), { code: 'request_rejected' })
+  assert.deepEqual(bodies.map((body) => Boolean(body.generationConfig.thinkingConfig)), [true, false], 'one retry, then a plain error')
+})

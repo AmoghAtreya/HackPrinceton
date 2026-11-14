@@ -12,6 +12,10 @@ import { modelSchema } from './schemas.ts'
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 /** Google's alias for the current Flash model; used when a pinned model has been retired. */
 export const GEMINI_FLASH_ALIAS = 'gemini-flash-latest'
+/** The lighter Flash model. It has its own quota, so it can answer when Flash is rate-limited or busy. */
+export const GEMINI_FLASH_LITE_ALIAS = 'gemini-flash-lite-latest'
+/** How long the main model gets before the lighter one is tried: a quick answer matters more than a long wait. */
+const MAIN_MODEL_TIMEOUT_MS = 20000
 
 /**
  * Triage's requests are short and simple, so a quick answer matters more than
@@ -20,9 +24,13 @@ export const GEMINI_FLASH_ALIAS = 'gemini-flash-latest'
  */
 const QUICK_THINKING = { thinkingBudget: 0 } as const
 
-/** True when Gemini refused a request because of the thinking setting. */
-function rejectsThinking(status: number, body: string): boolean {
-  return status === 400 && /thinking/i.test(body)
+/**
+ * True when Gemini may have refused a request because of the thinking setting.
+ * Some models name it; newer ones only say "Request contains an invalid argument".
+ * Such requests are asked once more without the setting.
+ */
+export function rejectsThinking(status: number, body: string): boolean {
+  return status === 400 && /thinking|invalid argument/i.test(body) && !/API key/i.test(body)
 }
 
 /**
@@ -51,6 +59,15 @@ const modelsResponse = z.object({
   }).passthrough()).optional()
 }).passthrough()
 
+/** Google's own error message from a failed response, for the log (never shown to the user). */
+export function googleReason(body: string): string {
+  try {
+    const message = (JSON.parse(body) as { error?: { message?: unknown } }).error?.message
+    if (typeof message === 'string') return message.replace(/\s+/g, ' ').slice(0, 200)
+  } catch { /* Not JSON. */ }
+  return 'no details'
+}
+
 export function geminiProblem(status: number | undefined, body = ''): AppProblem {
   if (status === 400 && /API key not valid|API_KEY_INVALID/i.test(body)) return new AppProblem('authentication', 'Google rejected the Gemini API key. Reconnect in Settings.')
   if (status === 401) return new AppProblem('authentication', 'Google rejected this Gemini key. Check it was copied in full and created in Google AI Studio (aistudio.google.com/apikey) for the Gemini API.')
@@ -73,6 +90,7 @@ export class GeminiGateway implements ModelGateway {
 
   private async call(key: string, path: string, signal: AbortSignal, body?: object, timeoutMs = 45000): Promise<unknown> {
     const timeout = AbortSignal.timeout(timeoutMs)
+    const started = Date.now()
     let response: Response
     try {
       response = await this.fetcher(BASE_URL + path, {
@@ -84,9 +102,11 @@ export class GeminiGateway implements ModelGateway {
       })
     } catch {
       if (signal.aborted) throw new AppProblem('stopped', 'Request stopped.')
+      console.warn(`Gemini ${path} ${timeout.aborted ? 'timed out' : 'could not connect'} after ${Date.now() - started} ms.`)
       throw geminiProblem(undefined)
     }
     const text = await response.text().catch(() => '')
+    if (!response.ok) console.warn(`Gemini ${path} failed after ${Date.now() - started} ms (HTTP ${response.status}: ${googleReason(text)}).`)
     if (!response.ok && rejectsThinking(response.status, text)) throw new AppProblem('thinking_unsupported', 'This Gemini model does not accept the thinking setting.')
     if (!response.ok) throw geminiProblem(response.status, text)
     try { return JSON.parse(text) }
@@ -130,12 +150,23 @@ export class GeminiGateway implements ModelGateway {
       }
       const started = Date.now()
       try {
-        raw = await this.call(key, `/models/${encodeURIComponent(target)}:generateContent`, signal, body)
+        raw = await this.call(key, `/models/${encodeURIComponent(target)}:generateContent`, signal, body,
+          target === GEMINI_FLASH_LITE_ALIAS ? undefined : MAIN_MODEL_TIMEOUT_MS)
         console.info(`Gemini ${target} answered in ${Date.now() - started} ms.`)
         break
       } catch (error) {
-        if (attempt >= 2 || !(error instanceof AppProblem)) throw error
-        if (error.code === 'thinking_unsupported' && !this.thinkingRefused.has(target)) { this.thinkingRefused.add(target); continue }
+        if (attempt >= 4 || !(error instanceof AppProblem)) throw error
+        if (error.code === 'thinking_unsupported') {
+          if (this.thinkingRefused.has(target)) throw geminiProblem(400)
+          this.thinkingRefused.add(target)
+          continue
+        }
+        // Out of quota, busy or too slow: the lighter model has its own quota and is quicker.
+        if (['rate_limit', 'provider_unavailable', 'connection'].includes(error.code) && target !== GEMINI_FLASH_LITE_ALIAS) {
+          console.warn(`Gemini ${target} could not answer (${error.code}); trying ${GEMINI_FLASH_LITE_ALIAS}.`)
+          target = GEMINI_FLASH_LITE_ALIAS
+          continue
+        }
         // Google retires model versions (they still appear in the list but return 404); use the current Flash instead.
         if (error.code === 'model_unavailable' && target !== GEMINI_FLASH_ALIAS) {
           console.warn(`Gemini model ${target} is unavailable; using ${GEMINI_FLASH_ALIAS}.`)

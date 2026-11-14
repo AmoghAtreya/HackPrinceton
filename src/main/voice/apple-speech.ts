@@ -34,6 +34,22 @@ function parseMessage(line: string): HelperMessage | null {
   return null
 }
 
+function words(text: string): string[] {
+  return text.toLowerCase().replace(/[^\p{L}\p{N}'\s]/gu, ' ').split(/\s+/).filter(Boolean)
+}
+
+/**
+ * After a long pause Apple's recognizer can silently start its transcript over
+ * ("Can you take me to my orders" → "And"). A caption that suddenly gets shorter
+ * and starts differently is a restart, not a correction, so the earlier words
+ * must be kept as their own segment.
+ */
+export function looksLikeRestart(previous: string, next: string): boolean {
+  const before = words(previous)
+  const after = words(next)
+  return before.length >= 2 && after.length < before.length && after[0] !== before[0]
+}
+
 function helperProblem(code: string): AppProblem {
   switch (code) {
     case 'speech_denied':
@@ -87,7 +103,10 @@ export class AppleSpeechService implements SpeechToTextService {
     const server: Server = createServer()
     let socket: Socket | undefined
     const startedAt = Date.now()
+    // Apple restarts recognition after each pause; every restart is a new segment, kept in order.
     let segment = 0
+    let segmentStart: number | null = null
+    let lastCaption = ''
     try {
       await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve) })
       const connection = new Promise<Socket>((resolve) => server.once('connection', resolve))
@@ -123,9 +142,18 @@ export class AppleSpeechService implements SpeechToTextService {
           else if (message.type === 'done') settle.resolve()
           else {
             const seconds = (Date.now() - startedAt) / 1000
-            onResult({ segmentId: `apple-${segment}`, text: message.text.trim(), isFinal: message.isFinal,
-              confidence: message.isFinal ? message.confidence : null, startTime: 0, endTime: seconds })
-            if (message.isFinal) segment++
+            const text = message.text.trim()
+            if (lastCaption && text && looksLikeRestart(lastCaption, text)) {
+              // Keep what was said before the pause as its own finished segment.
+              onResult({ segmentId: `apple-${segment}`, text: lastCaption, isFinal: true, confidence: null, startTime: segmentStart ?? 0, endTime: seconds })
+              segment++
+              segmentStart = null
+            }
+            lastCaption = message.isFinal ? '' : text || lastCaption
+            segmentStart ??= seconds
+            onResult({ segmentId: `apple-${segment}`, text, isFinal: message.isFinal,
+              confidence: message.isFinal ? message.confidence : null, startTime: segmentStart, endTime: seconds })
+            if (message.isFinal) { segment++; segmentStart = null }
           }
         }
       })

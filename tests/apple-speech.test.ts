@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { connect } from 'node:net'
-import { AppleSpeechService, type HelperLauncher } from '../src/main/voice/apple-speech.ts'
+import { AppleSpeechService, looksLikeRestart, type HelperLauncher } from '../src/main/voice/apple-speech.ts'
 import { AudioQueue } from '../src/main/voice/audio-queue.ts'
 import type { SpeechToTextResult } from '../src/main/voice/speech-to-text.ts'
 
@@ -65,4 +65,23 @@ test('a helper that cannot be opened is reported with the build command', async 
 test('verify fails clearly when the helper has not been built', async () => {
   if (process.platform !== 'darwin') return
   await assert.rejects(new AppleSpeechService('/nonexistent/TriageSpeechHelper.app').verify(), { code: 'speech_helper_missing' })
+})
+
+test('a transcript that starts over after a pause is a restart; corrections are not', () => {
+  assert.equal(looksLikeRestart('Can you take me to my Amazon orders', 'And'), true)
+  assert.equal(looksLikeRestart('Can you take me to my Amazon orders', 'And then show'), true)
+  assert.equal(looksLikeRestart('Ken you', 'Can you take'), false, 'a longer revision is a correction')
+  assert.equal(looksLikeRestart('Can you take me', 'Can you'), false, 'same start: still the same sentence')
+  assert.equal(looksLikeRestart('Hello', 'Help'), false, 'one word is too little to judge')
+})
+
+test('words said before a pause are kept when Apple starts its transcript over', async () => {
+  const captions = ['Can you take', 'Can you take me to my orders', 'And', 'And then show me']
+  const helper = fakeHelper((send) => send({ type: 'ready' }), (kind, send) => {
+    if (kind === 'A') { const next = captions.shift(); if (next) send({ type: 'result', text: next, isFinal: false, confidence: null }) }
+    if (kind === 'E') { send({ type: 'result', text: 'And then show me where', isFinal: true, confidence: 0.9 }); send({ type: 'done' }) }
+  })
+  const results = await run(new AppleSpeechService('/fake/TriageSpeechHelper.app', { launch: helper.launch }), 4)
+  const finals = results.filter((result) => result.isFinal).map((result) => [result.segmentId, result.text])
+  assert.deepEqual(finals, [['apple-0', 'Can you take me to my orders'], ['apple-1', 'And then show me where']])
 })

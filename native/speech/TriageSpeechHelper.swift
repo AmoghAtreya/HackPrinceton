@@ -74,8 +74,16 @@ func fail(_ code: String, _ message: String) -> Never {
 }
 
 let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
-var request: SFSpeechAudioBufferRecognitionRequest?
+var recognizer: SFSpeechRecognizer?
 var task: SFSpeechRecognitionTask?
+
+// Shared between the socket thread and the main thread.
+let recognitionLock = NSLock()
+var request: SFSpeechAudioBufferRecognitionRequest?
+/// Set once Triage sends 'E' (the user let go of the talk button).
+var audioEnded = false
+/// Each recognition task gets a number, so late results from a replaced task are ignored.
+var generation = 0
 
 func readExactly(_ count: Int) -> [UInt8]? {
   var buffer = [UInt8](repeating: 0, count: count)
@@ -97,7 +105,18 @@ func append(_ bytes: [UInt8]) {
     let samples = raw.bindMemory(to: Int16.self)
     for index in 0..<frames { channel[index] = Float(Int16(littleEndian: samples[index])) / 32768 }
   }
-  request?.append(buffer)
+  recognitionLock.lock()
+  let target = request
+  recognitionLock.unlock()
+  target?.append(buffer)
+}
+
+func endOfAudio() {
+  recognitionLock.lock()
+  audioEnded = true
+  let target = request
+  recognitionLock.unlock()
+  target?.endAudio()
 }
 
 func readLoop() {
@@ -108,28 +127,36 @@ func readLoop() {
     guard let payload = length > 0 ? readExactly(length) : [] else { task?.cancel(); exit(0) }
     switch header[0] {
     case 0x41: append(payload)           // 'A'
-    case 0x45: request?.endAudio()       // 'E': keep reading until the final result is sent
+    case 0x45: endOfAudio()              // 'E': keep reading until the final result is sent
     case 0x43: task?.cancel(); close(socketFD); exit(0)  // 'C'
     default: exit(65)
     }
   }
 }
 
-func start() {
-  guard let recognizer = SFSpeechRecognizer(locale: Locale(identifier: language)) else {
-    fail("unsupported_language", "Speech recognition does not support \(language) on this Mac.")
-  }
-  guard recognizer.supportsOnDeviceRecognition else {
-    fail("no_on_device", "On-device speech recognition is not available for \(language) on this Mac.")
-  }
-  guard recognizer.isAvailable else { fail("unavailable", "Speech recognition is not available right now.") }
+/// Starts one recognition task. Apple's recognizer ends a task by itself after a
+/// long pause; older speakers pause a lot, so while the talk button is still held
+/// a new task starts at once and the captions carry on. Only letting go ends it.
+func startTask() {
+  guard let recognizer else { return }
   let newRequest = SFSpeechAudioBufferRecognitionRequest()
   newRequest.shouldReportPartialResults = true
   // Never fall back to Apple's servers: audio stays on this Mac.
   newRequest.requiresOnDeviceRecognition = true
   if #available(macOS 13, *) { newRequest.addsPunctuation = true }
+  recognitionLock.lock()
+  generation += 1
+  let mine = generation
   request = newRequest
+  let alreadyEnded = audioEnded
+  recognitionLock.unlock()
+  if alreadyEnded { newRequest.endAudio() }
   task = recognizer.recognitionTask(with: newRequest) { result, error in
+    recognitionLock.lock()
+    let current = mine == generation
+    let ended = audioEnded
+    recognitionLock.unlock()
+    guard current else { return }
     if let result {
       var confidence: Any = NSNull()
       if result.isFinal {
@@ -137,16 +164,35 @@ func start() {
         if !scores.isEmpty { confidence = scores.reduce(0, +) / Double(scores.count) }
       }
       send(["type": "result", "text": result.bestTranscription.formattedString, "isFinal": result.isFinal, "confidence": confidence])
-      if result.isFinal { finish() }
+      if result.isFinal {
+        if ended { finish() }
+        DispatchQueue.main.async { startTask() }   // a pause, not the end: keep listening
+      }
     } else if let error = error as NSError? {
       // 1110: no speech detected; 216 / 301: the request ended before any speech.
       if [1110, 216, 301].contains(error.code) {
-        send(["type": "result", "text": "", "isFinal": true, "confidence": NSNull()])
-        finish()
+        if ended {
+          send(["type": "result", "text": "", "isFinal": true, "confidence": NSNull()])
+          finish()
+        }
+        DispatchQueue.main.async { startTask() }   // silence while still holding: keep listening
+        return
       }
       fail("recognition_failed", "Speech recognition failed (\(error.domain) \(error.code)).")
     }
   }
+}
+
+func start() {
+  guard let created = SFSpeechRecognizer(locale: Locale(identifier: language)) else {
+    fail("unsupported_language", "Speech recognition does not support \(language) on this Mac.")
+  }
+  guard created.supportsOnDeviceRecognition else {
+    fail("no_on_device", "On-device speech recognition is not available for \(language) on this Mac.")
+  }
+  guard created.isAvailable else { fail("unavailable", "Speech recognition is not available right now.") }
+  recognizer = created
+  startTask()
   send(["type": "ready"])
   Thread.detachNewThread { readLoop() }
 }
