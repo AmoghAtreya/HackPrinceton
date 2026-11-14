@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { destinations } from '../../shared/destinations.ts'
+import { googleReason } from '../assistant/gemini.ts'
 
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 /** Google's alias for the current Flash model, so retired versions never break voice. */
@@ -65,13 +66,6 @@ const responseSchema = z.object({
  * unreadable answer), so the caller keeps the on-device transcript.
  */
 /** Google's short error message, for the log (never includes the key). */
-function googleReason(body: string): string {
-  try {
-    const message = (JSON.parse(body) as { error?: { message?: unknown } }).error?.message
-    if (typeof message === 'string') return message.replace(/\s+/g, ' ').slice(0, 200)
-  } catch { /* Not JSON. */ }
-  return 'no details'
-}
 
 export class GeminiTranscriber {
   private readonly fetcher: typeof globalThis.fetch

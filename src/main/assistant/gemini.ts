@@ -51,6 +51,15 @@ const modelsResponse = z.object({
   }).passthrough()).optional()
 }).passthrough()
 
+/** Google's own error message from a failed response, for the log (never shown to the user). */
+export function googleReason(body: string): string {
+  try {
+    const message = (JSON.parse(body) as { error?: { message?: unknown } }).error?.message
+    if (typeof message === 'string') return message.replace(/\s+/g, ' ').slice(0, 200)
+  } catch { /* Not JSON. */ }
+  return 'no details'
+}
+
 export function geminiProblem(status: number | undefined, body = ''): AppProblem {
   if (status === 400 && /API key not valid|API_KEY_INVALID/i.test(body)) return new AppProblem('authentication', 'Google rejected the Gemini API key. Reconnect in Settings.')
   if (status === 401) return new AppProblem('authentication', 'Google rejected this Gemini key. Check it was copied in full and created in Google AI Studio (aistudio.google.com/apikey) for the Gemini API.')
@@ -73,6 +82,7 @@ export class GeminiGateway implements ModelGateway {
 
   private async call(key: string, path: string, signal: AbortSignal, body?: object, timeoutMs = 45000): Promise<unknown> {
     const timeout = AbortSignal.timeout(timeoutMs)
+    const started = Date.now()
     let response: Response
     try {
       response = await this.fetcher(BASE_URL + path, {
@@ -84,9 +94,11 @@ export class GeminiGateway implements ModelGateway {
       })
     } catch {
       if (signal.aborted) throw new AppProblem('stopped', 'Request stopped.')
+      console.warn(`Gemini ${path} ${timeout.aborted ? 'timed out' : 'could not connect'} after ${Date.now() - started} ms.`)
       throw geminiProblem(undefined)
     }
     const text = await response.text().catch(() => '')
+    if (!response.ok) console.warn(`Gemini ${path} failed after ${Date.now() - started} ms (HTTP ${response.status}: ${googleReason(text)}).`)
     if (!response.ok && rejectsThinking(response.status, text)) throw new AppProblem('thinking_unsupported', 'This Gemini model does not accept the thinking setting.')
     if (!response.ok) throw geminiProblem(response.status, text)
     try { return JSON.parse(text) }
