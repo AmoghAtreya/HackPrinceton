@@ -18,16 +18,26 @@ export function webUrl(raw: string | undefined): string | undefined {
   } catch { return undefined }
 }
 
-/** First source with a usable web address wins; a source that fails is skipped. */
-export function currentTabReader(sources: TabUrlSource[]): () => Promise<string | undefined> {
-  return async () => {
+/**
+ * First source with a usable web address wins; a source that fails is skipped.
+ *
+ * `own` is the page already open in Triage's own browser. That window can sit
+ * above the person's Chrome, so an address equal to it is used only when no
+ * source offers a different one (then it is the same page either way).
+ */
+export function currentTabReader(sources: TabUrlSource[]): (own?: string) => Promise<string | undefined> {
+  return async (own) => {
+    const ownUrl = webUrl(own)
+    let fallback: string | undefined
     for (const source of sources) {
       let raw: string | undefined
       try { raw = await source() } catch { raw = undefined }
       const url = webUrl(raw)
-      if (url) return url
+      if (!url) continue
+      if (url !== ownUrl) return url
+      fallback = url
     }
-    return undefined
+    return fallback
   }
 }
 

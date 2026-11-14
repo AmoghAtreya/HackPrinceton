@@ -87,7 +87,7 @@ export class SimplifierService {
   private readonly observed: (decisionId: string) => ObservedSignals | undefined
   private readonly reported: (userId: string, pageType: PageType, signals: ObservedSignals) => void
   private readonly now: () => number
-  private readonly currentTab: () => Promise<string | undefined>
+  private readonly currentTab: (own?: string) => Promise<string | undefined>
   private readonly sessions = new Map<string, ViewSession>()
   private current?: ViewSession
 
@@ -99,7 +99,8 @@ export class SimplifierService {
     /** Told what was observed on a page once its outcome is reported, e.g. to update the skill graph. */
     reported?: (userId: string, pageType: PageType, signals: ObservedSignals) => void
     /** The address open in the person's own browser, for a bare "/simplify". */
-    currentTab?: () => Promise<string | undefined>
+    /** `own` is the address already open in Triage's browser, which the person is probably not asking about. */
+    currentTab?: (own?: string) => Promise<string | undefined>
   }) {
     this.currentTab = options.currentTab ?? (async () => undefined)
     this.reported = options.reported ?? (() => {})
@@ -133,7 +134,7 @@ export class SimplifierService {
 
   async simplify(command: SimplifyCommand, userId: string, credentials: { key: string; model: string } | undefined, signal: AbortSignal): Promise<SimplifyResult> {
     // Read the address before Triage's Chromium opens, so its window is never mistaken for the person's page.
-    const url = command.kind === 'url' ? command.url : command.kind === 'current' ? await this.currentTab() : undefined
+    const url = command.kind === 'url' ? command.url : command.kind === 'current' ? await this.currentTab(this.ownUrl()) : undefined
     if (command.kind === 'current' && !url) throw new AppProblem('no_current_page', NO_CURRENT_TAB)
     if (signal.aborted) throw new AppProblem('stopped', 'Simplification stopped.')
     const page = await this.page()
@@ -152,6 +153,13 @@ export class SimplifierService {
     this.current = { decisionId: result.decisionId, shownAt: this.now(), linksFollowed: 0 }
     this.sessions.set(result.decisionId, this.current)
     return result
+  }
+
+  /** What Triage's own browser page shows now, if it is a real site. */
+  private ownUrl(): string | undefined {
+    if (!this.before || this.before.isClosed()) return undefined
+    const url = this.before.url()
+    return /^https?:/i.test(url) ? url : undefined
   }
 
   /** Triage's own Chrome page, shared with task drivers (e.g. the pharmacy refill). */
