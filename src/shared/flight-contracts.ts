@@ -24,6 +24,8 @@ export const routeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('needs_screenshot'), reason: z.string().trim().min(1).max(300) }).strict(),
   // The user stated how someone they know reaches them. A suggestion only: the app verifies it against the user's own words and asks before saving.
   z.object({ kind: z.literal('remember_contact'), contact: contactDraftSchema }).strict(),
+  // A how-to question. `skills` are meant to be catalogue ids; anything that is not is dropped by the app, never stored.
+  z.object({ kind: z.literal('how_to'), skills: z.array(z.string().max(60)).max(5) }).strict(),
   z.object({ kind: z.literal('open_page'), destination: z.enum(destinationIds), query: z.string().trim().min(1).max(200).optional() }).strict()
 ])
 export type AssistantRoute = z.infer<typeof routeSchema>
