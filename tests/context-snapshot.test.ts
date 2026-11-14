@@ -38,6 +38,9 @@ test('the native JSON shape validates and is strict and bounded', () => {
   assert.equal(mutate((s) => { s.elements = Array.from({ length: 401 }, () => s.elements[0]) }), false, 'over 400 elements')
   assert.equal(mutate((s) => { s.focusedElementIndex = 17 }), false, 'focus index past the end')
   assert.equal(mutate((s) => { delete s.elements[0].secure }), false, 'missing secure flag')
+  assert.equal(mutate((s) => { delete s.elements[0].path }), false, 'missing path')
+  assert.equal(mutate((s) => { s.elements[0].path = Array.from({ length: 129 }, () => 0) }), false, 'path too deep')
+  assert.equal(mutate((s) => { s.elements[0].path = [-1] }), false, 'negative child index')
 })
 
 test('a secure field can never carry a value through the schema', () => {
@@ -155,12 +158,12 @@ test('toDistilledPage copes with native apps and long text', () => {
     app: { bundleId: 'com.apple.TextEdit', name: 'TextEdit', pid: 7 },
     window: { title: '', frame: { x: 0, y: 0, width: 0, height: 0 } },
     elements: [
-      { role: 'AXHeading', label: '', value: 'Notes', frame: { x: 0, y: 0, width: 10, height: 10 }, secure: false, enabled: true, depth: 0 },
-      { role: 'AXButton', label: '', frame: { x: 0, y: 0, width: 10, height: 10 }, secure: false, enabled: true, depth: 0 },
-      { role: 'AXTextArea', label: '', frame: { x: 0, y: 0, width: 10, height: 10 }, secure: false, enabled: true, depth: 0 },
-      { role: 'AXSheet', label: 'Save', frame: { x: 0, y: 0, width: 10, height: 10 }, secure: false, enabled: true, depth: 0 },
-      { role: 'AXButton', label: 'Save', frame: { x: 0, y: 0, width: 10, height: 10 }, secure: false, enabled: true, depth: 1 },
-      ...Array.from({ length: 60 }, () => ({ role: 'AXStaticText', label: '', value: longText, frame: { x: 0, y: 0, width: 10, height: 10 }, secure: false, enabled: true, depth: 0 }))
+      { role: 'AXHeading', label: '', value: 'Notes', frame: { x: 0, y: 0, width: 10, height: 10 }, secure: false, enabled: true, depth: 0, path: [0] },
+      { role: 'AXButton', label: '', frame: { x: 0, y: 0, width: 10, height: 10 }, secure: false, enabled: true, depth: 0, path: [0] },
+      { role: 'AXTextArea', label: '', frame: { x: 0, y: 0, width: 10, height: 10 }, secure: false, enabled: true, depth: 0, path: [0] },
+      { role: 'AXSheet', label: 'Save', frame: { x: 0, y: 0, width: 10, height: 10 }, secure: false, enabled: true, depth: 0, path: [0] },
+      { role: 'AXButton', label: 'Save', frame: { x: 0, y: 0, width: 10, height: 10 }, secure: false, enabled: true, depth: 1, path: [0, 0] },
+      ...Array.from({ length: 60 }, () => ({ role: 'AXStaticText', label: '', value: longText, frame: { x: 0, y: 0, width: 10, height: 10 }, secure: false, enabled: true, depth: 0, path: [0] }))
     ]
   }
   const snapshot = {
