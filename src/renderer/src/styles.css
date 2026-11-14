@@ -207,3 +207,8 @@ button:disabled { opacity: .55; cursor: default; }
 .voice-last { margin: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .voice-error { margin: 0; color: #a3341a; font-size: 12px; }
 .voice-input > .text-button { align-self: flex-start; }
+
+.link-warning { position: absolute; box-sizing: border-box; border: 2px solid #b65a00; border-radius: 4px; }
+.link-warning span { position: absolute; left: -2px; top: 100%; padding: 2px 5px; border-radius: 3px; background: #873f00; color: white; font: 600 11px/1.25 system-ui; white-space: nowrap; }
+.link-warning[data-warning="Potential phishing"] { border-color: #bb253b; }
+.link-warning[data-warning="Potential phishing"] span { background: #a71931; }
