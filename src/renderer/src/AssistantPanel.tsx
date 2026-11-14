@@ -11,6 +11,7 @@ import { VoiceButton } from './VoiceButton'
 import { matchVoiceIntent, needsConfirmation } from './voice/intents'
 import { speechPlayer } from './voice/speech-player'
 import { failureSpeech, prepareSpeech } from '../../shared/speech-text'
+import { isNextStep } from '../../shared/guide-contracts'
 import type { ReadAloud } from '../../shared/speech-contracts'
 import { analysisSpeech, type ScreenAnalysis, type ScreenAnalysisKind } from '../../shared/screen-analysis-contracts'
 import { ScreenHelpCard } from './ScreenHelpCard'
@@ -42,6 +43,8 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   const lastGesture = useRef<string | undefined>(undefined)
   /** Task ids whose reply should be read aloud when it arrives. */
   const speakTasks = useRef(new Set<string>())
+  /** Task ids already read aloud, so a guide step is never spoken twice. */
+  const spokenTasks = useRef(new Set<string>())
   const readAloud = useRef<ReadAloud>('voice')
   const historyVersion = useRef(0)
   const selection = useRef(selected)
@@ -74,6 +77,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       if (!speakTasks.current.has(message.taskId)) continue
       if (message.role === 'assistant' && message.status === 'completed') {
         speakTasks.current.delete(message.taskId)
+        spokenTasks.current.add(message.taskId)
         void speechPlayer.speak(prepareSpeech(message.content))
       } else if (message.role === 'user' && ['failed', 'interrupted', 'stopped'].includes(message.status)) {
         speakTasks.current.delete(message.taskId)
@@ -82,6 +86,13 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       }
     }
   }, [detail?.messages])
+
+  // Guided help started by voice: each new step is read aloud, including ones that follow a click.
+  const guideTask = assistant?.guide?.taskId
+  const guideSpoken = assistant?.guide?.spoken
+  useEffect(() => {
+    if (guideTask && (guideSpoken || readAloud.current === 'always')) queueSpeech(guideTask)
+  }, [guideTask, guideSpoken])
 
   useEffect(() => {
     const gesture = assistant?.gestureRequest
@@ -180,13 +191,27 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   }
 
   function queueSpeech(taskId: string) {
+    if (spokenTasks.current.has(taskId)) return
     speakTasks.current.add(taskId)
     // Forget requests whose replies never showed up (e.g. the user switched conversations).
     while (speakTasks.current.size > 20) speakTasks.current.delete(speakTasks.current.values().next().value!)
   }
 
+  /** Guided help: look at the screen again for the next step. */
+  async function guideNext() {
+    setError(''); setVoiceNotice('')
+    try { unwrap(await bridge.guideNext()); setView('chat') }
+    catch (problem) { setError(displayError(problem)) }
+  }
+
+  function guideStop() {
+    speechPlayer.stop()
+    void bridge.guideStop().then(unwrap).catch((problem) => setError(displayError(problem)))
+  }
+
   function newConversation() {
     speechPlayer.stop()
+    if (assistant?.guide) void bridge.guideStop()
     setCapture(null); void bridge.discardScreen(); setSelected(null); setDetail(null); setDraft(''); setError(''); setVoiceNotice(''); setScreenHelp(null); setView('chat')
   }
 
@@ -232,6 +257,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     const intent = matchVoiceIntent(text)
     if (intent.kind === 'stop') {
       speechPlayer.stop()
+      if (assistant.guide) void bridge.guideStop()
       if (assistant.active) await stop()
       else if (capture) { setCapture(null); void bridge.discardScreen() }
       return
@@ -243,6 +269,8 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       holdForReview(text, 'I’m still working on your last request, so I didn’t send that yet. Your words are in the message box: press Send when I’m done, or say “stop”.')
       return
     }
+    // While guiding, "next", "done" or "what now" asks for the next step (one word is enough here).
+    if (assistant.guide && isNextStep(text)) { await guideNext(); return }
     if (intent.kind === 'chat' && needsConfirmation(record)) {
       holdForReview(text, 'Did I hear that right? I put your words in the message box. Fix anything that’s wrong, then press Send.')
       return
@@ -341,7 +369,14 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       <button className="stop-button" onClick={() => void stop()}>■ Stop</button>
     </div>}
     <TrustWarning bridge={bridge} />
-    {assistant?.highlight && <div className="highlight-status" role="status">
+    {assistant?.guide ? <div className="guide-bar" role="status">
+      <span className="guide-goal"><strong>Guiding you:</strong> {assistant.guide.goal}{assistant.guide.step ? ` · Step ${assistant.guide.step}` : ''}</span>
+      <span className="guide-hint">{assistant.highlight ? 'Click the outlined button, or press Next step when you’ve done it.' : 'Press Next step when you’ve done it, or say “next”.'}</span>
+      <div className="guide-actions">
+        <button type="button" className="primary-button" disabled={Boolean(active) || busy || capturing} onClick={() => void guideNext()}>Next step</button>
+        <button type="button" className="text-button" onClick={guideStop}>Stop guiding</button>
+      </div>
+    </div> : assistant?.highlight && <div className="highlight-status" role="status">
       <span>Click the highlighted control to clear the marker</span>
       <button className="text-button" onClick={() => void bridge.dismissHighlight().then(unwrap).catch((problem) => setError(displayError(problem)))}>Dismiss highlight</button>
     </div>}
