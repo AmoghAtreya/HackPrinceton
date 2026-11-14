@@ -1,7 +1,9 @@
 import type { BrowserRunner } from '../browser/supervisor.ts'
 import { validateFlight } from '../browser/validation.ts'
-import type { HighlightController, HighlightPlan } from '../screen/highlight.ts'
-import type { HighlightReply } from '../../shared/highlight-contracts.ts'
+import { HIGHLIGHT_LOST_MESSAGE, highlightSource, type HighlightController, type HighlightPlan } from '../screen/highlight.ts'
+import type { ElementAnchor, HighlightReply } from '../../shared/highlight-contracts.ts'
+import { locateElements } from '../context/locate.ts'
+import type { ContextLookup } from '../context/paired-capture.ts'
 import type { ShakeTrigger } from '../../shared/shake-contracts.ts'
 import type { ScreenAccess, ScreenImage, ScreenPreview } from '../../shared/screen-contracts.ts'
 import type { ActiveRequest, AssistantState, LearningSummary, SendReceipt } from '../../shared/assistant-contracts.ts'
@@ -39,6 +41,8 @@ export class AssistantCoordinator {
   private requestTimeout: number
   private highlights?: HighlightController
   private offHighlights?: () => void
+  private offLost?: () => void
+  private contexts?: ContextLookup
   private gestureRequest?: SendReceipt
   private browser?: BrowserRunner
   private openPage?: (url: string) => Promise<void>
@@ -49,6 +53,8 @@ export class AssistantCoordinator {
     history: HistoryStore; credentials: Credentials; gateway: ModelGateway
     changed: (state: AssistantState) => void; browser?: BrowserRunner; requestTimeout?: number; screens?: ScreenAccess; highlights?: HighlightController
     simplifier?: SimplifierService
+    /** Accessibility snapshots paired with screenshots; without it highlights are pixel boxes only. */
+    contexts?: ContextLookup
     /** Opens a vetted https URL in the user's own browser. */
     openPage?: (url: string) => Promise<void>
   }) {
@@ -57,6 +63,12 @@ export class AssistantCoordinator {
     this.openPage = options.openPage
     this.highlights = options.highlights
     this.offHighlights = options.highlights?.onChange(() => this.emit())
+    this.contexts = options.contexts
+    this.offLost = options.highlights?.onLost((state) => {
+      if (this.disposed) return
+      try { if (this.history.note(state.taskId, 'highlight_lost', HIGHLIGHT_LOST_MESSAGE)) this.emit() }
+      catch { this.blockStorage() }
+    })
     this.screens = options.screens
     this.history = options.history
     this.credentials = options.credentials
@@ -237,11 +249,38 @@ export class AssistantCoordinator {
       let outcome = 'no_target'
       if (request.highlight) {
         if (!image || !this.gateway.locate || !this.highlights) throw new AppProblem('highlight_unavailable', 'Screen highlighting is unavailable. Capture again or use Explain screen.')
-        result = await this.gateway.locate(key, model, context, request.controller.signal, image)
+        const snapshot = this.contexts?.forCapture(image.metadata.id)
+        const candidates = snapshot ? locateElements(snapshot) : []
+        result = await this.gateway.locate(key, model, context, request.controller.signal, image, candidates.length ? candidates : undefined)
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         reply = result.explanation
         try {
-          plan = this.highlights.plan(result, image.metadata, request.id, request.highlightRevision!)
+          let anchor: ElementAnchor | undefined
+          let rejected: AppProblem | undefined
+          if (result.elementId) {
+            // The id is only meaningful for the snapshot it was offered from: the
+            // lookup refuses ids that snapshot never had, and any snapshot that
+            // has since expired or been replaced by a newer generation.
+            try {
+              if (!snapshot || !this.contexts) throw new AppProblem('context_element', 'No element list was offered.')
+              const element = this.contexts.element(snapshot.id, snapshot.generation, result.elementId)
+              anchor = { frame: element.frame, pid: snapshot.app.pid, path: element.path, role: element.role }
+            } catch (error) {
+              if (!(error instanceof AppProblem)) throw error
+              rejected = error.code === 'context_expired'
+                ? new AppProblem('stale_element', 'No highlight: the view of the screen expired or was replaced. Capture again before asking where to click.')
+                : new AppProblem('unknown_element', 'No highlight: the reply named an item that is not on the captured screen. Try a fresh capture.')
+            }
+          }
+          if (anchor) {
+            try { plan = this.highlights.plan(result, image.metadata, request.id, request.highlightRevision!, anchor) }
+            // An element that is off this display can still be marked from the model's pixel box, if it gave one.
+            catch (error) { if (!(error instanceof AppProblem) || error.code !== 'invalid_target' || !result.target) throw error }
+          }
+          if (!plan) {
+            if (rejected && !result.target) throw rejected
+            plan = this.highlights.plan(result, image.metadata, request.id, request.highlightRevision!)
+          }
           outcome = plan ? 'prepared' : 'no_target'
         } catch (error) {
           if (!(error instanceof AppProblem)) throw error
@@ -287,7 +326,7 @@ export class AssistantCoordinator {
         }
       } else reply = await this.gateway.reply(key, model, context, request.controller.signal, image)
       if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
-      this.history.complete(request.id, redact(reply, [key]), result ? { captureId: image!.metadata.id, target: plan ? result.target : null, outcome } : undefined)
+      this.history.complete(request.id, redact(reply, [key]), result ? { captureId: image!.metadata.id, target: plan && !plan.anchor ? result.target : null, outcome, ...(plan ? { source: highlightSource(plan) } : {}) } : undefined)
       clearTimeout(request.deadline)
       this.active = null
       if (plan) this.highlights?.present(plan)
@@ -382,6 +421,7 @@ If you can’t find something on the page, ask “show me where…” and I’ll
     try {
       if (this.active) this.finish(this.active, 'stopped', 'Stopped because Triage quit.')
       this.offHighlights?.()
+      this.offLost?.()
       this.highlights?.clear()
     } finally {
       this.credentials.dispose()
