@@ -5,6 +5,7 @@ import type { ScreenPreview } from '../../shared/screen-contracts'
 import { Character } from './Character'
 import { SettingsPanel } from './SettingsPanel'
 import { HistoryPanel } from './HistoryPanel'
+import { VoiceButton } from './VoiceButton'
 import { displayError, unwrap } from './assistant-ui'
 import { appendConversations, refreshConversations } from './history-state'
 
@@ -267,6 +268,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       {view === 'chat' && <div ref={bottom} />}
     </div>
     {view === 'chat' && <footer className="chat-footer">
+      <VoiceButton bridge={bridge} />
       <div className="screen-controls">
         <button className="text-button" disabled={capturing || busy || Boolean(active)} onClick={() => void captureScreen()}>{capturing ? 'Capturing screen…' : 'Capture screen'}</button>
         <button className="text-button" disabled={Boolean(active) || busy} onClick={() => {
