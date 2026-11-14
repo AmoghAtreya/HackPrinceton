@@ -41,6 +41,16 @@ export interface ConversationDetail {
 }
 export interface SendReceipt { taskId: string; conversationId: string }
 
+/** A multi-step task (LangGraph thread) and its saved progress, for the History tab. */
+export interface TaskEntry {
+  threadId: string; conversationId: string; title: string
+  status: 'waiting' | 'submitted' | 'cancelled' | 'blocked' | 'failed'
+  steps: string[]; stepCount: number; question: string | null; updatedAt: number
+}
+/** One thing Triage remembers about the person. Stored only on this Mac. */
+export interface MemoryEntry { id: string; kind: 'preference' | 'recipe' | 'fact'; text: string; updatedAt?: number }
+export interface MemorySnapshot { tasks: TaskEntry[]; memories: MemoryEntry[] }
+
 /** One simplified page as shown in the History tab's learning section. */
 export interface LearningEntry {
   decisionId: string
@@ -82,6 +92,8 @@ export interface AssistantBridge {
   analyzeScreen(input: { captureId: string; kind: ScreenAnalysisKind; source?: 'chat' | 'voice' }): Promise<Result<ScreenAnalysis>>
   getLearning(): Promise<Result<LearningSummary>>
   rateSimplification(input: { decisionId: string; helpful: boolean }): Promise<Result<LearningSummary>>
+  getMemory(): Promise<Result<MemorySnapshot>>
+  forgetMemory(id: string): Promise<Result<MemorySnapshot>>
 }
 export const assistantChannels = {
   getShake: 'assistant:get-shake', saveShake: 'assistant:save-shake',
@@ -92,5 +104,5 @@ export const assistantChannels = {
   send: 'assistant:send', stop: 'assistant:stop', list: 'assistant:list',
   detail: 'assistant:detail', delete: 'assistant:delete', clear: 'assistant:clear',
   analyze: 'assistant:analyze',
-  learning: 'assistant:learning', rate: 'assistant:rate'
+  learning: 'assistant:learning', rate: 'assistant:rate', memory: 'assistant:memory', forget: 'assistant:forget'
 } as const
