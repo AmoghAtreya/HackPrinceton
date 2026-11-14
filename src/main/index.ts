@@ -25,6 +25,9 @@ import { HistoryStore } from './assistant/history'
 import { ClaudeGateway } from './assistant/model'
 import { installAssistantIpc } from './assistant/ipc'
 import { ScreenService } from './screen/service'
+import { ContextService } from './context/service'
+import { PairedCapture } from './context/paired-capture'
+import { electronContext } from './context/electron-context'
 import { electronCapture } from './screen/electron-capture'
 import { HighlightController } from './screen/highlight'
 import { OverlayWindow } from './screen/overlay-window'
@@ -53,6 +56,8 @@ let desktop: DesktopWindows | undefined
 let tray: Tray | undefined
 let quitting = false
 let screens: ScreenService | undefined
+let contexts: ContextService | undefined
+let captures: PairedCapture | undefined
 let highlights: HighlightController | undefined
 let overlay: OverlayWindow | undefined
 let assistant: AssistantCoordinator | undefined
@@ -167,7 +172,7 @@ if (!app.requestSingleInstanceLock()) {
       () => removeVoiceIpc?.(), () => voice?.dispose(), () => phishing?.stop(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
-      () => assistant?.dispose(), () => screens?.dispose(),
+      () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(),
       () => highlights?.dispose(), () => overlay?.dispose(),
       () => desktop?.dispose(), () => tray?.destroy(), () => simplifiedWindow?.dispose(),
       () => {
@@ -216,9 +221,16 @@ if (!app.requestSingleInstanceLock()) {
             : 'Run npm run phishing:build. If using Triage.app, rebuild the bundle before turning Link Warnings back on.')
         })
     }
+    // Optional: without this module (or without Accessibility access) highlights use pixel boxes.
+    const bundledContext = join(process.resourcesPath, '../Helpers/TriageContextSnapshot.node')
+    const accessibility = process.platform === 'darwin' ? electronContext(app.isPackaged || existsSync(bundledContext)
+      ? bundledContext : join(app.getAppPath(), 'release/TriageContextSnapshot.node')) : undefined
+    contexts = accessibility ? new ContextService(accessibility.port) : undefined
     highlights = new HighlightController({
       display: (id) => overlay!.display(id), draw: (state) => overlay!.draw(state), hide: () => overlay!.hide(),
-      blocked: (target) => desktop!.coversTarget(target), observeClick: observeTargetClick
+      redraw: (state) => overlay!.redraw(state),
+      blocked: (target) => desktop!.coversTarget(target), observeClick: observeTargetClick,
+      ...(accessibility ? { frameOf: accessibility.frameOf } : {})
     })
     const clearMovedMarker = () => { if (highlights?.snapshot()) highlights.clear() }
     desktop.companion.on('move', clearMovedMarker)
@@ -227,7 +239,9 @@ if (!app.requestSingleInstanceLock()) {
       window.on('show', () => overlay?.refreshArrow())
       window.on('hide', () => overlay?.refreshArrow())
     }
-    screens = new ScreenService(electronCapture(desktop, () => phishing?.clear()))
+    screens = new ScreenService(electronCapture(desktop, () => phishing?.clear(),
+      (cursor) => captures?.snapshotContext(cursor) ?? Promise.resolve()))
+    captures = new PairedCapture(screens, contexts)
     browser = new BrowserSupervisor(() => utilityProcess.fork(join(__dirname, 'browser-worker.js'), [], {
       serviceName: 'Triage flight search', stdio: 'ignore',
       env: Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'LANG'].flatMap((name) => process.env[name] ? [[name, process.env[name]!]] : []))
@@ -242,7 +256,7 @@ if (!app.requestSingleInstanceLock()) {
     })
     assistant = new AssistantCoordinator({
       history: new HistoryStore(join(directory, 'history.sqlite')),
-      credentials, gateway: new ClaudeGateway(), screens, highlights, browser, simplifier,
+      credentials, gateway: new ClaudeGateway(), screens, contexts: captures, highlights, browser, simplifier,
       // The coordinator only passes URLs already checked against the destination allowlist.
       openPage: (url) => shell.openExternal(url, { activate: true }),
       changed: (state) => {
@@ -269,16 +283,16 @@ if (!app.requestSingleInstanceLock()) {
         return { ...point, at: Date.now(), displayId: String(screen.getDisplayNearestPoint(point).id) }
       },
       trigger: (trigger) => {
-        if (!assistant || !screens || quitting) return
+        if (!assistant || !captures || quitting) return
         try {
           assistant.shake(trigger, shake.snapshot().instruction,
-            () => screens!.capture({ cursor: trigger.point, focusAfterCapture: false }), shake.snapshot().mode)
+            () => captures!.capture({ cursor: trigger.point, focusAfterCapture: false }), shake.snapshot().mode)
         } catch { /* The coordinator publishes a blocking notice if history cannot be saved. */ }
       }
     })
     installIpc()
     removeAssistantIpc = installAssistantIpc(assistant, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
-      screens, shake, () => shakeMonitor?.reset())
+      captures, shake, () => shakeMonitor?.reset())
     voice = new VoiceController({
       service: new TranscribeService(transcribeConfigFromEnv()),
       store: new LocalTranscriptStore(directory),
@@ -294,7 +308,7 @@ if (!app.requestSingleInstanceLock()) {
     await desktop.initialize()
     const interrupt = (message: string) => {
       assistant?.interrupt(message)
-      screens?.clear()
+      captures?.clear()
       highlights?.clear()
     }
     const reset = () => { phishing?.clear(); shakeMonitor?.reset(); interrupt('Interrupted because the display configuration changed.') }
