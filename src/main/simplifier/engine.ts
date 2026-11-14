@@ -51,13 +51,19 @@ export class SimplificationEngine {
   private readonly model?: SimplifierModel
   private readonly llmTimeoutMs: number
   private readonly now: () => number
+  private readonly timeoutSignal: (ms: number) => AbortSignal
 
-  constructor(options: { log: DecisionLog; policy: PresentationPolicy; model?: SimplifierModel; llmTimeoutMs?: number; now?: () => number }) {
+  constructor(options: {
+    log: DecisionLog; policy: PresentationPolicy; model?: SimplifierModel; llmTimeoutMs?: number; now?: () => number
+    /** Source of the LLM deadline signal. Injectable so tests can fire the timeout instantly instead of waiting. */
+    timeoutSignal?: (ms: number) => AbortSignal
+  }) {
     this.log = options.log
     this.policy = options.policy
     this.model = options.model
     this.llmTimeoutMs = options.llmTimeoutMs ?? 20000
     this.now = options.now ?? Date.now
+    this.timeoutSignal = options.timeoutSignal ?? ((ms) => AbortSignal.timeout(ms))
   }
 
   async simplify(input: SimplifyInput): Promise<SimplifyResult> {
@@ -79,14 +85,14 @@ export class SimplificationEngine {
 
     let view: SimplifiedView
     if (this.model && input.credentials) {
-      const timeout = AbortSignal.timeout(this.llmTimeoutMs)
+      const timeout = this.timeoutSignal(this.llmTimeoutMs)
       try {
         const draft = await this.model.simplify({
           key: input.credentials.key, model: input.credentials.model, page, ranked, pageType, arm,
           signal: AbortSignal.any([signal, timeout])
         })
         view = finalizeView(draft, page, ranked, arm)
-      } catch (error) {
+      } catch {
         if (signal.aborted) throw new AppProblem('stopped', 'Simplification stopped.')
         // Model failure must never leave the user with nothing: fall back to rules.
         view = rulesView(page, ranked, arm)
