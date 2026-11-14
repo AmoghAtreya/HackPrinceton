@@ -16,7 +16,7 @@ export TRIAGE_TRANSCRIBE_LANGUAGE=en-US     # optional, default en-US
 npm run dev
 ```
 
-The IAM identity needs `transcribe:StartStreamTranscription`.
+The IAM identity needs `transcribe:StartStreamTranscription`. Spoken replies also need `polly:SynthesizeSpeech`; see [Speech-Polly.md](Speech-Polly.md).
 
 macOS asks for microphone access the first time you press the button. In development, the request is attributed to Electron (or to the terminal that launched it).
 
@@ -50,7 +50,7 @@ At most one recording runs at a time. A recording ends itself after 60 s, and th
 | Voice → agent/UI | `{ type: 'user_utterance', sessionId, segmentId, text, isFinal, confidence, timestamp }` |
 | Voice → agent | `{ type: 'transcript', record: TranscriptRecord }` (main-process only) |
 
-Partial results for the same `segmentId` are replaced by later ones. `confidence` is the mean word confidence of a final segment. `speaking` is reserved for Polly.
+Partial results for the same `segmentId` are replaced by later ones. `confidence` is the mean word confidence of a final segment. `speaking` is not emitted by the main process; the chat window's speech player tracks playback itself (see [Speech-Polly.md](Speech-Polly.md)).
 
 ## Storage
 
