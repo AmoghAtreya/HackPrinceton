@@ -54,7 +54,7 @@ test('the compact element list is the top-ranked actionable elements, labels onl
   const snapshot = await service.capture()
   const list = locateElements(snapshot)
   assert.deepEqual(list.map((el) => Object.keys(el)), list.map(() => ['id', 'kind', 'label', 'region']))
-  assert.deepEqual(new Set(list.map((el) => el.id)), new Set(['e0', 'e4', 'e7', 'e9', 'e10', 'e11', 'e14', 'e16']))
+  assert.deepEqual(new Set(list.map((el) => el.id)), new Set(['e0', 'e4', 'e7', 'e9', 'e10', 'e11', 'e16']))
   assert.deepEqual(list.find((el) => el.id === 'e9'), { id: 'e9', kind: 'input', label: 'Password', region: 'main' })
   assert.equal(list.some((el) => el.kind === 'heading' || el.kind === 'text'), false)
 
@@ -453,7 +453,7 @@ test('the model may still answer with a pixel box when no listed element matches
   const f = await fixture((_elements, captureId) => ({ explanation: 'It is the unlabeled icon.', captureId, target: pixelTarget }))
   try {
     await f.ask()
-    assert.equal(f.offered[0]!.length, 8)
+    assert.equal(f.offered[0]!.length, 7)
     assert.deepEqual(f.drawn, [{ x: 200, y: 200, width: 400, height: 100 }])
     assert.match(f.events(), /\\"source\\":\\"pixel_box\\"/)
   } finally { f.close() }

@@ -17,17 +17,22 @@ const LANDMARKS: Record<string, PageRegion> = {
   AXSystemDialog: 'dialog'
 }
 const DIALOG_ROLES = new Set(['AXSheet', 'AXPopover'])
+// Same topics distill.ts treats as pop-up noise: cookie banners and newsletter prompts are never what the person came for.
+const OVERLAY_TOPIC = /cookie|consent|newsletter|subscribe|sign up for/i
 
 function containerRegion(el: ContextElement): PageRegion | null {
-  if (DIALOG_ROLES.has(el.role)) return 'dialog'
-  if (el.subrole && Object.hasOwn(LANDMARKS, el.subrole)) return LANDMARKS[el.subrole]
-  return Object.hasOwn(LANDMARKS, el.role) ? LANDMARKS[el.role] : null
+  const region = DIALOG_ROLES.has(el.role) ? 'dialog'
+    : el.subrole && Object.hasOwn(LANDMARKS, el.subrole) ? LANDMARKS[el.subrole]
+    : Object.hasOwn(LANDMARKS, el.role) ? LANDMARKS[el.role] : null
+  return region === 'dialog' && OVERLAY_TOPIC.test(el.label) ? 'promo' : region
 }
+const isOverlay = (region: PageRegion | null) => region === 'dialog' || region === 'promo'
 
 interface Scope {
   depth: number
   web: boolean
-  dialog: boolean
+  /** Inside a dialog ('dialog') or a cookie / newsletter pop-up ('promo'). */
+  overlay: 'dialog' | 'promo' | null
   landmark: PageRegion | null
   /** Depth of the enclosing navigation landmark, or -1. */
   navDepth: number
@@ -43,6 +48,8 @@ export function toDistilledPage(snapshot: ContextSnapshot): DistilledPage {
   // `depth` counts ancestors that are in the list, and the list is in document
   // order, so a stack trimmed to shallower entries is exactly the ancestor chain.
   const scopes: Scope[] = []
+  // When the page marks its main content, the rest of the web area (side columns, tickers) is not 'main'.
+  const hasMain = snapshot.elements.some((el) => el.subrole === 'AXLandmarkMain')
 
   for (const el of snapshot.elements) {
     while (scopes.length && scopes[scopes.length - 1].depth >= el.depth) scopes.pop()
@@ -51,9 +58,9 @@ export function toDistilledPage(snapshot: ContextSnapshot): DistilledPage {
     const scope: Scope = {
       depth: el.depth,
       web: Boolean(parent?.web) || el.role === 'AXWebArea',
-      dialog: Boolean(parent?.dialog) || own === 'dialog',
-      landmark: own && own !== 'dialog' ? own : parent?.landmark ?? null,
-      navDepth: own === 'nav' ? el.depth : own && own !== 'dialog' ? -1 : parent?.navDepth ?? -1
+      overlay: parent?.overlay === 'promo' || own === 'promo' ? 'promo' : parent?.overlay ?? (own === 'dialog' ? 'dialog' : null),
+      landmark: own && !isOverlay(own) ? own : parent?.landmark ?? null,
+      navDepth: own === 'nav' ? el.depth : own && !isOverlay(own) ? -1 : parent?.navDepth ?? -1
     }
     scopes.push(scope)
 
@@ -65,7 +72,7 @@ export function toDistilledPage(snapshot: ContextSnapshot): DistilledPage {
     const label = el.label || (el.kind === 'heading' && !el.secure && level === undefined ? el.value ?? '' : '')
     if (!label && el.kind !== 'input' && el.kind !== 'textarea' && el.kind !== 'select') continue
     if (el.kind !== 'heading') interactive++
-    const region: PageRegion = scope.dialog ? 'dialog' : scope.landmark ?? (scope.web ? 'main' : 'other')
+    const region: PageRegion = scope.overlay ?? scope.landmark ?? (scope.web && !hasMain ? 'main' : 'other')
     if (region === 'nav' && scope.navDepth >= 0) maxNavDepth = Math.max(maxNavDepth, el.depth - scope.navDepth)
 
     const item: PageElement = {
