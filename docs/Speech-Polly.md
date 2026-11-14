@@ -24,6 +24,8 @@ Polly uses the same AWS credentials as Transcribe (see [Voice-Transcribe.md](Voi
 ```
 
 - **Region:** `AWS_REGION` (default `us-east-1`). Set `TRIAGE_POLLY_REGION` to use a different region for Polly only.
+- **Voice engine:** neural voices are tried first. If the region doesn't offer them (for example `us-east-2`), Triage switches to **standard** voices for the rest of the session, with Matthew standing in for Stephen and Joanna for Ruth. Set `TRIAGE_POLLY_ENGINE=standard` to skip the neural attempt.
+- **New AWS accounts on the Free plan** may block Transcribe and limit Polly through an organization-level policy (error: "explicit deny in a service control policy"). Upgrading the account to the paid plan removes the block; giving your IAM user more permissions does not.
 - **Cost:** neural voices cost about $16 per million characters. A reply is about 300 characters, so roughly $0.005 each.
 
 ## Flow
