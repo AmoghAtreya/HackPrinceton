@@ -26,6 +26,8 @@
     "@anthropic-ai/sdk": "1.7.0",
     "@aws-sdk/client-polly": "3.1169.0",
     "@aws-sdk/client-transcribe-streaming": "3.1169.0",
+    "@langchain/core": "1.4.1",
+    "@langchain/langgraph": "1.7.4",
     "electron": "^45.2.3",
     "playwright": "1.65.0",
     "react": "19.3.1",
