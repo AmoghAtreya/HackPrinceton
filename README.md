@@ -43,3 +43,11 @@ This needs `npm run context:build` and **Accessibility** permission. The page's 
 Before a screenshot is encoded, Triage blacks out password fields and fields labelled like card numbers, CVVs, PINs or SSNs, using their positions from the accessibility snapshot taken at the same moment. This happens on the raw pixels inside Triage; the unredacted image is never encoded, saved or sent. The preview says how many fields were hidden ("Hid 2 private fields"), and History keeps only that number.
 
 If the screen cannot be checked (no Accessibility permission, no `npm run context:build`, or nothing readable in front), the screenshot is still taken and the preview says "Couldn't check for private fields" so you can look before sending. Only the app in front is checked, and very large pages may be read only in part, so treat the count as a safeguard rather than a guarantee.
+
+## Screen context in chat, and model tiers
+
+Plain chat messages carry a short text description of what is in front: the app name, window title, website host (never the full address), the label of the focused control and up to 25 visible controls. It is wrapped in `<screen_context>` tags, marked untrusted, and is not saved to History. It contains labels only, never typed values or page text, and needs **Accessibility** permission and `npm run context:build`; without them chat works as before.
+
+When that text is not enough (for example "what does this picture show"), Claude can ask for a screenshot. Triage then takes one, with private fields blacked out, and asks the same question again with the image, at most once per request. If the private-field check could not run, the screenshot is not sent and Triage asks you to use **Capture screen** instead.
+
+With **Use faster model for simple requests** on (the default, in Settings), routing and ordinary replies go to a Haiku model when your key lists one. Screenshots, "show me where" and page simplifying use the model you selected, or a Sonnet model if you selected Haiku. History records which tier answered and whether a screenshot was taken, never the content.
