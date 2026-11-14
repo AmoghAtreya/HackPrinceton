@@ -8,6 +8,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const destination = join(root, 'release', 'Triage.app')
 const staging = join(root, 'release', 'Triage-staging.app')
 const scanner = join(root, 'release', 'TriageLinkScanner.node')
+const contextModule = join(root, 'release', 'TriageContextSnapshot.node')
 const runtime = join(root, 'node_modules', 'electron', 'dist', 'Electron.app')
 
 function run(command, args) {
@@ -22,6 +23,7 @@ for (const path of [runtime, join(root, 'out', 'main', 'index.js'), join(root, '
 }
 
 if (!existsSync(scanner)) throw new Error('Missing ' + scanner + '. Run npm run phishing:build first.')
+if (!existsSync(contextModule)) throw new Error('Missing ' + contextModule + '. Run npm run context:build first.')
 
 // Only generated bundles and installed runtime packages enter the app. Never copy
 // the repository, settings, local profiles, environment files, or user data.
@@ -36,6 +38,10 @@ try {
   cpSync(scanner, bundledScanner)
   run('/usr/bin/codesign', ['--force', '--sign', '-', bundledScanner])
   run('/usr/bin/codesign', ['--verify', '--strict', bundledScanner])
+  const bundledContext = join(staging, 'Contents', 'Helpers', 'TriageContextSnapshot.node')
+  cpSync(contextModule, bundledContext)
+  run('/usr/bin/codesign', ['--force', '--sign', '-', bundledContext])
+  run('/usr/bin/codesign', ['--verify', '--strict', bundledContext])
   const appRoot = join(resources, 'app')
   mkdirSync(appRoot, { recursive: true })
   cpSync(join(root, 'out'), join(appRoot, 'out'), { recursive: true })
