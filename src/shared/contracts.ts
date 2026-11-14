@@ -1,6 +1,7 @@
 import type { AssistantBridge } from './assistant-contracts'
 import type { VoiceBridge } from './voice-contracts'
 import type { SpeechBridge } from './speech-contracts'
+import type { RequestLogBridge } from './request-log-contracts'
 
 export type CompanionMood = 'idle' | 'moving' | 'greeting' | 'thinking'
 
@@ -26,7 +27,7 @@ export const channels = {
   pointer: 'desktop:pointer'
 } as const
 
-export interface DesktopBridge extends AssistantBridge, VoiceBridge, SpeechBridge {
+export interface DesktopBridge extends AssistantBridge, VoiceBridge, SpeechBridge, RequestLogBridge {
   getState(): Promise<DesktopState>
   onState(listener: (state: DesktopState) => void): () => void
   toggleChat(): void

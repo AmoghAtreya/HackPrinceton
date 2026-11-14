@@ -8,6 +8,8 @@ import { voiceChannels } from '../shared/voice-contracts'
 import { PollyService } from './speech/polly'
 import { SpeechPreferences } from './speech/settings'
 import { installSpeechIpc } from './speech/ipc'
+import { LocalRequestLog } from './logging/request-log'
+import { installRequestLogIpc } from './logging/ipc'
 import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -56,6 +58,7 @@ let voice: VoiceController | undefined
 let removeVoiceIpc: (() => void) | undefined
 let polly: PollyService | undefined
 let removeSpeechIpc: (() => void) | undefined
+let removeRequestLogIpc: (() => void) | undefined
 
 function trusted(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
   if (!desktop || !desktop.owns(event.sender) || event.senderFrame !== event.sender.mainFrame) return false
@@ -143,7 +146,7 @@ if (!app.requestSingleInstanceLock()) {
     // Each cleanup runs even when another resource has already failed.
     const cleanup = [
       () => removeVoiceIpc?.(), () => voice?.dispose(),
-      () => removeSpeechIpc?.(), () => polly?.dispose(),
+      () => removeSpeechIpc?.(), () => polly?.dispose(), () => removeRequestLogIpc?.(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(),
@@ -195,7 +198,9 @@ if (!app.requestSingleInstanceLock()) {
       serviceName: 'Triage flight search', stdio: 'ignore',
       env: Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'LANG'].flatMap((name) => process.env[name] ? [[name, process.env[name]!]] : []))
     }), join(directory, 'browser-profile'), () => highlights?.clear())
+    const requestLog = new LocalRequestLog(directory, app.getVersion())
     assistant = new AssistantCoordinator({
+      requestLog,
       history: new HistoryStore(join(directory, 'history.sqlite')),
       credentials, gateway: new ClaudeGateway(), screens, highlights, browser,
       // The coordinator only passes URLs already checked against the destination allowlist.
@@ -246,6 +251,7 @@ if (!app.requestSingleInstanceLock()) {
       // event.type === 'transcript': a finished, stored recording. The agent layer hooks in here.
     })
     removeVoiceIpc = installVoiceIpc(ipcMain, voice, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
+    removeRequestLogIpc = installRequestLogIpc(ipcMain, requestLog, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
     polly = new PollyService()
     removeSpeechIpc = installSpeechIpc(ipcMain, polly, new SpeechPreferences(directory),
       (event) => trusted(event) && event.sender === desktop?.chat.webContents)
