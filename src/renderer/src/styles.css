@@ -104,6 +104,8 @@ kbd { padding: 0 2px; font: inherit; color: #9c8c7c; }
 .screen-preview img { width: 80px; max-height: 70px; object-fit: contain; align-self: flex-start; border-radius: 4px; }
 .screen-preview strong { font-size: 10px; color: #795a40; }
 .screen-preview p { margin: 3px 0; font-size: 9px; line-height: 1.5; color: #967b63; }
+.screen-preview .redaction-note { font-weight: 700; color: #4f6b3a; }
+.screen-preview .redaction-note.unchecked { color: #a3401c; }
 
 /* Phase 2: conversation, history, and connection settings. */
 .panel-tabs { display: flex; align-items: center; gap: 4px; padding: 7px 16px; border-bottom: 1px solid #e9e2d7; flex-shrink: 0; }

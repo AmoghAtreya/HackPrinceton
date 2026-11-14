@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { DesktopBridge, DesktopState } from '../../shared/contracts'
 import type { AssistantState, ConversationDetail, ConversationPage } from '../../shared/assistant-contracts'
-import type { ScreenPreview } from '../../shared/screen-contracts'
+import { redactionNotice, type ScreenPreview } from '../../shared/screen-contracts'
 import type { TranscriptRecord } from '../../shared/voice-contracts'
 import { Character } from './Character'
 import { SettingsPanel } from './SettingsPanel'
@@ -338,6 +338,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       {capture && <div className="screen-preview">
         <img src={capture.dataUrl} alt="Current display screenshot preview" />
         <div><strong>{capture.metadata.displayName}</strong><p>Sent to Anthropic only when you submit. Not saved; expires in one minute.</p>
+          {redactionNotice(capture.metadata.redactedRegions) && <p className={capture.metadata.redactedRegions === null ? 'redaction-note unchecked' : 'redaction-note'} role="status">{redactionNotice(capture.metadata.redactedRegions)}{capture.metadata.redactedRegions === null ? '. Look at the preview before you send it.' : '.'}</p>}
           <label className="checkbox-label"><input type="checkbox" checked={highlightMode} onChange={(event) => setHighlightMode(event.target.checked)} />Show me where to click</label>
           {highlightMode && <p>Describe the control below. The marker stays until you click the control or dismiss it. If the screen moves, dismiss and capture again.</p>}
           <button className="text-button" onClick={() => { setCapture(null); void bridge.discardScreen() }}>Discard screenshot</button></div>
