@@ -350,7 +350,12 @@ if (!app.requestSingleInstanceLock()) {
     catch { console.warn('The record of what you have learned is unavailable.') }
     const simplifierParts = createSimplifier(directory, tutor ? { knowledge: (userId, pageType) => tutor!.features(userId, pageType) } : {})
     closeSimplifierLog = simplifierParts.close
-    simplifiedWindow = new SimplifiedWindow((url) => { void simplifier?.open(url) },
+    simplifiedWindow = new SimplifiedWindow((url) => {
+      // A pressed link rebuilds the page it leads to; if Triage is busy, the link just opens in its browser.
+      simplifier?.linkFollowed()
+      try { if (!assistant) throw new Error('not ready'); assistant.simplifyLink(url) }
+      catch { void simplifier?.open(url) }
+    },
       () => { simplifier?.viewClosed(); screenSimplifier?.viewClosed() }, (link) => screenSimplifier?.handle(link))
     const policy = simplifierParts.policy
     simplifier = new SimplifierService({

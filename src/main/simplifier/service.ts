@@ -220,9 +220,13 @@ export class SimplifierService {
     return this.learning(userId)
   }
 
-  /** Follow a link from the simplified view in the Chrome window. */
-  async open(url: string): Promise<void> {
+  /** A link in the simplified view was pressed (counted as a learning signal for the page it was on). */
+  linkFollowed(): void {
     if (this.current && !this.current.closedAt) this.current.linksFollowed++
+  }
+
+  /** Open a link in the Chrome window without rebuilding it (used when Triage is busy with another request). */
+  async open(url: string): Promise<void> {
     const page = await this.page()
     await page.goto(url, { waitUntil: 'load' }).catch(() => {})
     await page.bringToFront().catch(() => {})
