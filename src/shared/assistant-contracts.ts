@@ -50,7 +50,7 @@ export interface AssistantBridge {
   captureScreen(): Promise<Result<ScreenPreview>>
   discardScreen(): Promise<Result<void>>
   dismissHighlight(): Promise<Result<void>>
-  sendMessage(input: { conversationId?: string; text: string; captureId?: string; mode?: 'explain' | 'highlight' }): Promise<Result<SendReceipt>>
+  sendMessage(input: { conversationId?: string; text: string; captureId?: string; mode?: 'explain' | 'highlight'; source?: 'chat' | 'voice' }): Promise<Result<SendReceipt>>
   closeBrowser(): Promise<Result<void>>
   stopRequest(taskId: string): Promise<Result<void>>
   listConversations(input: { before?: HistoryCursor }): Promise<Result<ConversationPage>>

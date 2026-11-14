@@ -1,5 +1,5 @@
-import type { VoiceBridge } from './voice-contracts'
 import type { AssistantBridge } from './assistant-contracts'
+import type { VoiceBridge } from './voice-contracts'
 
 export type CompanionMood = 'idle' | 'moving' | 'greeting' | 'thinking'
 

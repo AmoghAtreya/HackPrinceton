@@ -2,7 +2,6 @@ import { useState, type FormEvent } from 'react'
 import type { DesktopBridge } from '../../shared/contracts'
 import type { PublicConfig } from '../../shared/assistant-contracts'
 import { displayError, unwrap } from './assistant-ui'
-import { VoiceSettingsPanel } from './VoiceSettingsPanel'
 import { ShakeSettingsPanel } from './ShakeSettingsPanel'
 
 export function SettingsPanel({ bridge, config, active }: {
@@ -71,7 +70,6 @@ export function SettingsPanel({ bridge, config, active }: {
     </div>
     {(config.configured || config.keyStorage === 'locked') &&
       <button className="text-button danger" disabled={busy || active} onClick={() => void remove()}>Remove key from Triage</button>}
-    <VoiceSettingsPanel bridge={bridge} />
     <ShakeSettingsPanel bridge={bridge} />
     <div className="privacy-note">
       <strong>Your data</strong>

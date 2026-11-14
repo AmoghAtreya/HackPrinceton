@@ -1,12 +1,12 @@
 import { PhishingMonitor } from './phishing/monitor'
-import { VoiceShortcut } from './voice/shortcut'
-import { VoiceSession } from './voice/session'
-import { VoicePreferences } from './voice/settings'
-import { NativeSpeechAdapter } from './voice/native-adapter'
+import { BrowserSupervisor } from './browser/supervisor'
+import { VoiceController, type VoiceEvent } from './voice/controller'
+import { TranscribeService, transcribeConfigFromEnv } from './voice/transcribe'
+import { LocalTranscriptStore } from './voice/transcript-store'
+import { ensureMicrophoneAccess } from './voice/microphone'
 import { installVoiceIpc } from './voice/ipc'
 import { voiceChannels } from '../shared/voice-contracts'
-import { BrowserSupervisor } from './browser/supervisor'
-import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
@@ -50,8 +50,7 @@ let removeAssistantIpc: (() => void) | undefined
 let shakeMonitor: ShakeMonitor | undefined
 let removeShakeListeners: (() => void) | undefined
 let presentedGesture: string | undefined
-let voiceShortcut: VoiceShortcut | undefined
-let voice: VoiceSession | undefined
+let voice: VoiceController | undefined
 let phishing: PhishingMonitor | undefined
 let phishingEnabled = false
 let removeVoiceIpc: (() => void) | undefined
@@ -149,9 +148,8 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true
     // Reject input and stop native timers immediately, before waiting for Chromium.
     // Each cleanup runs even when another resource has already failed.
-    const voiceClosed = Promise.all([voiceShortcut?.dispose(), voice?.dispose()])
     const cleanup = [
-      () => removeVoiceIpc?.(), () => phishing?.stop(),
+      () => removeVoiceIpc?.(), () => voice?.dispose(), () => phishing?.stop(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(),
@@ -165,7 +163,7 @@ if (!app.requestSingleInstanceLock()) {
     for (const close of cleanup) {
       try { close() } catch { console.warn('A Triage resource could not finish closing.') }
     }
-    void Promise.resolve(voiceClosed).then(() => browser?.close()).catch(() => {
+    void Promise.resolve(browser?.close()).catch(() => {
       console.warn('Triage browser shutdown failed.')
     }).finally(() => { shutdownReady = true; app.quit() })
   })
@@ -219,6 +217,8 @@ if (!app.requestSingleInstanceLock()) {
     assistant = new AssistantCoordinator({
       history: new HistoryStore(join(directory, 'history.sqlite')),
       credentials, gateway: new ClaudeGateway(), screens, highlights, browser,
+      // The coordinator only passes URLs already checked against the destination allowlist.
+      openPage: (url) => shell.openExternal(url, { activate: true }),
       changed: (state) => {
         if (!desktop || quitting) return
         desktop.setThinking(Boolean(state.active))
@@ -253,38 +253,19 @@ if (!app.requestSingleInstanceLock()) {
     installIpc()
     removeAssistantIpc = installAssistantIpc(assistant, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
       screens, shake, () => shakeMonitor?.reset())
-    // Local ad-hoc builds retain Electron's executable name, which can make
-    // app.isPackaged false. Prefer the actual bundled helper before dev resources.
-    const bundledVoice = join(process.resourcesPath, '../Helpers/TriageVoiceHelper.app')
-    const voiceHelper = existsSync(bundledVoice) ? bundledVoice :
-      app.isPackaged ? bundledVoice : join(app.getAppPath(), 'release/TriageVoiceHelper.app')
-    voice = new VoiceSession(new VoicePreferences(directory), (event, lost) => new NativeSpeechAdapter(
-      voiceHelper, event, lost), (state) => {
-      voiceShortcut?.observe(state)
-      if (!quitting && desktop) {
-        for (const window of [desktop.chat, desktop.voicePanel]) {
-          if (!window.isDestroyed()) window.webContents.send(voiceChannels.state, state)
-        }
-        if (state.settings.enabled && state.activation === 'hold') desktop.showVoice()
-        else desktop.voicePanel.hide()
-      }
-    }, undefined, {
-      reserve: (id) => assistant!.reserveVoice(id),
-      release: (id) => assistant!.releaseVoice(id),
-      submit: (id, text, conversationId) => assistant!.sendVoice(id, text, conversationId),
-      stop: () => assistant!.stopActive(),
-      conversation: (id) => assistant!.history.summary(id)
+    voice = new VoiceController({
+      service: new TranscribeService(transcribeConfigFromEnv()),
+      store: new LocalTranscriptStore(directory),
+      ensureMicrophone: ensureMicrophoneAccess
     })
-    voiceShortcut = new VoiceShortcut(voice, (event, lost) => new NativeSpeechAdapter(voiceHelper, event, lost))
-    voice.setChatOpen(desktop.chat.isVisible())
-    removeVoiceIpc = installVoiceIpc(ipcMain, voice, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
-      voiceShortcut, (event) => trusted(event) && event.sender === desktop?.voicePanel.webContents)
-    desktop.chat.on('show', () => voice?.setChatOpen(true))
-    desktop.chat.on('hide', () => voice?.setChatOpen(false))
+    voice.subscribe((event: VoiceEvent) => {
+      if (quitting || !desktop || desktop.chat.isDestroyed()) return
+      if (event.type === 'speech_state') desktop.chat.webContents.send(voiceChannels.state, event)
+      else if (event.type === 'user_utterance') desktop.chat.webContents.send(voiceChannels.utterance, event)
+      // event.type === 'transcript': a finished, stored recording. The agent layer hooks in here.
+    })
+    removeVoiceIpc = installVoiceIpc(ipcMain, voice, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
     await desktop.initialize()
-    if (voice.snapshot().settings.enabled) {
-      void voiceShortcut.setup(false).catch(() => { /* Settings offers an explicit retry. */ })
-    }
     const interrupt = (message: string) => {
       assistant?.interrupt(message)
       screens?.clear()
@@ -292,10 +273,10 @@ if (!app.requestSingleInstanceLock()) {
     }
     const reset = () => { phishing?.clear(); shakeMonitor?.reset(); interrupt('Interrupted because the display configuration changed.') }
     const paused = new Set<string>()
-    const sleep = () => { paused.add('sleep'); phishing?.stop(); voiceShortcut?.suspend(); voice?.suspend(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac went to sleep.') }
-    const lock = () => { paused.add('lock'); phishing?.stop(); voiceShortcut?.suspend(); voice?.suspend(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac was locked.') }
-    const wake = () => { paused.delete('sleep'); if (!paused.size) { if (phishingEnabled) phishing?.start(); shakeMonitor?.resume(); voice?.resume(); voiceShortcut?.resume() } }
-    const unlock = () => { paused.delete('lock'); if (!paused.size) { if (phishingEnabled) phishing?.start(); shakeMonitor?.resume(); voice?.resume(); voiceShortcut?.resume() } }
+    const sleep = () => { paused.add('sleep'); phishing?.stop(); voice?.interrupt(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac went to sleep.') }
+    const lock = () => { paused.add('lock'); phishing?.stop(); voice?.interrupt(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac was locked.') }
+    const wake = () => { paused.delete('sleep'); if (!paused.size) { if (phishingEnabled) phishing?.start(); shakeMonitor?.resume() } }
+    const unlock = () => { paused.delete('lock'); if (!paused.size) { if (phishingEnabled) phishing?.start(); shakeMonitor?.resume() } }
     powerMonitor.on('suspend', sleep)
     powerMonitor.on('resume', wake)
     powerMonitor.on('lock-screen', lock)

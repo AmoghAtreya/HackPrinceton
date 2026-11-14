@@ -192,19 +192,21 @@ button:disabled { opacity: .55; cursor: default; }
   outline: 2px solid var(--accent); outline-offset: 3px;
 }
 
-.voice-settings { margin-top: 28px; padding-top: 22px; border-top: 1px solid var(--border, #ddd); }
-.voice-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 16px 0; }
-.voice-level { display: flex; align-items: center; gap: 12px; margin: 12px 0; }
-.voice-level meter { flex: 1; }
-.voice-provisional { border-left: 3px solid #b6a3dc; padding-left: 12px; font-style: italic; overflow-wrap: anywhere; }
-.voice-draft { display: block; margin: 12px 0 6px; }
-.voice-settings > textarea { width: 100%; box-sizing: border-box; resize: vertical; font: inherit; }
-.voice-chat-controls { margin-bottom: 10px; font-size: 12px; }
-.voice-chat-controls > summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
-.voice-chat-controls > .voice-settings { margin: 6px 0; padding: 8px 2px; border: 0; max-height: 230px; overflow-y: auto; }
-.voice-chat-controls .voice-actions { margin: 8px 0; }
-.voice-chat-controls h3 { margin: 4px 0 8px; }
-.voice-chat-controls textarea { max-height: 100px; }
+/* Voice input (Amazon Transcribe) */
+.voice-input { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.talk-button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; min-height: 44px; padding: 10px 14px; border: 0; border-radius: 12px; background: var(--accent); color: #fffaf3; font-size: 15px; font-weight: 600; touch-action: none; user-select: none; }
+.talk-button:not(:disabled):hover { background: #c65730; }
+.talk-button--recording { background: #b23c1c; box-shadow: 0 0 0 4px #d9673d33; }
+.talk-button--starting, .talk-button--finishing { background: #c9a58c; }
+.talk-icon { font-size: 12px; }
+.talk-button--recording .talk-icon { animation: talk-pulse 1s ease-in-out infinite; }
+@keyframes talk-pulse { 50% { opacity: .35; } }
+.talk-level { height: 4px; border-radius: 2px; background: #eee6dc; overflow: hidden; }
+.talk-level > span { display: block; height: 100%; background: var(--accent); transition: width 80ms linear; }
+.voice-caption { margin: 0; padding: 6px 10px; border-left: 3px solid var(--accent); color: var(--ink); font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; max-height: 84px; overflow-y: auto; }
+.voice-last { margin: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.voice-error { margin: 0; color: #a3341a; font-size: 12px; }
+.voice-input > .text-button { align-self: flex-start; }
 
 .link-warning { position: absolute; box-sizing: border-box; border: 2px solid #b65a00; border-radius: 4px; }
 .link-warning span { position: absolute; left: -2px; top: 100%; padding: 2px 5px; border-radius: 3px; background: #873f00; color: white; font: 600 11px/1.25 system-ui; white-space: nowrap; }

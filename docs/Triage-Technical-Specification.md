@@ -48,7 +48,7 @@ Future general desktop control would require a separate macOS integration, Acces
 
 ### 2.4 Explicit exclusions
 
-Voice input, speech synthesis, reminders, calendar integration, folder indexing, arbitrary saved workflows, purchasing tickets, payment entry, browser extensions, continuous screen recording, and general autonomous browsing are outside the committed MVP.
+Speech synthesis, reminders, calendar integration, folder indexing, arbitrary saved workflows, purchasing tickets, payment entry, browser extensions, continuous screen recording, and general autonomous browsing are outside the committed MVP. Voice input is now in scope through Amazon Transcribe; see [Voice-Transcribe.md](Voice-Transcribe.md).
 
 The configurable shake instruction can request explanations and visual guidance. It cannot override application restrictions or execute arbitrary code.
 
@@ -153,7 +153,7 @@ Handle drag separately from click so moving the character does not repeatedly op
 
 Require Screen Recording/screen-capture permission for screenshot features. Phase 3 checks Electron's permission status and enters native capture only when already granted; otherwise it gives System Settings and restart instructions. Distinguish denial from an empty or failed source. Permission changes may require a restart; explain recovery and retest.
 
-Do not request microphone, camera, or system-audio access. Accessibility permission is not needed solely for Playwright page automation or sampling cursor position through Electron's screen API; it becomes relevant if native desktop input injection is added later. Do not request broad permissions preemptively. [Electron system preferences](https://www.electronjs.org/docs/latest/api/system-preferences), [desktop capture](https://www.electronjs.org/docs/latest/api/desktop-capturer/).
+Request microphone access only when the user first presses the talk button (voice input via Amazon Transcribe), and only for the chat window; never request camera or system-audio access. Accessibility permission is not needed solely for Playwright page automation or sampling cursor position through Electron's screen API; it becomes relevant if native desktop input injection is added later. Do not request broad permissions preemptively. [Electron system preferences](https://www.electronjs.org/docs/latest/api/system-preferences), [desktop capture](https://www.electronjs.org/docs/latest/api/desktop-capturer/).
 
 Development launches can have a different permission or credential identity from a packaged app. Test on the actual Mac early, keep launch paths stable, and verify permission and `safeStorage` behavior after restart. If protected credential storage is unavailable or inconsistent during development, allow a session-only key held in memory; never silently fall back to plaintext.
 

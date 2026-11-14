@@ -16,7 +16,6 @@ interface DragSession {
 export class DesktopWindows {
   readonly companion: BrowserWindow
   readonly chat: BrowserWindow
-  readonly voicePanel: BrowserWindow
   private mood: CompanionMood = 'greeting'
   private thinking = false
   private shortcutAvailable = false
@@ -60,25 +59,25 @@ export class DesktopWindows {
       fullscreenable: false, hasShadow: false, alwaysOnTop: true,
       webPreferences
     })
-
-    this.voicePanel = new BrowserWindow({
-      width: 380, height: 245, title: 'Triage — Voice', show: false,
-      frame: false, resizable: false, minimizable: false, maximizable: false,
-      fullscreenable: false, alwaysOnTop: true, focusable: false, skipTaskbar: true, webPreferences
-    })
-    for (const window of [this.companion, this.chat, this.voicePanel]) {
+    for (const window of [this.companion, this.chat]) {
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
       window.webContents.on('will-navigate', (event) => event.preventDefault())
-      window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
       window.on('close', (event) => {
         if (!this.quitting) {
           event.preventDefault()
-          if (window === this.voicePanel) this.voicePanel.hide()
-          else if (window === this.chat) this.closeChat()
+          if (window === this.chat) this.closeChat()
           else this.hide()
         }
       })
     }
+
+    // All windows share one session. Only the chat window's main frame may use
+    // the microphone (for voice input); every other permission stays denied.
+    this.chat.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => {
+      const mediaTypes = 'mediaTypes' in details ? details.mediaTypes ?? [] : []
+      callback(contents === this.chat.webContents && details.isMainFrame && permission === 'media' &&
+        mediaTypes.length > 0 && mediaTypes.every((type) => type === 'audio'))
+    })
 
     this.companion.setIgnoreMouseEvents(true, { forward: true })
     this.companion.on('move', () => { if (this.chat.isVisible()) this.positionChat() })
@@ -89,8 +88,7 @@ export class DesktopWindows {
   async initialize(): Promise<void> {
     await Promise.all([
       this.loadView(this.companion, 'companion'),
-      this.loadView(this.chat, 'chat'),
-      this.loadView(this.voicePanel, 'voice')
+      this.loadView(this.chat, 'chat')
     ])
     this.show()
     this.greetingTimer = setTimeout(() => {
@@ -111,7 +109,7 @@ export class DesktopWindows {
   }
 
   owns(contents: WebContents): boolean {
-    return contents === this.companion.webContents || contents === this.chat.webContents || contents === this.voicePanel.webContents
+    return contents === this.companion.webContents || contents === this.chat.webContents
   }
 
   getState(): DesktopState {
@@ -143,19 +141,12 @@ export class DesktopWindows {
   }
 
   coversTarget(target: { x: number; y: number; width: number; height: number }): boolean {
-    return [this.companion, this.chat, this.voicePanel].some((window) => {
+    return [this.companion, this.chat].some((window) => {
       if (window.isDestroyed() || !window.isVisible()) return false
       const bounds = window.getBounds()
       return target.x < bounds.x + bounds.width && target.x + target.width > bounds.x &&
         target.y < bounds.y + bounds.height && target.y + target.height > bounds.y
     })
-  }
-
-  showVoice(): void {
-    if (this.quitting || this.isCapturing || this.voicePanel.isVisible()) return
-    const area = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea
-    this.voicePanel.setPosition(area.x + area.width - 400, area.y + 24, false)
-    this.voicePanel.showInactive()
   }
 
   get isDragging(): boolean { return Boolean(this.drag) }
@@ -168,12 +159,9 @@ export class DesktopWindows {
     this.finishDrag(false)
     this.companion.hide()
     this.chat.hide()
-    const voiceVisible = this.voicePanel.isVisible()
-    this.voicePanel.hide()
     return () => {
       this.isCapturing = false
       if (this.quitting || version !== this.visibilityVersion) return
-      if (voiceVisible) this.voicePanel.showInactive()
       if (companionVisible) this.companion.showInactive()
       if (chatVisible) {
         if (focusAfterCapture) { this.chat.show(); this.chat.focus() }
@@ -194,7 +182,6 @@ export class DesktopWindows {
     this.visibilityVersion++
     this.finishDrag(false)
     this.chat.hide()
-    this.voicePanel.hide()
     this.companion.hide()
     this.publish()
   }
@@ -308,7 +295,7 @@ export class DesktopWindows {
       const [x, y] = this.companion.getPosition()
       writePosition(this.positionFile, { x, y })
     }
-    for (const window of [this.chat, this.companion, this.voicePanel]) {
+    for (const window of [this.chat, this.companion]) {
       if (!window.isDestroyed()) window.destroy()
     }
   }

@@ -14,7 +14,6 @@ With macOS command-line tools and Node.js headers installed, run:
 
 ```sh
 npm run build
-npm run voice:build
 npm run phishing:build
 node scripts/prepare-local-app.mjs
 ```
