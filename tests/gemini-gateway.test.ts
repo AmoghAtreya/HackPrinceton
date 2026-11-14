@@ -73,3 +73,12 @@ test('the provider gateway sends Gemini keys to Gemini and others to Claude', as
   assert.equal(await gateway.reply(key, 'm', [], signal), 'gemini')
   assert.equal(await gateway.reply('sk-ant-api03-abcdefghijklmnop', 'm', [], signal), 'claude')
 })
+
+test('a retired model (404) is retried once on the current Flash alias', async () => {
+  const { fetcher, calls } = fakeFetch((url) => url.includes('gemini-2.5-flash:') ? { status: 404, body: '{}' } : { body: textReply('Peanut butter.') })
+  assert.equal(await new GeminiGateway(fetcher).reply(key, 'gemini-2.5-flash', [{ role: 'user', content: 'Say peanut butter' }], signal), 'Peanut butter.')
+  assert.deepEqual(calls.map((call) => call.url.split('/models/')[1]), ['gemini-2.5-flash:generateContent', 'gemini-flash-latest:generateContent'])
+  const missing = fakeFetch(() => ({ status: 404, body: '{}' }))
+  await assert.rejects(new GeminiGateway(missing.fetcher).reply(key, 'gemini-2.5-flash', [{ role: 'user', content: 'x' }], signal), { code: 'model_unavailable' })
+  assert.equal(missing.calls.length, 2, 'only one retry')
+})

@@ -26,10 +26,10 @@ test('PCM becomes a valid 16 kHz mono WAV', () => {
 
 test('the recording is sent as audio/wav with word hints, and the key stays out of the URL', async () => {
   const { fetcher, calls } = fakeFetch(() => answer('{"text":"Open Gmail.","clarity":"clear"}'))
-  const result = await new GeminiTranscriber({ fetcher, model: 'gemini-2.5-flash' }).transcribe(key, audio, 16000, signal)
+  const result = await new GeminiTranscriber({ fetcher }).transcribe(key, audio, 16000, signal)
   assert.deepEqual(result, { text: 'Open Gmail.', clarity: 'clear' })
   assert.doesNotMatch(calls[0].url, /AIza/)
-  assert.match(calls[0].url, /gemini-2\.5-flash:generateContent$/)
+  assert.match(calls[0].url, /gemini-flash-latest:generateContent$/)
   const body = JSON.parse(String(calls[0].init.body))
   assert.equal(body.contents[0].parts[0].inline_data.mime_type, 'audio/wav')
   assert.match(body.contents[0].parts[1].text, /Gmail/)
