@@ -82,3 +82,26 @@ test('a retired model (404) is retried once on the current Flash alias', async (
   await assert.rejects(new GeminiGateway(missing.fetcher).reply(key, 'gemini-2.5-flash', [{ role: 'user', content: 'x' }], signal), { code: 'model_unavailable' })
   assert.equal(missing.calls.length, 2, 'only one retry')
 })
+
+test('replies skip the thinking step, falling back for models that refuse it', async () => {
+  const bodies: Array<{ generationConfig: { thinkingConfig?: unknown } }> = []
+  const { fetcher } = fakeFetch((_url, init) => {
+    const body = JSON.parse(String(init.body))
+    bodies.push(body)
+    return body.generationConfig.thinkingConfig
+      ? { status: 400, body: '{"error":{"message":"Thinking budget is not supported for this model."}}' }
+      : { body: textReply('Hello!') }
+  })
+  const gateway = new GeminiGateway(fetcher)
+  assert.equal(await gateway.reply(key, 'gemini-flash-latest', [{ role: 'user', content: 'hi' }], signal), 'Hello!')
+  await gateway.reply(key, 'gemini-flash-latest', [{ role: 'user', content: 'hi again' }], signal)
+  assert.deepEqual(bodies.map((body) => Boolean(body.generationConfig.thinkingConfig)), [true, false, false])
+})
+
+test('a retired model is remembered, so later replies go straight to the Flash alias', async () => {
+  const { fetcher, calls } = fakeFetch((url) => url.includes('gemini-2.5-flash:') ? { status: 404, body: '{}' } : { body: textReply('ok') })
+  const gateway = new GeminiGateway(fetcher)
+  await gateway.reply(key, 'gemini-2.5-flash', [{ role: 'user', content: 'one' }], signal)
+  await gateway.reply(key, 'gemini-2.5-flash', [{ role: 'user', content: 'two' }], signal)
+  assert.deepEqual(calls.map((call) => call.url.split('/models/')[1].split(':')[0]), ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-flash-latest'])
+})
