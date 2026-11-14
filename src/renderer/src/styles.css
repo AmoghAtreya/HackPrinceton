@@ -259,3 +259,12 @@ button:disabled { opacity: .55; cursor: default; }
 .learning-rate { display: flex; flex-direction: column; align-items: stretch; gap: 4px; flex-shrink: 0; }
 .learning-rate .secondary-button { padding: 7px 10px; }
 .learning-score { flex-shrink: 0; font-size: 11px; font-weight: 600; color: #4f6b3d; background: #eaf2e2; border-radius: 999px; padding: 4px 10px; }
+
+/* Task progress and memory (History tab) */
+.task-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 12px 13px; }
+.task-card .learning-body strong { white-space: normal; }
+.task-status { font-weight: 600; color: #72553e; }
+.task-waiting { color: #b0561e; }
+.task-submitted { color: #4f6b3d; }
+.task-steps { margin: 4px 0 2px; padding-left: 16px; font-size: 10px; line-height: 1.5; color: #8d7d6e; }
+.task-question { font-style: italic; color: #6b513d; }
