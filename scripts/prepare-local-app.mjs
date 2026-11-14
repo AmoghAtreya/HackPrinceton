@@ -36,6 +36,14 @@ try {
   cpSync(scanner, bundledScanner)
   run('/usr/bin/codesign', ['--force', '--sign', '-', bundledScanner])
   run('/usr/bin/codesign', ['--verify', '--strict', bundledScanner])
+  // Free on-device speech recognition helper (npm run speech:build). It keeps its own
+  // bundle identity so macOS asks for Speech Recognition permission for "Triage Speech".
+  const speechHelper = join(root, 'release', 'TriageSpeechHelper.app')
+  if (existsSync(speechHelper)) {
+    const bundledSpeech = join(staging, 'Contents', 'Helpers', 'TriageSpeechHelper.app')
+    cpSync(speechHelper, bundledSpeech, { recursive: true })
+    run('/usr/bin/codesign', ['--verify', '--strict', bundledSpeech])
+  } else console.warn('No speech helper found; run npm run speech:build to include free voice input.')
   const appRoot = join(resources, 'app')
   mkdirSync(appRoot, { recursive: true })
   cpSync(join(root, 'out'), join(appRoot, 'out'), { recursive: true })
