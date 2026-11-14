@@ -1,12 +1,6 @@
-import { VoiceShortcut } from './voice/shortcut'
-import { VoiceSession } from './voice/session'
-import { VoicePreferences } from './voice/settings'
-import { NativeSpeechAdapter } from './voice/native-adapter'
-import { installVoiceIpc } from './voice/ipc'
-import { voiceChannels } from '../shared/voice-contracts'
 import { BrowserSupervisor } from './browser/supervisor'
 import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
-import { existsSync, mkdirSync } from 'node:fs'
+import { mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
 import { channels, type DesktopPoint } from '../shared/contracts'
@@ -49,9 +43,6 @@ let removeAssistantIpc: (() => void) | undefined
 let shakeMonitor: ShakeMonitor | undefined
 let removeShakeListeners: (() => void) | undefined
 let presentedGesture: string | undefined
-let voiceShortcut: VoiceShortcut | undefined
-let voice: VoiceSession | undefined
-let removeVoiceIpc: (() => void) | undefined
 
 function trusted(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
   if (!desktop || !desktop.owns(event.sender) || event.senderFrame !== event.sender.mainFrame) return false
@@ -137,9 +128,7 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true
     // Reject input and stop native timers immediately, before waiting for Chromium.
     // Each cleanup runs even when another resource has already failed.
-    const voiceClosed = Promise.all([voiceShortcut?.dispose(), voice?.dispose()])
     const cleanup = [
-      () => removeVoiceIpc?.(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(),
@@ -153,7 +142,7 @@ if (!app.requestSingleInstanceLock()) {
     for (const close of cleanup) {
       try { close() } catch { console.warn('A Triage resource could not finish closing.') }
     }
-    void Promise.resolve(voiceClosed).then(() => browser?.close()).catch(() => {
+    void Promise.resolve(browser?.close()).catch(() => {
       console.warn('Triage browser shutdown failed.')
     }).finally(() => { shutdownReady = true; app.quit() })
   })
@@ -228,38 +217,7 @@ if (!app.requestSingleInstanceLock()) {
     installIpc()
     removeAssistantIpc = installAssistantIpc(assistant, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
       screens, shake, () => shakeMonitor?.reset())
-    // Local ad-hoc builds retain Electron's executable name, which can make
-    // app.isPackaged false. Prefer the actual bundled helper before dev resources.
-    const bundledVoice = join(process.resourcesPath, '../Helpers/TriageVoiceHelper.app')
-    const voiceHelper = existsSync(bundledVoice) ? bundledVoice :
-      app.isPackaged ? bundledVoice : join(app.getAppPath(), 'release/TriageVoiceHelper.app')
-    voice = new VoiceSession(new VoicePreferences(directory), (event, lost) => new NativeSpeechAdapter(
-      voiceHelper, event, lost), (state) => {
-      voiceShortcut?.observe(state)
-      if (!quitting && desktop) {
-        for (const window of [desktop.chat, desktop.voicePanel]) {
-          if (!window.isDestroyed()) window.webContents.send(voiceChannels.state, state)
-        }
-        if (state.settings.enabled && state.activation === 'hold') desktop.showVoice()
-        else desktop.voicePanel.hide()
-      }
-    }, undefined, {
-      reserve: (id) => assistant!.reserveVoice(id),
-      release: (id) => assistant!.releaseVoice(id),
-      submit: (id, text, conversationId) => assistant!.sendVoice(id, text, conversationId),
-      stop: () => assistant!.stopActive(),
-      conversation: (id) => assistant!.history.summary(id)
-    })
-    voiceShortcut = new VoiceShortcut(voice, (event, lost) => new NativeSpeechAdapter(voiceHelper, event, lost))
-    voice.setChatOpen(desktop.chat.isVisible())
-    removeVoiceIpc = installVoiceIpc(ipcMain, voice, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
-      voiceShortcut, (event) => trusted(event) && event.sender === desktop?.voicePanel.webContents)
-    desktop.chat.on('show', () => voice?.setChatOpen(true))
-    desktop.chat.on('hide', () => voice?.setChatOpen(false))
     await desktop.initialize()
-    if (voice.snapshot().settings.enabled) {
-      void voiceShortcut.setup(false).catch(() => { /* Settings offers an explicit retry. */ })
-    }
     const interrupt = (message: string) => {
       assistant?.interrupt(message)
       screens?.clear()
@@ -267,10 +225,10 @@ if (!app.requestSingleInstanceLock()) {
     }
     const reset = () => { shakeMonitor?.reset(); interrupt('Interrupted because the display configuration changed.') }
     const paused = new Set<string>()
-    const sleep = () => { paused.add('sleep'); voiceShortcut?.suspend(); voice?.suspend(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac went to sleep.') }
-    const lock = () => { paused.add('lock'); voiceShortcut?.suspend(); voice?.suspend(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac was locked.') }
-    const wake = () => { paused.delete('sleep'); if (!paused.size) { shakeMonitor?.resume(); voice?.resume(); voiceShortcut?.resume() } }
-    const unlock = () => { paused.delete('lock'); if (!paused.size) { shakeMonitor?.resume(); voice?.resume(); voiceShortcut?.resume() } }
+    const sleep = () => { paused.add('sleep'); shakeMonitor?.pause(); interrupt('Interrupted because this Mac went to sleep.') }
+    const lock = () => { paused.add('lock'); shakeMonitor?.pause(); interrupt('Interrupted because this Mac was locked.') }
+    const wake = () => { paused.delete('sleep'); if (!paused.size) { shakeMonitor?.resume(); } }
+    const unlock = () => { paused.delete('lock'); if (!paused.size) { shakeMonitor?.resume(); } }
     powerMonitor.on('suspend', sleep)
     powerMonitor.on('resume', wake)
     powerMonitor.on('lock-screen', lock)

@@ -30,7 +30,6 @@ export class AssistantCoordinator {
   private storageError?: string
   private connecting: AbortController | null = null
   private disposed = false
-  private voiceInput: { id: string; controlOnly: boolean } | null = null
   private requestTimeout: number
   private highlights?: HighlightController
   private offHighlights?: () => void
@@ -70,7 +69,6 @@ export class AssistantCoordinator {
 
   private idle(): void {
     if (this.disposed) throw new AppProblem('closed', 'Triage is closing.')
-    if (this.voiceInput) throw new AppProblem('busy', 'Finish or cancel voice input first. Your typed draft has not been sent.')
     if (this.active || this.connecting) throw new AppProblem('busy', 'Finish or stop the current request first.')
   }
 
@@ -121,25 +119,6 @@ export class AssistantCoordinator {
 
   clearHighlight(): void { this.highlights?.clear() }
 
-  reserveVoice(id: string): void {
-    if (this.disposed) throw new AppProblem('closed', 'Triage is closing.')
-    if (this.voiceInput) throw new AppProblem('busy', 'Finish or cancel voice input first.')
-    this.voiceInput = { id, controlOnly: Boolean(this.active || this.connecting) }
-  }
-
-  releaseVoice(id: string): void {
-    if (this.voiceInput?.id === id) this.voiceInput = null
-  }
-
-  sendVoice(id: string, text: string, conversationId?: string): SendReceipt {
-    const reservation = this.voiceInput
-    if (reservation?.id !== id) throw new AppProblem('stale_voice', 'This recording has ended.')
-    // Synchronous transfer: there is no await between releasing input and owning a task.
-    this.voiceInput = null
-    if (reservation.controlOnly) throw new AppProblem('busy', 'I’m still working; stop this task first. Start a fresh recording for another request.')
-    return this.accept({ text, ...(conversationId ? { conversationId } : {}) }, 'voice')
-  }
-
   send(input: unknown): SendReceipt { return this.accept(input, 'chat') }
 
   private accept(input: unknown, source: 'chat' | 'voice'): SendReceipt {
@@ -163,14 +142,14 @@ export class AssistantCoordinator {
     let problem: string | undefined
     try { key = this.credentials.getKey() } catch (error) { problem = publicProblem(error).message }
     const model = this.credentials.snapshot().model
-    if (this.active || this.connecting || this.voiceInput) problem = 'Shake skipped: finish or stop the current request first. No screenshot was taken.'
+    if (this.active || this.connecting) problem = 'Shake skipped: finish or stop the current request first. No screenshot was taken.'
     if (!model && !problem) problem = 'Connect your key and choose an available model in Settings.'
     const gesture = { ...trigger, point: { ...trigger.point }, instruction: redact(instruction, [key]) }
     if (problem) {
       try {
         const receipt = this.history.begin('[Shake to Help] ' + gesture.instruction, model || 'not-configured', undefined, undefined, gesture)
         this.history.finish(receipt.taskId, 'failed', problem)
-        if (!this.active && !this.connecting && !this.voiceInput) this.gestureRequest = receipt
+        if (!this.active && !this.connecting) this.gestureRequest = receipt
         this.emit()
         return receipt
       } catch { this.blockStorage(); return null }
@@ -330,7 +309,6 @@ export class AssistantCoordinator {
   deleteConversation(input: unknown): void {
     if (this.disposed) throw new AppProblem('closed', 'Triage is closing.')
     const id = validated(idSchema, input)
-    if (this.voiceInput) throw new AppProblem('busy', 'Finish or cancel voice input before deleting history.')
     if (this.active?.conversationId === id) throw new AppProblem('busy', 'Stop this conversation’s request before deleting it.')
     try { this.history.delete(id) }
     catch (error) { this.blockStorage(); throw error }
@@ -347,7 +325,6 @@ export class AssistantCoordinator {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
-    this.voiceInput = null
     this.connecting?.abort()
     try {
       if (this.active) this.finish(this.active, 'stopped', 'Stopped because Triage quit.')
