@@ -4,14 +4,17 @@ import type { HighlightController, HighlightPlan } from '../screen/highlight.ts'
 import type { HighlightReply } from '../../shared/highlight-contracts.ts'
 import type { ShakeTrigger } from '../../shared/shake-contracts.ts'
 import type { ScreenAccess, ScreenImage, ScreenPreview } from '../../shared/screen-contracts.ts'
-import type { ActiveRequest, AssistantState, SendReceipt } from '../../shared/assistant-contracts.ts'
+import type { ActiveRequest, AssistantState, LearningSummary, SendReceipt } from '../../shared/assistant-contracts.ts'
 import { Credentials } from './credentials.ts'
 import { HistoryStore } from './history.ts'
 import type { ModelGateway } from './model.ts'
 import { AppProblem, publicProblem } from './errors.ts'
-import { connectSchema, idSchema, modelSchema, sendSchema, validated } from './schemas.ts'
+import { connectSchema, idSchema, modelSchema, rateSchema, sendSchema, validated } from './schemas.ts'
 import { redact } from './redaction.ts'
 import { describeResult, parseSimplifyCommand, type SimplifierService, type SimplifyCommand } from '../simplifier/service.ts'
+
+// Triage is single-user on this Mac; the simplifier keys its learning by this ID.
+const LOCAL_USER = 'local-user'
 
 interface RunningRequest extends ActiveRequest {
   highlight?: boolean
@@ -125,6 +128,19 @@ export class AssistantCoordinator {
   }
 
   clearHighlight(): void { this.highlights?.clear() }
+
+  learning(): LearningSummary {
+    if (!this.simplifier) return { entries: [], rated: 0, averageReward: null, locked: [] }
+    return this.simplifier.learning(LOCAL_USER)
+  }
+
+  rateSimplification(input: unknown): LearningSummary {
+    const { decisionId, helpful } = validated(rateSchema, input)
+    if (!this.simplifier) throw new AppProblem('simplifier_unavailable', 'Page simplification is unavailable in this build.')
+    const summary = this.simplifier.rate(LOCAL_USER, decisionId, helpful)
+    this.emit()
+    return summary
+  }
 
   reserveVoice(id: string): void {
     if (this.disposed) throw new AppProblem('closed', 'Triage is closing.')
@@ -251,7 +267,7 @@ export class AssistantCoordinator {
       } else if (request.simplify && this.simplifier) {
         request.progress = request.simplify.url ? 'Opening and simplifying the page…' : 'Simplifying the demo page…'
         this.emit()
-        const simplified = await this.simplifier.simplify(request.simplify, 'local-user', { key, model }, request.controller.signal)
+        const simplified = await this.simplifier.simplify(request.simplify, LOCAL_USER, { key, model }, request.controller.signal)
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         this.history.activity(request.id, 'page_simplified', 'Simplified a page.', {})
         reply = describeResult(simplified)

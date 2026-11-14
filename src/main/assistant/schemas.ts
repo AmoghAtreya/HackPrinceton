@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { AppProblem } from './errors.ts'
 
 export const idSchema = z.string().uuid()
+export const rateSchema = z.object({ decisionId: z.string().uuid(), helpful: z.boolean() }).strict()
 export const sendSchema = z.object({
   conversationId: idSchema.optional(),
   captureId: idSchema.optional(),
