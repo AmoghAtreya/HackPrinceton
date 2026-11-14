@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const destination = join(root, 'release', 'Triage.app')
 const staging = join(root, 'release', 'Triage-staging.app')
+const scanner = join(root, 'release', 'TriageLinkScanner')
 const runtime = join(root, 'node_modules', 'electron', 'dist', 'Electron.app')
 
 function run(command, args) {
@@ -19,6 +20,8 @@ if (process.platform !== 'darwin') throw new Error('This local app preparation s
 for (const path of [runtime, join(root, 'out', 'main', 'index.js'), join(root, 'out', 'preload', 'index.js'), join(root, 'out', 'renderer', 'index.html'), join(root, 'release', 'TriageVoiceHelper.app', 'Contents', 'MacOS', 'TriageVoiceHelper')]) {
   if (!existsSync(path)) throw new Error('Missing ' + path + '. Install dependencies and run npm run build first.')
 }
+
+if (!existsSync(scanner)) throw new Error('Missing ' + scanner + '. Run npm run phishing:build first.')
 
 // Only generated bundles and installed runtime packages enter the app. Never copy
 // the repository, settings, local profiles, environment files, or user data.
@@ -33,6 +36,10 @@ try {
   mkdirSync(dirname(helper), { recursive: true })
   cpSync(join(root, 'release', 'TriageVoiceHelper.app'), helper, { recursive: true })
   run('/usr/bin/codesign', ['--verify', '--strict', helper])
+  const bundledScanner = join(dirname(helper), 'TriageLinkScanner')
+  cpSync(scanner, bundledScanner)
+  run('/usr/bin/codesign', ['--force', '--identifier', 'com.triage.desktop.link-scanner.local', '--sign', '-', bundledScanner])
+  run('/usr/bin/codesign', ['--verify', '--strict', bundledScanner])
   const appRoot = join(resources, 'app')
   mkdirSync(appRoot, { recursive: true })
   cpSync(join(root, 'out'), join(appRoot, 'out'), { recursive: true })
