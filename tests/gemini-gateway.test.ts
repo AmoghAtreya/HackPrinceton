@@ -22,6 +22,10 @@ const textReply = (text: string, finishReason = 'STOP') => ({ candidates: [{ con
 test('Gemini keys are recognised and redacted', () => {
   assert.equal(isGeminiKey(key), true)
   assert.equal(isGeminiKey('sk-ant-api03-abcdefghijklmnop'), false)
+  const newFormat = 'AQ.Ab8RN6' + 'x'.repeat(40)
+  assert.equal(isGeminiKey(newFormat), true)
+  assert.equal(isGeminiKey('AQ.short'), false)
+  assert.equal(redact(`key ${newFormat} end`), 'key [redacted API key] end')
   assert.equal(redact(`my key is ${key} ok`), 'my key is [redacted API key] ok')
 })
 
