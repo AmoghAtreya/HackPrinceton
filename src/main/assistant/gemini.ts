@@ -5,7 +5,8 @@ import type { HighlightReply } from '../../shared/highlight-contracts.ts'
 import type { ScreenImage } from '../../shared/screen-contracts.ts'
 import { parseHighlightReply } from '../screen/coordinates.ts'
 import { AppProblem } from './errors.ts'
-import { SYSTEM, routeSystemPrompt, screenSystemPrompt, screenUserText, type DialogueTurn, type ModelGateway } from './model.ts'
+import { SYSTEM, analysisSystemPrompt, routeSystemPrompt, screenSystemPrompt, screenUserText, type DialogueTurn, type ModelGateway } from './model.ts'
+import type { ScreenAnalysisKind } from '../../shared/screen-analysis-contracts.ts'
 import { modelSchema } from './schemas.ts'
 
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
@@ -118,6 +119,11 @@ export class GeminiGateway implements ModelGateway {
     return finishReason === 'MAX_TOKENS' ? text + '\n\n[Reply reached the response length limit.]' : text
   }
 
+  async analyze(key: string, model: string, kind: ScreenAnalysisKind, signal: AbortSignal, image: ScreenImage): Promise<string> {
+    const question = kind === 'simplify' ? 'What can I do on this screen?' : 'Is this screen safe?'
+    return (await this.generate(key, model, analysisSystemPrompt(kind), [{ role: 'user', content: question }], signal, { image, json: true })).text
+  }
+
   async locate(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal, image: ScreenImage): Promise<HighlightReply> {
     const { text, finishReason } = await this.generate(key, model, screenSystemPrompt(image, true), messages, signal, { image, json: true })
     if (finishReason && finishReason !== 'STOP') throw new AppProblem('invalid_target', 'The location response was incomplete. Try a fresh capture. No highlight was shown.')
@@ -139,6 +145,11 @@ export class ProviderGateway implements ModelGateway {
     const gateway = this.pick(key)
     if (!gateway.route) throw new AppProblem('unsupported', 'This model provider cannot route requests.')
     return gateway.route(key, model, messages, signal)
+  }
+  analyze(key: string, model: string, kind: ScreenAnalysisKind, signal: AbortSignal, image: ScreenImage): Promise<string> {
+    const gateway = this.pick(key)
+    if (!gateway.analyze) throw new AppProblem('analysis_unavailable', 'This model provider cannot check the screen.')
+    return gateway.analyze(key, model, kind, signal, image)
   }
   locate(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal, image: ScreenImage): Promise<HighlightReply> {
     const gateway = this.pick(key)
