@@ -136,6 +136,11 @@ try {
   const micText = 'Triage listens only while you hold or tap the talk button, and sends that audio to Amazon Transcribe to write down what you said.'
   const micPresent = spawnSync('/usr/libexec/PlistBuddy', ['-c', 'Print :' + micKey, plist], { encoding: 'utf8' }).status === 0
   run('/usr/libexec/PlistBuddy', ['-c', (micPresent ? 'Set :' + micKey + ' ' : 'Add :' + micKey + ' string ') + micText, plist])
+  // Needed before macOS lets "/simplify" ask Google Chrome for the address of its active tab.
+  const eventsKey = 'NSAppleEventsUsageDescription'
+  const eventsText = 'Triage asks Google Chrome only for the address of the page you have open, when you type /simplify.'
+  const eventsPresent = spawnSync('/usr/libexec/PlistBuddy', ['-c', 'Print :' + eventsKey, plist], { encoding: 'utf8' }).status === 0
+  run('/usr/libexec/PlistBuddy', ['-c', (eventsPresent ? 'Set :' + eventsKey + ' ' : 'Add :' + eventsKey + ' string ') + eventsText, plist])
   run('/usr/bin/codesign', ['--force', '--sign', '-', staging])
   run('/usr/bin/codesign', ['--verify', '--deep', '--strict', staging])
   // Replacing this generated app never removes application user data.
