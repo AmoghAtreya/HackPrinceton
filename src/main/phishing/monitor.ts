@@ -12,7 +12,7 @@ const links = z.array(z.object({
 
 function classify(destination: string): LinkWarning['label'] | undefined {
   const url = URL.parse(destination)
-  if (url?.hostname === 'triage-phishing-demo.invalid' && ['http:', 'https:'].includes(url.protocol)) return 'Mock phishing'
+  if (url?.hostname === 'triage-phishing-demo.invalid' && ['http:', 'https:'].includes(url.protocol)) return 'Potential phishing'
   if (url?.protocol === 'http:') return 'Unencrypted HTTP'
 }
 

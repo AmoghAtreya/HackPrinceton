@@ -1,7 +1,7 @@
 export interface Rectangle { x: number; y: number; width: number; height: number }
 export interface LinkWarning {
   rectangle: Rectangle
-  label: 'Mock phishing' | 'Unencrypted HTTP'
+  label: 'Potential phishing' | 'Unencrypted HTTP'
 }
 export interface HighlightReply { explanation: string; captureId: string; target: Rectangle | null }
 export interface HighlightState {
