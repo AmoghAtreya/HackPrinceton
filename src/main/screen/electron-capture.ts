@@ -6,7 +6,12 @@ import type { DesktopWindows } from '../windows'
 import { AppProblem } from '../assistant/errors'
 import type { CapturePort } from './service'
 
-export function electronCapture(windows: DesktopWindows, beforeCapture?: () => void): CapturePort {
+/**
+ * `whileHidden` runs alongside the screenshot, while Triage's own windows are out
+ * of the way, with the cursor point the screenshot uses. It must not reject.
+ */
+export function electronCapture(windows: DesktopWindows, beforeCapture?: () => void,
+  whileHidden?: (cursor: { x: number; y: number }) => Promise<void>): CapturePort {
   return {
     permission: () => systemPreferences.getMediaAccessStatus('screen'),
     permissionHelp: () => {
@@ -21,8 +26,10 @@ export function electronCapture(windows: DesktopWindows, beforeCapture?: () => v
       const display = screen.getDisplayNearestPoint(cursor)
       const restore = windows.hideForCapture(options?.focusAfterCapture ?? true)
       let timer: ReturnType<typeof setTimeout> | undefined
+      let companion: Promise<void> | undefined
       try {
         await delay(250)
+        companion = whileHidden?.({ x: cursor.x, y: cursor.y }).catch(() => {})
         const sources = await Promise.race([
           desktopCapturer.getSources({
             types: ['screen'], thumbnailSize: { width: 1280, height: 1280 }, fetchWindowIcons: false
@@ -56,6 +63,8 @@ export function electronCapture(windows: DesktopWindows, beforeCapture?: () => v
         throw new AppProblem('capture_failed', 'Screen capture was unavailable or canceled. Check macOS screen permissions and try again.')
       } finally {
         if (timer) clearTimeout(timer)
+        // Keep Triage hidden until the accessibility snapshot has finished reading the same screen.
+        await companion
         restore()
       }
     }
