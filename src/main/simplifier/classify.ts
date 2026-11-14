@@ -52,8 +52,8 @@ export function riskTier(el: PageElement, page: DistilledPage): RiskTier {
   return RiskTier.Navigate
 }
 
-const REGION_WEIGHT: Record<PageElement['region'], number> = { dialog: 1.0, main: 0.9, header: 0.45, other: 0.5, aside: 0.25, nav: 0.3, footer: 0.1 }
-const NOISE = /\b(cookie|privacy|terms|advert|sponsored|newsletter|share|tweet|facebook|instagram|follow us|sign up for)\b/i
+const REGION_WEIGHT: Record<PageElement['region'], number> = { dialog: 1.0, main: 0.9, header: 0.45, other: 0.5, aside: 0.25, nav: 0.3, footer: 0.1, promo: 0 }
+const NOISE = /\b(cookies?|privacy|terms|advert|sponsored|newsletter|share|tweet|facebook|instagram|follow us|sign up for|copy link|print|report|sort by|comment)\b/i
 
 /**
  * Heuristic importance score in [0, 1]. Used to pre-rank elements for the LLM
@@ -74,12 +74,15 @@ function rawImportance(el: PageElement): number {
   if (COMMIT.test(el.label)) score += 0.1
   if (NOISE.test(el.label)) score -= 0.4
   if (el.label.length > 80) score -= 0.15
+  // Placeholder links ("#", javascript:) usually go nowhere useful.
+  if (el.kind === 'link' && (!el.href || /#$|^javascript:/i.test(el.href))) score -= 0.25
   return score
 }
 
 export function rankElements(page: DistilledPage): PageElement[] {
   return page.elements
-    .filter((el) => el.kind !== 'heading' && el.kind !== 'text')
+    // Ads and cookie/newsletter pop-ups are never offered as actions.
+    .filter((el) => el.kind !== 'heading' && el.kind !== 'text' && el.region !== 'promo')
     .map((el) => ({ el, score: rawImportance(el) }))
     .sort((a, b) => b.score - a.score)
     .map(({ el }) => el)
