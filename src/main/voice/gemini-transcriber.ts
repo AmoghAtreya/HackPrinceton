@@ -10,6 +10,8 @@ export const GEMINI_TRANSCRIBE_FALLBACK_MODEL = 'gemini-flash-lite-latest'
 export const GEMINI_TRANSCRIBE_TIMEOUT_MS = 8000
 /** Time the main model gets before Triage tries the lighter one. */
 export const GEMINI_TRANSCRIBE_FIRST_ATTEMPT_MS = 5000
+/** Writing down a short request needs no reasoning; skipping Gemini's thinking step makes it much faster. */
+const NO_THINKING = { thinkingBudget: 0 } as const
 
 export interface GeminiTranscript {
   text: string
@@ -67,6 +69,8 @@ export class GeminiTranscriber {
   private readonly models: string[]
   private readonly timeoutMs: number
   private readonly firstAttemptMs: number
+  /** Models that rejected NO_THINKING; they are asked again without it. */
+  private readonly thinkingRefused = new Set<string>()
 
   constructor(options: { fetcher?: typeof globalThis.fetch; model?: string; fallbackModel?: string | null; timeoutMs?: number; firstAttemptMs?: number } = {}) {
     this.fetcher = options.fetcher ?? globalThis.fetch
@@ -86,21 +90,28 @@ export class GeminiTranscriber {
     if (!chunks.length) return null
     const audio = pcmToWav(chunks, sampleRate).toString('base64')
     const deadline = Date.now() + this.timeoutMs
-    for (const [index, model] of this.models.entries()) {
+    for (let index = 0; index < this.models.length;) {
+      const model = this.models[index]
       const remaining = deadline - Date.now()
       if (remaining < 750 || signal.aborted) break
       const budget = index === 0 && this.models.length > 1 ? Math.min(remaining, this.firstAttemptMs) : remaining
+      const started = Date.now()
       const outcome = await this.attempt(key, model, audio, signal, budget)
-      if (outcome.kind === 'ok') return outcome.transcript
+      if (outcome.kind === 'ok') {
+        console.info(`Gemini ${model} transcribed in ${Date.now() - started} ms.`)
+        return outcome.transcript
+      }
       if (outcome.kind === 'stop') return null
+      if (outcome.kind === 'again') continue
       if (index < this.models.length - 1) console.warn(`Gemini ${model} was ${outcome.reason}; trying ${this.models[index + 1]}.`)
+      index++
     }
     if (!signal.aborted) console.warn('Gemini transcription unavailable in time; using the on-device transcript.')
     return null
   }
 
   private async attempt(key: string, model: string, audio: string, signal: AbortSignal, budgetMs: number):
-    Promise<{ kind: 'ok'; transcript: GeminiTranscript } | { kind: 'retry'; reason: string } | { kind: 'stop' }> {
+    Promise<{ kind: 'ok'; transcript: GeminiTranscript } | { kind: 'retry'; reason: string } | { kind: 'again' } | { kind: 'stop' }> {
     const timer = AbortSignal.timeout(budgetMs)
     try {
       const response = await this.fetcher(`${BASE_URL}/models/${encodeURIComponent(model)}:generateContent`, {
@@ -109,11 +120,19 @@ export class GeminiTranscriber {
         headers: { 'x-goog-api-key': key, 'content-type': 'application/json' },
         body: JSON.stringify({
           contents: [{ role: 'user', parts: [{ inline_data: { mime_type: 'audio/wav', data: audio } }, { text: PROMPT }] }],
-          generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1024, temperature: 0 }
+          generationConfig: {
+            responseMimeType: 'application/json', maxOutputTokens: 1024, temperature: 0,
+            ...(this.thinkingRefused.has(model) ? {} : { thinkingConfig: NO_THINKING })
+          }
         }),
         signal: AbortSignal.any([signal, timer])
       })
       if (!response.ok) {
+        // A model that cannot skip thinking: ask the same model again without that setting.
+        if (response.status === 400 && !this.thinkingRefused.has(model) && /thinking/i.test(await response.text().catch(() => ''))) {
+          this.thinkingRefused.add(model)
+          return { kind: 'again' }
+        }
         // Busy, rate-limited, retired or failing: worth trying the other model. A rejected key is not.
         if ([404, 408, 429].includes(response.status) || response.status >= 500) return { kind: 'retry', reason: `unavailable (HTTP ${response.status})` }
         console.warn(`Gemini transcription refused (HTTP ${response.status}); using the on-device transcript.`)
