@@ -126,9 +126,23 @@ export function distillDocument(limit: number): unknown {
     elements.push(item)
   }
 
-  // Main readable text: prefer <main>/<article>, fall back to body, visible text only.
+  // Main readable text: prefer <main>/<article>, fall back to body. Collect
+  // prose blocks one per line, and run each through visible(): innerText alone
+  // still includes off-screen "screen reader trap" text, a prompt-injection path.
   const root = doc.querySelector('main, [role="main"], article') ?? doc.body
-  const mainText = clean((root as HTMLElement | null)?.innerText ?? '', 20000)
+  const blocks: string[] = []
+  let textLength = 0
+  for (const block of Array.from(root?.querySelectorAll('p, li, blockquote, dd, td, pre') ?? [])) {
+    if (block.closest('nav, header, footer, aside, dialog, [role="dialog"], [role="navigation"]')) continue
+    if (block.parentElement?.closest('p, li, blockquote, dd, td, pre')) continue
+    if (!visible(block)) { hiddenRemoved++; continue }
+    const text = clean((block as HTMLElement).innerText, 4000)
+    if (!text) continue
+    blocks.push(text)
+    textLength += text.length + 1
+    if (textLength > 20000) break
+  }
+  const mainText = (blocks.length ? blocks.join('\n') : clean((root as HTMLElement | null)?.innerText ?? '', 20000)).slice(0, 20000)
 
   return {
     url: location.href.slice(0, 4000),
