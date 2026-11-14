@@ -15,6 +15,7 @@ import { connectSchema, idSchema, modelSchema, rateSchema, sendSchema, validated
 import { redact } from './redaction.ts'
 import { resolveDestination } from '../../shared/destinations.ts'
 import { describeResult, parseSimplifyCommand, type SimplifierService, type SimplifyCommand } from '../simplifier/service.ts'
+import { describeScreenResult, type ScreenSimplifier } from '../simplifier/screen.ts'
 
 // Triage is single-user on this Mac; the simplifier keys its learning by this ID.
 const LOCAL_USER = 'local-user'
@@ -26,6 +27,8 @@ interface RunningRequest extends ActiveRequest {
   controller: AbortController
   deadline?: ReturnType<typeof setTimeout>
   simplify?: SimplifyCommand
+  /** Simplify the page frontmost in the user's own browser, without asking the model to route. */
+  simplifyScreen?: boolean
 }
 
 export class AssistantCoordinator {
@@ -48,17 +51,21 @@ export class AssistantCoordinator {
   private openPage?: (url: string) => Promise<void>
   private screens?: ScreenAccess
   private simplifier?: SimplifierService
+  private screenSimplifier?: Pick<ScreenSimplifier, 'simplify' | 'forget'>
 
   constructor(options: {
     history: HistoryStore; credentials: Credentials; gateway: ModelGateway
     changed: (state: AssistantState) => void; browser?: BrowserRunner; requestTimeout?: number; screens?: ScreenAccess; highlights?: HighlightController
     simplifier?: SimplifierService
+    /** Simplifies the page in front of the user from an accessibility snapshot. */
+    screenSimplifier?: Pick<ScreenSimplifier, 'simplify' | 'forget'>
     /** Accessibility snapshots paired with screenshots; without it highlights are pixel boxes only. */
     contexts?: ContextLookup
     /** Opens a vetted https URL in the user's own browser. */
     openPage?: (url: string) => Promise<void>
   }) {
     this.simplifier = options.simplifier
+    this.screenSimplifier = options.screenSimplifier
     this.browser = options.browser
     this.openPage = options.openPage
     this.highlights = options.highlights
@@ -153,11 +160,23 @@ export class AssistantCoordinator {
     const { decisionId, helpful } = validated(rateSchema, input)
     if (!this.simplifier) throw new AppProblem('simplifier_unavailable', 'Page simplification is unavailable in this build.')
     const summary = this.simplifier.rate(LOCAL_USER, decisionId, helpful)
+    this.screenSimplifier?.forget(decisionId)
     this.emit()
     return summary
   }
 
   send(input: unknown): SendReceipt { return this.accept(input) }
+
+  /** "Simplify this page" from the menu bar or a shake: the same flow the model can route to from chat. */
+  simplifyPage(): SendReceipt {
+    this.idle()
+    if (this.storageError) throw new AppProblem('storage', this.storageError)
+    if (!this.screenSimplifier) throw new AppProblem('simplifier_unavailable', 'Simplifying the page in front is unavailable in this build.')
+    const key = this.credentials.getKey()
+    const model = this.credentials.snapshot().model
+    if (!model) throw new AppProblem('missing_model', 'Connect your key and choose an available model in Settings.')
+    return this.start({ text: 'Simplify this page' }, key, model, undefined, undefined, undefined, 'chat', undefined, true)
+  }
 
   private accept(input: unknown): SendReceipt {
     const request = validated(sendSchema, input)
@@ -200,7 +219,7 @@ export class AssistantCoordinator {
 
   private start(request: { text: string; conversationId?: string; mode?: 'explain' | 'highlight' }, key: string, model: string,
     image?: ScreenImage, gesture?: ShakeTrigger & { instruction: string }, capture?: () => Promise<ScreenPreview>, source: 'chat' | 'voice' = 'chat',
-    simplify?: SimplifyCommand): SendReceipt {
+    simplify?: SimplifyCommand, simplifyScreen = false): SendReceipt {
     this.highlights?.clear()
     let receipt: SendReceipt
     try {
@@ -215,7 +234,7 @@ export class AssistantCoordinator {
       id: receipt.taskId, conversationId: receipt.conversationId,
       startedAt: Date.now(), stage: capture ? 'capturing' : 'thinking', controller: new AbortController(),
       expectedDisplayId: gesture?.displayId, highlight: request.mode === 'highlight', highlightRevision: this.highlights?.revision,
-      ...(simplify ? { simplify } : {})
+      ...(simplify ? { simplify } : {}), ...(simplifyScreen ? { simplifyScreen } : {})
     }
     this.active = active
     if (gesture) this.gestureRequest = receipt
@@ -287,6 +306,9 @@ export class AssistantCoordinator {
           outcome = error.code
           reply += '\n\n' + error.message
         }
+      } else if (request.simplifyScreen) {
+        reply = await this.simplifyFront(request, key, model)
+        if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
       } else if (request.simplify && this.simplifier) {
         request.progress = request.simplify.url ? 'Opening and simplifying the page…' : 'Simplifying the demo page…'
         this.emit()
@@ -299,6 +321,10 @@ export class AssistantCoordinator {
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         if (route.kind === 'reply') reply = route.text
         else if (route.kind === 'open_page') reply = await this.navigate(request, route.destination, route.query)
+        else if (route.kind === 'simplify_page') {
+          reply = await this.simplifyFront(request, key, model)
+          if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
+        }
         else {
           const checked = validateFlight(route.flight)
           const parentTaskId = this.history.clarificationParent(request.conversationId)
@@ -347,6 +373,17 @@ export class AssistantCoordinator {
       // it settles so the gesture conversation can be opened without spoiling capture.
       if (capture && !this.disposed) this.emit()
     }
+  }
+
+  /** Reads the page in front, simplifies it and shows it. Nothing on the real page is clicked or typed into. */
+  private async simplifyFront(request: RunningRequest, key: string, model: string): Promise<string> {
+    if (!this.screenSimplifier) throw new AppProblem('simplifier_unavailable', 'Simplifying the page in front is unavailable in this build.')
+    request.progress = 'Reading and simplifying the page in front…'
+    this.emit()
+    const simplified = await this.screenSimplifier.simplify(LOCAL_USER, { key, model }, request.controller.signal)
+    if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return ''
+    this.history.activity(request.id, 'page_simplified', 'Simplified the page in front.', {})
+    return describeScreenResult(simplified)
   }
 
   /** Opens a curated destination in the user's browser; never a model-supplied URL. */
