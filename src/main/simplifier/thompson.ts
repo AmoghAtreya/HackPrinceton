@@ -34,6 +34,13 @@ export interface ThompsonOptions {
   explorationScale: number
   /** Monte Carlo draws used to estimate propensities and confidence. */
   propensitySamples: number
+  /**
+   * Cold start: until a user has this many observations for a page type, show
+   * the best estimate (population mean, or the default arm) instead of a random
+   * draw. With an uninformed prior, sampling noise swamps the default arm's
+   * head start, so without this new users would see random layouts.
+   */
+  warmup: number
   /** Freeze a (user, page type) once it has this many observations... */
   freezeAfter: number
   /** ...and the best arm wins at least this share of posterior samples. */
@@ -42,7 +49,7 @@ export interface ThompsonOptions {
 
 export const DEFAULT_THOMPSON_OPTIONS: ThompsonOptions = {
   populationPrecision: 4, userPrecision: 8, noise: 0.05, explorationScale: 0.5,
-  propensitySamples: 200, freezeAfter: 25, freezeConfidence: 0.9
+  propensitySamples: 200, warmup: 3, freezeAfter: 25, freezeConfidence: 0.9
 }
 
 interface Stats { xtx: number[]; xtr: number[]; n: number }
@@ -142,6 +149,7 @@ export class ThompsonPolicy implements PresentationPolicy {
     const frozen = this.users[input.userId]?.frozen[input.pageType]
     if (frozen && allowed.has(frozen)) return { armId: frozen, propensity: 1, mode: 'frozen' }
     if (input.sensitive) return { armId: this.greedy(input), propensity: 1, mode: 'shielded' }
+    if (this.warmingUp(input)) return { armId: this.greedy(input), propensity: 1, mode: 'exploit' }
 
     const shares = this.winShares(input)
     // The live choice is one fresh Thompson draw per arm; its propensity is the
@@ -163,7 +171,7 @@ export class ThompsonPolicy implements PresentationPolicy {
   probability(input: PolicyInput, armId: string): number {
     const frozen = this.users[input.userId]?.frozen[input.pageType]
     if (frozen && input.arms.some((arm) => arm.id === frozen)) return frozen === armId ? 1 : 0
-    if (input.sensitive) return this.greedy(input) === armId ? 1 : 0
+    if (input.sensitive || this.warmingUp(input)) return this.greedy(input) === armId ? 1 : 0
     return this.winShares(input).get(armId) ?? 0
   }
 
@@ -178,6 +186,10 @@ export class ThompsonPolicy implements PresentationPolicy {
       stats.n++
     }
     user.counts[input.pageType] = (user.counts[input.pageType] ?? 0) + 1
+  }
+
+  private warmingUp(input: PolicyInput): boolean {
+    return (this.users[input.userId]?.counts[input.pageType] ?? 0) < this.options.warmup
   }
 
   /** Stability rule from the doc: once confident on a page type, stop reshuffling the layout. */
