@@ -48,6 +48,7 @@ export class HighlightController {
   private tracking?: Tracking
   private listeners = new Set<() => void>()
   private lostListeners = new Set<(state: HighlightState) => void>()
+  private clickListeners = new Set<(state: HighlightState) => void>()
   constructor(port: HighlightPort) { this.port = port }
   get revision(): number { return this.version }
   snapshot(): HighlightState | null {
@@ -56,6 +57,8 @@ export class HighlightController {
   onChange(listener: () => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   /** Fires after a tracked highlight was cleared because its element or app went away. */
   onLost(listener: (state: HighlightState) => void): () => void { this.lostListeners.add(listener); return () => { this.lostListeners.delete(listener) } }
+  /** Fires when the person clicks the highlighted target themselves, just before the highlight clears. Triage only observes the click. */
+  onClicked(listener: (state: HighlightState) => void): () => void { this.clickListeners.add(listener); return () => { this.clickListeners.delete(listener) } }
   private emit(): void { for (const listener of this.listeners) listener() }
   private now(): number { return this.port.now?.() ?? Date.now() }
   private tracks(anchor?: ElementAnchor): boolean { return Boolean(anchor && this.port.frameOf) }
@@ -82,6 +85,22 @@ export class HighlightController {
       state: { id: randomUUID(), taskId, captureId: capture.id,
         displayId: capture.displayId, bounds: { ...capture.bounds }, rectangle: mapped.local, expiresAt: null } }
   }
+  /**
+   * A highlight for an element that was not located from a screenshot (for
+   * example one chosen in the simplified view). There is no image to go stale,
+   * so the display's current geometry stands in for the capture.
+   */
+  planElement(anchor: ElementAnchor, displayId: string, taskId: string): HighlightPlan {
+    const display = this.port.display(displayId)
+    if (!display) throw new AppProblem('stale_highlight', 'No highlight: that display is no longer connected.')
+    const capture: CaptureMetadata = {
+      id: randomUUID(), capturedAt: Date.now(), displayId, displayName: '', width: display.bounds.width, height: display.bounds.height,
+      bounds: { ...display.bounds }, cursor: { x: 0, y: 0 },
+      ...(display.scaleFactor === undefined ? {} : { scaleFactor: display.scaleFactor }),
+      ...(display.rotation === undefined ? {} : { rotation: display.rotation })
+    }
+    return this.plan({ explanation: '', captureId: capture.id, target: null }, capture, taskId, this.version, anchor)!
+  }
   present(plan: HighlightPlan): boolean {
     if (this.disposed || this.current || plan.revision !== this.version || !this.fresh(plan.capture, this.tracks(plan.anchor)) || (plan.state.expiresAt !== null && plan.state.expiresAt <= Date.now())) return false
     const target = this.desktopTarget(plan.state)
@@ -99,7 +118,10 @@ export class HighlightController {
   private observe(state: HighlightState): void {
     this.stopObservingClick?.()
     this.stopObservingClick = this.port.observeClick?.(this.desktopTarget(state), () => {
-      if (this.current?.id === state.id) this.clear()
+      if (this.current?.id !== state.id) return
+      const clicked = this.current
+      for (const listener of this.clickListeners) listener(clicked)
+      this.clear()
     })
   }
   private follow(id: string, anchor: ElementAnchor, capture: CaptureMetadata): void {
@@ -163,5 +185,5 @@ export class HighlightController {
     this.port.hide()
     if (wasVisible) this.emit()
   }
-  dispose(): void { this.disposed = true; this.clear(); this.listeners.clear(); this.lostListeners.clear() }
+  dispose(): void { this.disposed = true; this.clear(); this.listeners.clear(); this.lostListeners.clear(); this.clickListeners.clear() }
 }
