@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import type { DesktopBridge, DesktopState } from '../../shared/contracts'
 import type { AssistantState, ConversationDetail, ConversationPage } from '../../shared/assistant-contracts'
 import type { ScreenPreview } from '../../shared/screen-contracts'
+import type { TranscriptRecord } from '../../shared/voice-contracts'
 import { Character } from './Character'
 import { SettingsPanel } from './SettingsPanel'
 import { HistoryPanel } from './HistoryPanel'
@@ -119,16 +120,32 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     setSelected(id); setView('chat'); setError(''); setDraft('')
   }
 
+  /** Shared by the Send button and voice input. A spoken message leaves any typed draft alone. */
+  async function deliver(text: string, source: 'chat' | 'voice', shot: ScreenPreview | null, mode: 'explain' | 'highlight'): Promise<boolean> {
+    setBusy(true); setError('')
+    try {
+      const receipt = unwrap(await bridge.sendMessage({ ...(selected ? { conversationId: selected } : {}), text, source, ...(shot ? { captureId: shot.metadata.id, mode } : {}) }))
+      setSelected(receipt.conversationId); setCapture(null); setView('chat')
+      if (source === 'chat') setDraft('')
+      return true
+    } catch (problem) { setError(displayError(problem)); return false }
+    finally { setBusy(false); input.current?.focus() }
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault()
     if (!assistant || capturing || busy || assistant.active || assistant.storageError || (!draft.trim() && (!capture || highlightMode))) return
     if (!assistant.config.configured) { setView('settings'); return }
-    setBusy(true); setError('')
-    try {
-      const receipt = unwrap(await bridge.sendMessage({ ...(selected ? { conversationId: selected } : {}), text: draft.trim() || 'Explain what is happening on this screen. Be specific about visible content and uncertainty.', ...(capture ? { captureId: capture.metadata.id, mode: highlightMode ? 'highlight' as const : 'explain' as const } : {}) }))
-      setSelected(receipt.conversationId); setDraft(''); setCapture(null); setView('chat')
-    } catch (problem) { setError(displayError(problem)) }
-    finally { setBusy(false); input.current?.focus() }
+    await deliver(draft.trim() || 'Explain what is happening on this screen. Be specific about visible content and uncertainty.', 'chat', capture, highlightMode ? 'highlight' : 'explain')
+  }
+
+  /** A finished voice recording: send it like a typed message. */
+  async function handleTranscript(record: TranscriptRecord) {
+    const text = record.text.trim()
+    if (!text || !assistant) return
+    if (!assistant.config.configured) { setView('settings'); return }
+    if (assistant.active || busy || capturing || assistant.storageError) return
+    await deliver(text, 'voice', capture, highlightMode ? 'highlight' : 'explain')
   }
 
   async function stop() {
@@ -268,7 +285,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       {view === 'chat' && <div ref={bottom} />}
     </div>
     {view === 'chat' && <footer className="chat-footer">
-      <VoiceButton bridge={bridge} />
+      <VoiceButton bridge={bridge} onTranscript={(record) => void handleTranscript(record)} />
       <div className="screen-controls">
         <button className="text-button" disabled={capturing || busy || Boolean(active)} onClick={() => void captureScreen()}>{capturing ? 'Capturing screen…' : 'Capture screen'}</button>
         <button className="text-button" disabled={Boolean(active) || busy} onClick={() => {
