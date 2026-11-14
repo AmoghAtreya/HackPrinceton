@@ -28,7 +28,7 @@ Triage is a small companion character that runs in the background on your Mac. I
 
 Built for older users:
 - **Push-to-talk:** hold to talk, or tap to start and tap again to stop.
-- **Live captions** as you speak.
+- **Live captions** as you speak, on-device. When you let go, **Google Gemini** writes the final transcript for accuracy, falling back to the on-device text when offline.
 - **Read-back:** a slow (90%), clear neural voice reads short answers, and you can replay them.
 - **"Did I hear that right?"** Unclear speech is put in the message box to check, never sent blindly.
 - **Safe by design:** Triage only opens pages from a fixed list of approved sites, never a website address the AI makes up, so a misheard word can't send someone to a lookalike scam site.
