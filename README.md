@@ -20,6 +20,8 @@ Triage is a small companion character that runs in the background on your Mac. I
 | say "**where's the track package button?**" | takes a screenshot and **draws an arrow on the real control** |
 | say "**what's on my screen?**" | explains the screen in plain language, out loud |
 | **shake the mouse** over something confusing | explains what's under the cursor, hands-free |
+| press **Simplify this screen**, or say "what can I do here?" | turns a cluttered page into **3–5 big task buttons** ("Track my package") that point or explain |
+| press **Is this safe?**, or say "is this a scam?" | checks the screen for scam and dark-pattern signs and shows a green, amber or red verdict with a plain next step |
 | ask anything else by voice or text | answers briefly and reads the answer aloud |
 | say "**stop**" or "**start over**" | stops instantly / starts a fresh conversation |
 
@@ -46,11 +48,12 @@ Built for older users:
                      voice shortcuts (stop, explain, show-me-where) ─┐
                      "Did I hear that right?" check                  │
                                                                      ▼
-                                                   Assistant coordinator ──▶ LLM (routes the request)
+                                                   Assistant coordinator ──▶ Claude or Gemini (routes the request)
                                                      ├─ reply ............ answer in chat
                                                      ├─ open_page ........ approved list → your default browser
                                                      ├─ flight_search .... Playwright task browser (Alaska Air)
-                                                     └─ screenshot + highlight → arrow overlay on the real screen
+                                                     ├─ screenshot + highlight → arrow overlay on the real screen
+                                                     └─ screenshot → simplify (task buttons) / safety check (verdict card)
  speaker ◀── Web Audio ◀── mp3 ◀──IPC── main process ◀── Amazon Polly (neural, SSML prosody 90%)
              (fallback: the macOS built-in voice)
 ```
@@ -60,11 +63,11 @@ AWS credentials stay in the main process. The chat window never sees them.
 ### AWS services
 - **Amazon Transcribe (streaming):** speech-to-text with live partial captions and per-word confidence.
 - **Amazon Polly (neural voices):** spoken replies, with the speed set through SSML.
-- *Planned:* Amazon Comprehend (removing personal details from logged requests), DynamoDB (anonymous request log for FAQs), SNS (caregiver alerts).
+- *Planned:* Amazon Comprehend (removing personal details from shared questions), DynamoDB (anonymous request log for FAQs), SNS (caregiver alerts).
 
 ## Setup
 
-Requirements: macOS on Apple Silicon, Node 22 (`.nvmrc`), and an Anthropic API key (entered in the app's Settings).
+Requirements: macOS on Apple Silicon, Node 22 (`.nvmrc`), and an **Anthropic (Claude) or Google AI Studio (Gemini)** API key, entered in the app's Settings. Triage picks the provider from the key and prefers Gemini Flash for Gemini keys.
 
 ```bash
 npm install
@@ -103,19 +106,18 @@ npm run build
 | `src/renderer/src/` | React UI: chat, talk button, settings |
 | `src/renderer/src/voice/` | mic capture, voice shortcuts, speech player |
 | `src/worker/` | Playwright task browser (flight search) |
-| `docs/` | [Voice input](docs/Voice-Transcribe.md) · [Spoken replies](docs/Speech-Polly.md) · [Page navigation](docs/Page-Navigation.md) · [Product overview](docs/Triage-Product-Overview.md) · [Tech spec](docs/Triage-Technical-Specification.md) |
+| `docs/` | [Voice input](docs/Voice-Transcribe.md) · [Spoken replies](docs/Speech-Polly.md) · [Page navigation](docs/Page-Navigation.md) · [Screen help](docs/Screen-Help.md) · [Request logging](docs/Request-Logging.md) · [Product overview](docs/Triage-Product-Overview.md) · [Tech spec](docs/Triage-Technical-Specification.md) |
 
 ## Privacy and safety
 
 - **Screenshots** are taken only when you ask (button, voice shortcut or shake), are sent to the model for that one request, and are never saved.
 - **Voice audio** is streamed to Amazon Transcribe only while you hold or tap the talk button, and is never saved. Transcripts are saved on this Mac.
 - **Conversations** are saved on this Mac (unencrypted). Known API keys are removed from saved text.
+- **Help improve Triage** (off by default) keeps an anonymous log of questions only, never screenshots or audio. You can delete it in Settings at any time.
 - **Triage never buys anything, enters passwords or payment details, or picks a flight fare.** Pages open only from the approved list, over https.
 
 ## What's next
 
-- Simplified view: turn a cluttered page into three to five big "what do you want to do?" buttons.
-- Scam and dark-pattern check ("is this safe?").
-- Anonymous, opt-in request log that suggests FAQs and new destinations.
-- Caregiver mode: custom destinations and text alerts.
-- Gemini as an alternative model.
+- Upload the opt-in request log (API Gateway → Lambda + Amazon Comprehend → DynamoDB) and turn it into approved FAQs.
+- Caregiver mode: custom destinations and text alerts (Amazon SNS) when a scam is detected.
+- Optional automatic safety checks while a browser is in front.
