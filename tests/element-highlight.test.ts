@@ -344,7 +344,7 @@ async function fixture(locate: Locate, options: { permission?: string } = {}) {
       const cursor = captureOptions?.cursor ?? { x: 640, y: 480 }
       cursors.push(cursor)
       await captures.snapshotContext(cursor)
-      return { data: DATA, mediaType: 'image/jpeg', metadata: { displayId: 'fixture', displayName: 'Fixture', width: 1000, height: 500, bounds, cursor: { x: 100, y: 100 } } }
+      return { data: DATA, mediaType: 'image/jpeg', metadata: { displayId: 'fixture', redactedRegions: 0, displayName: 'Fixture', width: 1000, height: 500, bounds, cursor: { x: 100, y: 100 } } }
     }
   })
   captures = new PairedCapture(screens, contexts)

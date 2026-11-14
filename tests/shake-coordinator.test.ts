@@ -16,7 +16,7 @@ const DATA = Buffer.from('synthetic-shake-image-only').toString('base64')
 const trigger = { point: { x: -400, y: 120 }, displayId: 'two', triggeredAt: 123456 }
 const captured = {
   data: DATA, mediaType: 'image/jpeg' as const,
-  metadata: { displayId: 'two', displayName: 'Fixture display', width: 800, height: 600,
+  metadata: { displayId: 'two', redactedRegions: 0, displayName: 'Fixture display', width: 800, height: 600,
     bounds: { x: -800, y: 0, width: 800, height: 600 }, cursor: { x: 400, y: 120 } }
 }
 async function fixture(options: {
