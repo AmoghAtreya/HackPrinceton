@@ -78,7 +78,7 @@ export class TrustStore implements TrustReader {
   }
 
   entities(): TrustEntity[] {
-    const channels = this.db.prepare('SELECT id, entity_id, type, value, source, created_at FROM channels ORDER BY created_at, id').all() as unknown as ChannelRow[]
+    const channels = this.db.prepare('SELECT id, entity_id, type, value, source, created_at FROM channels ORDER BY rowid').all() as unknown as ChannelRow[]
     const byEntity = new Map<string, TrustChannel[]>()
     for (const row of channels) {
       const list = byEntity.get(row.entity_id) ?? []
@@ -92,7 +92,7 @@ export class TrustStore implements TrustReader {
     }))
   }
   decisions(): TrustDecision[] {
-    return (this.db.prepare('SELECT id, verdict, claimed_name, channel_type, channel_value, entity_id, created_at FROM decisions ORDER BY created_at DESC, id').all() as Array<Record<string, unknown>>)
+    return (this.db.prepare('SELECT id, verdict, claimed_name, channel_type, channel_value, entity_id, created_at FROM decisions ORDER BY created_at DESC, rowid DESC').all() as Array<Record<string, unknown>>)
       .map((row) => ({ id: row.id as string, verdict: row.verdict as Verdict, claimedName: row.claimed_name as string, channelType: row.channel_type as ChannelType,
         channelValue: row.channel_value as string, entityId: row.entity_id as string | null, createdAt: row.created_at as number }))
   }
