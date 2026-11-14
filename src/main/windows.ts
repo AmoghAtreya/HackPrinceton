@@ -4,7 +4,7 @@ import { channels, type CompanionMood, type DesktopState } from '../shared/contr
 import { clampPosition, readPosition, writePosition } from './position-store'
 
 const COMPANION_SIZE = { width: 128, height: 144 }
-const CHAT_SIZE = { width: 392, height: 540 }
+const CHAT_SIZE = { width: 392, height: 640 }
 
 interface DragSession {
   cursor: Electron.Point
