@@ -106,6 +106,17 @@ export class DecisionLog {
     return rows.map((row) => this.decode(row))
   }
 
+  /** Most recent decisions for a user, newest first, rated or not. Feeds the History tab. */
+  recent(userId: string, limit = 20): LoggedDecision[] {
+    return this.db.prepare('SELECT * FROM decisions WHERE user_id = ? ORDER BY created_at DESC, step DESC LIMIT ?')
+      .all(userId, limit).map((row) => this.decode(row))
+  }
+
+  ratingStats(userId: string): { rated: number; averageReward: number | null } {
+    const row = this.db.prepare('SELECT COUNT(reward) AS rated, AVG(reward) AS average FROM decisions WHERE user_id = ?').get(userId) as { rated: number; average: number | null }
+    return { rated: row.rated, averageReward: row.average }
+  }
+
   /** Decisions grouped into ordered episodes: the trajectory format offline RL needs. */
   episodes(options: { userId?: string; limit?: number } = {}): LoggedDecision[][] {
     const groups = new Map<string, LoggedDecision[]>()
