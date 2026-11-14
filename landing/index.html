@@ -10,18 +10,25 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Newsreader:opsz,wght@6..72,500&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #f6f6f7;
-    --ink: #161616;
-    --ink-2: #2a2a2a;
-    --muted: #8b8b8b;
-    --line: #e4e4e6;
-    --navy: #24477f;
-    --navy-soft: #8392ad;
-    --navy-card: #e8eef8;
-    --brick: #6e2e1e;
-    --brick-soft: #a07b70;
-    --brick-card: #f6ece8;
-    --white-card: #f9f9f9;
+    /* Pulled from the Triage character: peach #FFBB83, tangerine #F58A53, ember #D96236, face #3C2B27 */
+    --bg: #fdf7f2;
+    --ink: #2a1a13;
+    --ink-2: #3d2a21;
+    --muted: #7d5f50;
+    --line: #f0dccd;
+    --peach: #ffbb83;
+    --tangerine: #f58a53;
+    --ember: #d96236;
+    --button: #bf4f2b;          /* white text passes 4.5:1 */
+    --button-hover: #a5401f;
+    --navy: #8a3618;            /* activity card text (kept var names for layout rules) */
+    --navy-soft: #855744;
+    --navy-card: #ffe9d8;
+    --brick: #7a2f16;
+    --brick-soft: #855744;
+    --brick-card: #fffaf6;
+    --white-card: #ffffff;
+    --shadow: 0 1px 2px rgba(122, 55, 22, .06), 0 14px 34px rgba(122, 55, 22, .10);
     --serif: "Newsreader", "Times New Roman", serif;
     --sans: "Inter", system-ui, -apple-system, sans-serif;
   }
@@ -37,7 +44,7 @@
   }
   a { color: inherit; text-decoration: none; }
   a:focus-visible, button:focus-visible, input:focus-visible {
-    outline: 2px solid var(--navy);
+    outline: 2px solid var(--ember);
     outline-offset: 3px;
     border-radius: 999px;
   }
@@ -51,15 +58,16 @@
     overflow: hidden;
     isolation: isolate;
   }
-  /* Soft wash: lavender on the left, peach and blush center-right, butter toward the bottom */
+  /* Warm wash in the character's colors: tangerine glow center-right, peach left, honey toward the bottom.
+     Kept soft behind the headline so the text stays crisp. */
   .wash {
     position: absolute; inset: 0; z-index: -1; pointer-events: none;
     background:
-      radial-gradient(38% 46% at 63% 62%, rgba(248, 196, 172, .62), transparent 70%),
-      radial-gradient(30% 38% at 54% 44%, rgba(246, 210, 214, .55), transparent 72%),
-      radial-gradient(28% 40% at 36% 54%, rgba(220, 214, 244, .62), transparent 72%),
-      radial-gradient(34% 30% at 52% 88%, rgba(246, 230, 205, .7), transparent 72%),
-      radial-gradient(26% 30% at 74% 36%, rgba(250, 226, 214, .5), transparent 70%);
+      radial-gradient(38% 46% at 64% 64%, rgba(245, 138, 83, .38), transparent 70%),
+      radial-gradient(30% 36% at 54% 46%, rgba(255, 187, 131, .34), transparent 72%),
+      radial-gradient(28% 40% at 34% 56%, rgba(255, 205, 168, .45), transparent 72%),
+      radial-gradient(34% 30% at 52% 90%, rgba(255, 214, 160, .55), transparent 72%),
+      radial-gradient(26% 30% at 76% 34%, rgba(217, 98, 54, .16), transparent 70%);
     filter: blur(8px);
   }
 
@@ -74,16 +82,17 @@
     align-items: center;
   }
   .logo { display: inline-flex; align-items: center; gap: 7px; font-size: 23px; font-weight: 500; letter-spacing: -.02em; justify-self: start; }
-  .logo svg { width: 24px; height: 24px; }
+  .logo svg { width: 28px; height: 28px; }
   .nav-links { display: flex; gap: 36px; font-size: 16.5px; color: var(--ink-2); }
   .nav-links a:hover { color: var(--ink); }
   .nav-actions { justify-self: end; display: flex; align-items: center; gap: 16px; font-size: 15.5px; }
   .btn-dark {
     display: inline-flex; align-items: center; justify-content: center;
-    background: var(--ink); color: #fff; border-radius: 999px;
-    font-weight: 500;
+    background: var(--button); color: #fff; border-radius: 999px;
+    font-weight: 600;
+    box-shadow: 0 6px 16px rgba(191, 79, 43, .25);
   }
-  .btn-dark:hover { background: #333; }
+  .btn-dark:hover { background: var(--button-hover); }
   .nav-actions .btn-dark { height: 32px; padding: 0 12px; font-size: 15.5px; }
 
   /* ---------- Center column ---------- */
@@ -91,13 +100,14 @@
   .announce {
     display: inline-flex; align-items: center; gap: 10px;
     height: 41px; padding: 0 16px 0 18px;
-    border: 1px solid #e3e3e5; border-radius: 999px;
-    background: rgba(240, 240, 242, .8);
-    font-size: 15px; color: var(--ink-2);
+    border: 1px solid #f2d3bd; border-radius: 999px;
+    background: rgba(255, 238, 224, .85);
+    font-size: 15px; font-weight: 500; color: var(--ink-2);
   }
-  .announce:hover { background: #ececee; }
-  .bell { position: relative; width: 17px; height: 17px; }
-  .bell::after { content: ""; position: absolute; top: -1px; right: -1px; width: 5px; height: 5px; border-radius: 50%; background: #e2574c; }
+  .announce:hover { background: #ffe4cf; }
+  .bell-wrap { position: relative; display: inline-flex; color: var(--ember); }
+  .bell { width: 17px; height: 17px; }
+  .bell-wrap::after { content: ""; position: absolute; top: -1px; right: -2px; width: 6px; height: 6px; border-radius: 50%; background: var(--ember); box-shadow: 0 0 0 2px #ffeee0; }
 
   h1 {
     margin: 132px auto 0;
@@ -117,17 +127,19 @@
     line-height: 1.5;
     letter-spacing: -.005em;
     color: var(--ink-2);
+    text-shadow: 0 1px 12px rgba(253, 247, 242, .8);
   }
   .ctas { margin-top: 26px; display: inline-flex; align-items: center; gap: 30px; }
   .ctas .btn-dark { height: 44px; padding: 0 20px; font-size: 18.5px; }
-  .ctas .plain { font-size: 18.5px; color: var(--ink-2); }
-  .ctas .plain:hover { color: var(--ink); }
+  .ctas .plain { font-size: 18.5px; font-weight: 500; color: var(--ink-2); }
+  .ctas .plain:hover, .nav-actions .plain:hover { color: var(--button); }
 
   /* ---------- Floating cards ---------- */
   .float { position: absolute; z-index: 1; }
   .card {
-    border-radius: 9px;
-    box-shadow: 0 1px 2px rgba(30, 30, 50, .05), 0 10px 30px rgba(30, 30, 50, .06);
+    border-radius: 12px;
+    border: 1px solid rgba(217, 98, 54, .14);
+    box-shadow: var(--shadow);
   }
 
   /* Activity (top left, bleeds off the edge like the reference) */
@@ -139,19 +151,19 @@
     display: grid; grid-template-columns: 178px 1fr;
     padding: 20px 24px 22px 10px;
   }
-  .activity .stat { border-right: 1px solid #cfd9ea; padding-right: 22px; display: flex; flex-direction: column; }
-  .activity .big { text-align: right; font-size: 32px; font-weight: 500; letter-spacing: -.01em; line-height: 1.05; margin-top: 4px; }
+  .activity .stat { border-right: 1px solid #f3c9aa; padding-right: 22px; display: flex; flex-direction: column; }
+  .activity .big { text-align: right; font-size: 34px; font-weight: 600; letter-spacing: -.01em; line-height: 1.05; margin-top: 4px; }
   .delta { font-size: 13px; color: var(--navy-soft); white-space: nowrap; text-align: right; }
-  .delta b { color: var(--navy); font-weight: 500; }
+  .delta b { color: var(--navy); font-weight: 600; }
   .bars { margin-top: auto; display: flex; align-items: flex-end; gap: 15px; height: 112px; padding-left: 0; }
   .bar { width: 10px; display: flex; flex-direction: column; align-items: center; gap: 7px; height: 100%; justify-content: flex-end; }
-  .bar i { display: block; width: 9px; border-radius: 3px; background: var(--navy); }
-  .bar em { font-style: normal; font-size: 11px; color: var(--navy-soft); line-height: 1; height: 14px; display: flex; align-items: center; justify-content: center; }
-  .bar.today em { border: 1px solid var(--navy); color: var(--navy); border-radius: 50%; width: 15px; height: 15px; font-size: 10px; }
+  .bar i { display: block; width: 10px; border-radius: 4px; background: linear-gradient(var(--tangerine), var(--ember)); }
+  .bar em { font-style: normal; font-size: 11.5px; font-weight: 500; color: var(--navy-soft); line-height: 1; height: 14px; display: flex; align-items: center; justify-content: center; }
+  .bar.today em { border: 1.5px solid var(--navy); color: var(--navy); border-radius: 50%; width: 16px; height: 16px; font-size: 10px; }
   .activity .table { padding-left: 21px; }
   .activity h3 { margin: 4px 0 10px; font-size: 16px; font-weight: 600; }
-  .row { display: flex; justify-content: space-between; font-size: 13.5px; padding: 8px 0; border-top: 1px solid #d5ddeb; }
-  .row span { color: var(--navy-soft); }
+  .row { display: flex; justify-content: space-between; font-size: 14px; font-weight: 600; padding: 7.5px 0; border-top: 1px solid #f6d2b8; }
+  .row span { color: var(--navy-soft); font-weight: 500; }
 
   /* Link check (right) */
   .links {
@@ -165,12 +177,12 @@
   .ring { position: absolute; top: 55px; right: 26px; width: 120px; height: 120px; }
   .ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
   .ring .label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .ring strong { font-size: 30px; font-weight: 500; letter-spacing: -.02em; line-height: 1; }
-  .ring small { font-size: 11.5px; color: var(--brick-soft); margin-top: 2px; }
+  .ring strong { font-size: 30px; font-weight: 600; letter-spacing: -.02em; line-height: 1; }
+  .ring small { font-size: 12px; font-weight: 500; color: var(--brick-soft); margin-top: 3px; }
   .links .foot { position: absolute; left: 20px; bottom: 20px; }
-  .links .foot strong { display: block; font-size: 22px; font-weight: 500; letter-spacing: -.01em; }
-  .links .foot span { font-size: 13px; color: var(--brick-soft); display: inline-flex; align-items: center; gap: 4px; }
-  .links .foot b { color: var(--brick); font-weight: 500; }
+  .links .foot strong { display: block; font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
+  .links .foot span { font-size: 13px; font-weight: 500; color: var(--brick-soft); display: inline-flex; align-items: center; gap: 5px; }
+  .links .foot b { color: var(--ember); font-weight: 600; }
 
   /* Flight search (bottom left) */
   .flight {
@@ -179,21 +191,21 @@
     background: var(--white-card);
     padding: 20px;
   }
-  .flight h3 { margin: 0; font-size: 16px; font-weight: 500; color: var(--ink-2); }
+  .flight h3 { margin: 0; font-size: 16px; font-weight: 600; color: var(--ink-2); }
   .flight .foot { position: absolute; left: 20px; bottom: 20px; }
-  .flight .foot strong { display: block; font-size: 22px; font-weight: 500; color: #444; letter-spacing: -.01em; }
-  .flight .foot span { font-size: 13px; color: var(--muted); }
-  .steps { position: absolute; right: 18px; top: 36px; width: 142px; list-style: none; margin: 0; padding: 0; }
-  .steps::before { content: ""; position: absolute; left: 4px; top: 10px; bottom: 10px; border-left: 1px dashed #c9c9cc; }
-  .steps li { position: relative; display: flex; align-items: center; gap: 9px; font-size: 11.5px; color: #8a8a8a; padding: 7px 0; }
-  .steps li::before { content: ""; flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--white-card); border: 1.5px solid #555; position: relative; z-index: 1; }
-  .steps li.done::before { background: #555; }
-  .steps li.now { color: var(--ink-2); }
-  .steps li.now span { border: 1px solid #555; border-radius: 999px; padding: 0 6px; }
+  .flight .foot strong { display: block; font-size: 24px; font-weight: 600; color: var(--ink); letter-spacing: -.01em; }
+  .flight .foot span { font-size: 13px; font-weight: 500; color: var(--muted); }
+  .steps { position: absolute; right: 16px; top: 34px; width: 148px; list-style: none; margin: 0; padding: 0; }
+  .steps::before { content: ""; position: absolute; left: 4.5px; top: 12px; bottom: 12px; border-left: 1.5px dashed #f0b893; }
+  .steps li { position: relative; display: flex; align-items: center; gap: 9px; font-size: 12.5px; font-weight: 500; color: var(--muted); padding: 6.5px 0; }
+  .steps li::before { content: ""; flex: none; width: 10px; height: 10px; border-radius: 50%; background: #fff; border: 2px solid var(--ember); position: relative; z-index: 1; }
+  .steps li.done::before { background: var(--ember); }
+  .steps li.now { color: var(--ink); font-weight: 600; }
+  .steps li.now span { background: #ffe9d8; color: var(--brick); border-radius: 999px; padding: 1px 8px; }
 
   /* Companion with cursor (replaces the reference's avatar pointer) */
-  .buddy { top: 732px; left: calc(50% - 670px); width: 54px; height: 54px; border-radius: 50%; background: #fdeee2; border: 1.5px solid #3a2a24; display: grid; place-items: center; }
-  .buddy svg { width: 42px; height: 42px; margin-top: 2px; }
+  .buddy { top: 726px; left: calc(50% - 676px); width: 62px; height: 62px; border-radius: 50%; background: #fff3e8; border: 2px solid var(--ember); display: grid; place-items: center; box-shadow: 0 8px 20px rgba(217, 98, 54, .22); }
+  .buddy svg { width: 48px; height: 48px; margin-top: 2px; }
   .pointer { width: 24px; height: 24px; }
   .buddy-pointer { top: 714px; left: calc(50% - 630px); }
   .shake { position: absolute; top: 702px; left: calc(50% - 600px); width: 18px; height: 18px; z-index: 1; }
@@ -207,12 +219,13 @@
     padding: 24px 16px 14px 20px;
   }
   .ask input { display: block; width: 100%; border: 0; padding: 0; background: transparent; font: inherit; font-size: 15.5px; color: var(--ink); outline: none; }
-  .ask input::placeholder { color: #8e8e8e; }
-  .ask:focus-within { box-shadow: 0 0 0 2px var(--navy), 0 10px 30px rgba(30, 30, 50, .06); }
-  .ask .tools { position: absolute; left: 19px; bottom: 16px; display: flex; gap: 10px; color: #222; }
-  .ask .tools svg { width: 17px; height: 17px; }
-  .ask .send { position: absolute; right: 13px; bottom: 13px; width: 33px; height: 33px; border-radius: 50%; background: var(--ink); color: #fff; border: 0; display: grid; place-items: center; cursor: pointer; }
-  .person { top: 801px; left: calc(50% + 186px); width: 50px; height: 50px; border-radius: 50%; background: #dfe6f6; border: 1.5px solid #2d3f63; color: #2d3f63; display: grid; place-items: center; font-size: 19px; font-weight: 500; z-index: 2; }
+  .ask input::placeholder { color: #8a6a5a; }
+  .ask:focus-within { box-shadow: 0 0 0 2px var(--ember), var(--shadow); }
+  .ask .tools { position: absolute; left: 19px; bottom: 16px; display: flex; gap: 12px; color: var(--ember); }
+  .ask .tools svg { width: 18px; height: 18px; }
+  .ask .send { position: absolute; right: 13px; bottom: 13px; width: 34px; height: 34px; border-radius: 50%; background: var(--button); color: #fff; border: 0; display: grid; place-items: center; cursor: pointer; }
+  .ask .send:hover { background: var(--button-hover); }
+  .person { top: 801px; left: calc(50% + 186px); width: 50px; height: 50px; border-radius: 50%; background: #ffe2cc; border: 2px solid var(--brick); color: var(--brick); display: grid; place-items: center; font-size: 18px; font-weight: 600; z-index: 2; }
   .person-pointer { top: 781px; left: calc(50% + 189px); z-index: 2; }
 
   /* Companion breathing — the only ambient motion on the page */
@@ -258,10 +271,16 @@
 
   <nav class="nav" aria-label="Main">
     <a class="logo" href="#" aria-label="Triage home">
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M12.2 2.6c2-1.2 3.8.4 4.4 2.4 3-.6 5 1.6 4 4.6 2.4 2 1.2 5.4-1 6.4-.2 3.2-3.2 5-5.8 3.2-2.4 2.2-5.6 1-6.6-1.2-3.2.6-5.2-2-4-5-2.2-2.6-.6-5.6 2.2-6.2-.2-3 3-4.8 5.4-3.4l1.4-.8Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-        <rect x="8.4" y="9.4" width="1.8" height="4" rx=".9" fill="currentColor"/>
-        <rect x="13.8" y="9.4" width="1.8" height="4" rx=".9" fill="currentColor"/>
+      <svg viewBox="0 0 120 116" fill="none" aria-hidden="true">
+        <defs>
+          <linearGradient id="lg" x1="27" y1="16" x2="94" y2="102" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#FFBB83"/><stop offset=".5" stop-color="#F58A53"/><stop offset="1" stop-color="#D96236"/>
+          </linearGradient>
+        </defs>
+        <path d="M61 13C71 7 80 15 83 25C98 22 108 33 103 48C115 58 109 75 98 80C97 96 82 105 69 96C57 107 41 101 36 90C20 93 10 80 16 65C5 52 13 37 27 34C26 19 42 10 54 17L61 13Z" fill="url(#lg)"/>
+        <rect x="31" y="43" width="59" height="35" rx="17.5" fill="#3C2B27"/>
+        <rect x="46" y="53" width="7" height="14" rx="3.5" fill="#FFF7E9"/>
+        <rect x="68" y="53" width="7" height="14" rx="3.5" fill="#FFF7E9"/>
       </svg>
       Triage
     </a>
@@ -279,7 +298,7 @@
 
   <div class="center">
     <a class="announce" href="#">
-      <svg class="bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      <span class="bell-wrap"><svg class="bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></span>
       <span class="text">New in Triage: voice, link warnings and page simplifier</span>
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
     </a>
@@ -321,8 +340,8 @@
     <h3>Links checked</h3>
     <div class="ring">
       <svg viewBox="0 0 120 120">
-        <circle cx="60" cy="60" r="56" fill="none" stroke="#ecd9d2" stroke-width="3"/>
-        <circle cx="60" cy="60" r="56" fill="none" stroke="#6e2e1e" stroke-width="3" stroke-linecap="round" stroke-dasharray="301 352"/>
+        <circle cx="60" cy="60" r="55" fill="none" stroke="#fde0cc" stroke-width="5"/>
+        <circle cx="60" cy="60" r="55" fill="none" stroke="#d96236" stroke-width="5" stroke-linecap="round" stroke-dasharray="296 346"/>
       </svg>
       <div class="label"><strong>12/14</strong><small>look safe</small></div>
     </div>
@@ -364,8 +383,8 @@
       </g>
     </svg>
   </div>
-  <svg class="float pointer buddy-pointer" viewBox="0 0 24 24" aria-hidden="true" style="transform:scaleX(-1)"><path d="M4 2l16 7.5-6.8 2.3L10.9 19 4 2z" fill="#111"/></svg>
-  <svg class="shake" viewBox="0 0 18 18" fill="none" stroke="#111" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 8c1-2 2-3 4-4M2 13c2-3 5-6 9-8M9 15c2-1 4-3 6-6"/></svg>
+  <svg class="float pointer buddy-pointer" viewBox="0 0 24 24" aria-hidden="true" style="transform:scaleX(-1)"><path d="M4 2l16 7.5-6.8 2.3L10.9 19 4 2z" fill="#2a1a13"/></svg>
+  <svg class="shake" viewBox="0 0 18 18" fill="none" stroke="#d96236" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 8c1-2 2-3 4-4M2 13c2-3 5-6 9-8M9 15c2-1 4-3 6-6"/></svg>
 
   <!-- Ask box -->
   <form class="float card ask" onsubmit="return false" aria-label="Ask Triage">
@@ -378,7 +397,7 @@
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>
     </button>
   </form>
-  <svg class="float pointer person-pointer" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 2l16 7.5-6.8 2.3L10.9 19 4 2z" fill="#111"/></svg>
+  <svg class="float pointer person-pointer" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 2l16 7.5-6.8 2.3L10.9 19 4 2z" fill="#2a1a13"/></svg>
   <div class="float person" aria-hidden="true">MR</div>
 </header>
 </body>
