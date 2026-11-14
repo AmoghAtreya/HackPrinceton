@@ -391,6 +391,46 @@
   .log-note { margin: 16px 0 0; padding: 12px 14px; border-radius: 12px; background: #fff0e3; font-size: 13.5px; line-height: 1.45; color: var(--ink-2); }
   .log-note b { font-weight: 600; color: #8a3618; }
 
+  /* ---------- Closing call and footer ---------- */
+  .closing { text-align: center; padding: 20px 24px 120px; }
+  .closing-mascot { width: 104px; height: 100px; margin: 0 auto 26px; display: block; filter: drop-shadow(0 14px 22px rgba(217, 98, 54, .25)); }
+  .closing h2 {
+    margin: 0;
+    font-family: var(--serif);
+    font-weight: 500;
+    font-variation-settings: "opsz" 72;
+    font-size: clamp(42px, 5vw, 68px);
+    line-height: 1;
+    letter-spacing: -.022em;
+  }
+  .closing h2 span { display: block; }
+  .closing p { margin: 20px auto 0; max-width: 30em; font-size: 19px; line-height: 1.5; color: var(--ink-2); }
+  .closing .ctas { margin-top: 30px; }
+
+  .site-footer { border-top: 1px solid var(--line); background: #fbf1e9; }
+  .footer-inner {
+    width: min(1196px, calc(100% - 48px));
+    margin: 0 auto;
+    padding: 56px 0 28px;
+    display: grid;
+    grid-template-columns: 1.6fr repeat(3, 1fr);
+    gap: 40px;
+  }
+  .footer-brand p { margin: 14px 0 0; max-width: 24em; font-size: 15px; line-height: 1.5; color: var(--muted); }
+  .footer-col h3 { margin: 4px 0 14px; font-size: 15px; font-weight: 600; color: var(--ink); }
+  .footer-col ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .footer-col a { font-size: 15px; color: var(--ink-2); }
+  .footer-col a:hover { color: var(--button); }
+  .footer-base {
+    width: min(1196px, calc(100% - 48px));
+    margin: 0 auto;
+    padding: 20px 0 32px;
+    border-top: 1px solid var(--line);
+    display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 32px;
+    font-size: 13.5px; color: var(--muted);
+  }
+  .footer-base p { margin: 0; }
+
   /* ---------- Responsive ---------- */
   @media (max-width: 1500px) {
     .activity { left: -40px; }
@@ -445,6 +485,15 @@
     .log { padding: 20px 16px 16px; }
     .log li { grid-template-columns: 44px 1fr; }
     .log li .chip { grid-column: 2; justify-self: start; margin-top: -2px; }
+  }
+  /* Footer columns fold on smaller screens */
+  @media (max-width: 900px) {
+    .footer-inner { grid-template-columns: 1fr 1fr; }
+    .footer-brand { grid-column: 1 / -1; }
+  }
+  @media (max-width: 520px) {
+    .footer-inner, .footer-base { width: calc(100% - 32px); }
+    .closing { padding-bottom: 88px; }
   }
 </style>
 </head>
@@ -781,6 +830,79 @@
     </div>
   </section>
 </main>
+
+<!-- Closing call -->
+<section class="closing" aria-labelledby="closing-title">
+  <svg class="closing-mascot" viewBox="0 0 120 116" fill="none" aria-hidden="true">
+    <defs>
+      <linearGradient id="cg" x1="27" y1="16" x2="94" y2="102" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#FFBB83"/><stop offset=".5" stop-color="#F58A53"/><stop offset="1" stop-color="#D96236"/>
+      </linearGradient>
+    </defs>
+    <path d="M61 13C71 7 80 15 83 25C98 22 108 33 103 48C115 58 109 75 98 80C97 96 82 105 69 96C57 107 41 101 36 90C20 93 10 80 16 65C5 52 13 37 27 34C26 19 42 10 54 17L61 13Z" fill="url(#cg)" stroke="#B95332" stroke-opacity=".18"/>
+    <path d="M34 28C40 21 48 22 52 24" stroke="#FFDCC0" stroke-width="4" stroke-linecap="round" opacity=".7"/>
+    <rect x="31" y="43" width="59" height="35" rx="17.5" fill="#3C2B27"/>
+    <rect x="46" y="53" width="7" height="14" rx="3.5" fill="#FFF7E9"/>
+    <rect x="68" y="53" width="7" height="14" rx="3.5" fill="#FFF7E9"/>
+    <ellipse cx="27" cy="66" rx="5" ry="3" fill="#C65436" opacity=".3"/>
+    <ellipse cx="94" cy="66" rx="5" ry="3" fill="#C65436" opacity=".3"/>
+    <path d="M56 86Q61 90 66 86" stroke="#AD4B2F" stroke-width="2.5" stroke-linecap="round"/>
+  </svg>
+  <h2 id="closing-title"><span>Next time you’re stuck,</span><span>just give it a shake</span></h2>
+  <p>Triage sits quietly on your desktop until you need it. Download it for your Mac, or set it up for someone you love.</p>
+  <div class="ctas">
+    <a class="btn-dark" href="#">Download for Mac</a>
+    <a class="plain" href="#families">Set it up for a parent</a>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a class="logo" href="#" aria-label="Triage home">
+        <svg viewBox="0 0 120 116" fill="none" aria-hidden="true" style="width:28px;height:28px">
+          <path d="M61 13C71 7 80 15 83 25C98 22 108 33 103 48C115 58 109 75 98 80C97 96 82 105 69 96C57 107 41 101 36 90C20 93 10 80 16 65C5 52 13 37 27 34C26 19 42 10 54 17L61 13Z" fill="url(#cg)"/>
+          <rect x="31" y="43" width="59" height="35" rx="17.5" fill="#3C2B27"/>
+          <rect x="46" y="53" width="7" height="14" rx="3.5" fill="#FFF7E9"/>
+          <rect x="68" y="53" width="7" height="14" rx="3.5" fill="#FFF7E9"/>
+        </svg>
+        Triage
+      </a>
+      <p>A small companion for your Mac that explains your screen, points the way, and looks out for scams.</p>
+    </div>
+    <nav class="footer-col" aria-label="Features">
+      <h3>Features</h3>
+      <ul>
+        <li><a href="#t1">Explain your screen</a></li>
+        <li><a href="#t1">Show me where</a></li>
+        <li><a href="#t1">Flight search</a></li>
+        <li><a href="#t1">Page simplifier</a></li>
+      </ul>
+    </nav>
+    <nav class="footer-col" aria-label="Family safety">
+      <h3>Family safety</h3>
+      <ul>
+        <li><a href="#families">Phishing warnings</a></li>
+        <li><a href="#families">Trusted sites</a></li>
+        <li><a href="#families">Activity history</a></li>
+        <li><a href="#families">Set up for a parent</a></li>
+      </ul>
+    </nav>
+    <nav class="footer-col" aria-label="Triage">
+      <h3>Triage</h3>
+      <ul>
+        <li><a href="#">Download for Mac</a></li>
+        <li><a href="#">Watch the demo</a></li>
+        <li><a href="#">Privacy</a></li>
+        <li><a href="#">Contact</a></li>
+      </ul>
+    </nav>
+  </div>
+  <div class="footer-base">
+    <p>© 2026 Triage. Made at HackPrinceton.</p>
+    <p>Screenshots go to Anthropic’s Claude only when you ask for help, and are never saved.</p>
+  </div>
+</footer>
 
 <script>
   (() => {
