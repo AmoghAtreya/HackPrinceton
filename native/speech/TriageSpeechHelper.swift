@@ -15,6 +15,7 @@
 //     {"type":"done"}
 //
 // Audio and text stay in memory only; nothing is written to disk or logs.
+import AppKit
 import AVFoundation
 import Foundation
 import Speech
@@ -150,17 +151,25 @@ func start() {
   Thread.detachNewThread { readLoop() }
 }
 
-switch SFSpeechRecognizer.authorizationStatus() {
-case .authorized:
-  start()
-case .notDetermined:
-  SFSpeechRecognizer.requestAuthorization { status in
-    DispatchQueue.main.async {
-      if status == .authorized { start() }
-      else { fail("speech_denied", "Speech Recognition permission was not granted.") }
+// A real AppKit event loop: macOS needs it to show the permission prompt for this app.
+let application = NSApplication.shared
+application.setActivationPolicy(.accessory)
+DispatchQueue.main.async {
+  switch SFSpeechRecognizer.authorizationStatus() {
+  case .authorized:
+    start()
+  case .notDetermined:
+    send(["type": "authorizing"])
+    // Bring the (invisible) helper forward so the system prompt appears on top.
+    NSApp.activate(ignoringOtherApps: true)
+    SFSpeechRecognizer.requestAuthorization { status in
+      DispatchQueue.main.async {
+        if status == .authorized { start() }
+        else { fail("speech_denied", "Speech Recognition permission was not granted.") }
+      }
     }
+  default:
+    fail("speech_denied", "Speech Recognition permission was not granted.")
   }
-default:
-  fail("speech_denied", "Speech Recognition permission was not granted.")
 }
-dispatchMain()
+application.run()
