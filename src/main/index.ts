@@ -30,6 +30,11 @@ import { ContextService } from './context/service'
 import { PairedCapture } from './context/paired-capture'
 import { electronContext } from './context/electron-context'
 import { screenContextBlock } from './context/chat-context'
+import { TrustStore } from './trust/store'
+import { TrustService } from './trust/service'
+import { seedStore } from './trust/seed'
+import { installTrustIpc } from './trust/ipc'
+import { trustChannels } from '../shared/trust-contracts'
 import { electronCapture } from './screen/electron-capture'
 import { HighlightController } from './screen/highlight'
 import { OverlayWindow } from './screen/overlay-window'
@@ -61,6 +66,31 @@ let screens: ScreenService | undefined
 let contexts: ContextService | undefined
 let captures: PairedCapture | undefined
 let chatContexts: ContextService | undefined
+let trust: TrustService | undefined
+let trustContexts: ContextService | undefined
+let trustTimer: ReturnType<typeof setInterval> | undefined
+let trustChecking = false
+let removeTrustIpc: (() => void) | undefined
+let warnedAbout: string | undefined
+
+// Looks at what is in front every few seconds and compares it with the user's list. Reads only.
+function setTrustMonitoring(on: boolean): void {
+  clearInterval(trustTimer)
+  trustTimer = undefined
+  trust?.setMonitoring(on && Boolean(trustContexts))
+  if (!on || !trust || !trustContexts) return
+  trustTimer = setInterval(() => {
+    if (trustChecking || quitting || desktop?.isCapturing) return
+    trustChecking = true
+    trustContexts!.capture().then((snapshot) => { trustContexts?.clear(); trust?.inspect(snapshot) })
+      .catch((error: unknown) => {
+        if (!(error instanceof AppProblem) || error.code !== 'context_permission') return
+        setTrustMonitoring(false)
+        tray?.setContextMenu(buildControls())
+        dialog.showErrorBox('Scam warnings paused', 'In System Settings → Privacy & Security → Accessibility, enable Triage, then turn the warnings back on.')
+      }).finally(() => { trustChecking = false })
+  }, 3000)
+}
 let highlights: HighlightController | undefined
 let overlay: OverlayWindow | undefined
 let assistant: AssistantCoordinator | undefined
@@ -115,6 +145,10 @@ function buildControls(): Electron.Menu {
         else phishing?.stop()
         tray?.setContextMenu(buildControls())
       }
+    },
+    {
+      label: 'Warn About Impersonation (Preview)', type: 'checkbox', checked: Boolean(trustTimer),
+      enabled: Boolean(trust && trustContexts), click: (item) => { setTrustMonitoring(item.checked); tray?.setContextMenu(buildControls()) }
     },
     { type: 'separator' },
     { label: 'Quit Triage', accelerator: 'CommandOrControl+Q', click: () => app.quit() }
@@ -180,7 +214,8 @@ if (!app.requestSingleInstanceLock()) {
     // Reject input and stop native timers immediately, before waiting for Chromium.
     // Each cleanup runs even when another resource has already failed.
     const cleanup = [
-      () => removeVoiceIpc?.(), () => voice?.dispose(), () => phishing?.stop(),
+      () => removeVoiceIpc?.(), () => voice?.dispose(), () => phishing?.stop(), () => setTrustMonitoring(false),
+      () => removeTrustIpc?.(), () => trustContexts?.dispose(), () => trust?.dispose(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(), () => chatContexts?.dispose(),
@@ -239,6 +274,19 @@ if (!app.requestSingleInstanceLock()) {
     contexts = accessibility ? new ContextService(accessibility.port) : undefined
     // Its own instance: a chat message must not replace the snapshot paired with a pending screenshot.
     chatContexts = accessibility ? new ContextService(accessibility.port) : undefined
+    trustContexts = accessibility ? new ContextService(accessibility.port) : undefined
+    // The trust graph is optional equipment: if it cannot be opened, everything else still works.
+    try {
+      const store = new TrustStore(join(directory, 'trust-graph.sqlite'))
+      seedStore(store)
+      trust = new TrustService(store, (state) => {
+        if (!desktop || quitting) return
+        if (!desktop.chat.isDestroyed()) desktop.chat.webContents.send(trustChannels.state, state)
+        // A new warning is worth interrupting for, once.
+        if (state.warning && state.warning.key !== warnedAbout && !desktop.isCapturing) desktop.openChat()
+        warnedAbout = state.warning?.key
+      })
+    } catch { console.warn('The list of people and organizations is unavailable.') }
     highlights = new HighlightController({
       display: (id) => overlay!.display(id), draw: (state) => overlay!.draw(state), hide: () => overlay!.hide(),
       redraw: (state) => overlay!.redraw(state),
@@ -281,9 +329,10 @@ if (!app.requestSingleInstanceLock()) {
         if (!chatContexts) return undefined
         const snapshot = await chatContexts.capture()
         chatContexts.clear()
+        trust?.inspect(snapshot)
         return screenContextBlock(snapshot)
       },
-      captureScreen: () => captures!.capture(),
+      captureScreen: () => captures!.capture(), trust,
       // The coordinator only passes URLs already checked against the destination allowlist.
       openPage: (url) => shell.openExternal(url, { activate: true }),
       changed: (state) => {
@@ -319,6 +368,7 @@ if (!app.requestSingleInstanceLock()) {
       }
     })
     installIpc()
+    if (trust) removeTrustIpc = installTrustIpc(trust, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
     removeAssistantIpc = installAssistantIpc(assistant, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
       captures, shake, () => shakeMonitor?.reset())
     voice = new VoiceController({
