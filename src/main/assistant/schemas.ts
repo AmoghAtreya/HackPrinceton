@@ -7,6 +7,8 @@ export const sendSchema = z.object({
   conversationId: idSchema.optional(),
   captureId: idSchema.optional(),
   mode: z.enum(['explain', 'highlight']).optional(),
+  /** How the user entered the text; 'voice' marks a spoken (transcribed) message. */
+  source: z.enum(['chat', 'voice']).optional(),
   text: z.string().trim().min(1).max(4000)
 }).strict().refine((request) => request.mode !== 'highlight' || Boolean(request.captureId))
 export const connectSchema = z.object({

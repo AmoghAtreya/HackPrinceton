@@ -12,7 +12,6 @@ coverage/
 credentials.enc*
 model-settings.json*
 shake-settings.json*
-voice-settings.json*
 companion-position.json*
 browser-profile/
 screenshots/

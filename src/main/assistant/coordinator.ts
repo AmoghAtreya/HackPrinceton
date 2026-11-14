@@ -11,6 +11,7 @@ import type { ModelGateway } from './model.ts'
 import { AppProblem, publicProblem } from './errors.ts'
 import { connectSchema, idSchema, modelSchema, rateSchema, sendSchema, validated } from './schemas.ts'
 import { redact } from './redaction.ts'
+import { resolveDestination } from '../../shared/destinations.ts'
 import { describeResult, parseSimplifyCommand, type SimplifierService, type SimplifyCommand } from '../simplifier/service.ts'
 
 // Triage is single-user on this Mac; the simplifier keys its learning by this ID.
@@ -35,12 +36,12 @@ export class AssistantCoordinator {
   private storageError?: string
   private connecting: AbortController | null = null
   private disposed = false
-  private voiceInput: { id: string; controlOnly: boolean } | null = null
   private requestTimeout: number
   private highlights?: HighlightController
   private offHighlights?: () => void
   private gestureRequest?: SendReceipt
   private browser?: BrowserRunner
+  private openPage?: (url: string) => Promise<void>
   private screens?: ScreenAccess
   private simplifier?: SimplifierService
 
@@ -48,9 +49,12 @@ export class AssistantCoordinator {
     history: HistoryStore; credentials: Credentials; gateway: ModelGateway
     changed: (state: AssistantState) => void; browser?: BrowserRunner; requestTimeout?: number; screens?: ScreenAccess; highlights?: HighlightController
     simplifier?: SimplifierService
+    /** Opens a vetted https URL in the user's own browser. */
+    openPage?: (url: string) => Promise<void>
   }) {
     this.simplifier = options.simplifier
     this.browser = options.browser
+    this.openPage = options.openPage
     this.highlights = options.highlights
     this.offHighlights = options.highlights?.onChange(() => this.emit())
     this.screens = options.screens
@@ -78,7 +82,6 @@ export class AssistantCoordinator {
 
   private idle(): void {
     if (this.disposed) throw new AppProblem('closed', 'Triage is closing.')
-    if (this.voiceInput) throw new AppProblem('busy', 'Finish or cancel voice input first. Your typed draft has not been sent.')
     if (this.active || this.connecting) throw new AppProblem('busy', 'Finish or stop the current request first.')
   }
 
@@ -142,28 +145,9 @@ export class AssistantCoordinator {
     return summary
   }
 
-  reserveVoice(id: string): void {
-    if (this.disposed) throw new AppProblem('closed', 'Triage is closing.')
-    if (this.voiceInput) throw new AppProblem('busy', 'Finish or cancel voice input first.')
-    this.voiceInput = { id, controlOnly: Boolean(this.active || this.connecting) }
-  }
+  send(input: unknown): SendReceipt { return this.accept(input) }
 
-  releaseVoice(id: string): void {
-    if (this.voiceInput?.id === id) this.voiceInput = null
-  }
-
-  sendVoice(id: string, text: string, conversationId?: string): SendReceipt {
-    const reservation = this.voiceInput
-    if (reservation?.id !== id) throw new AppProblem('stale_voice', 'This recording has ended.')
-    // Synchronous transfer: there is no await between releasing input and owning a task.
-    this.voiceInput = null
-    if (reservation.controlOnly) throw new AppProblem('busy', 'I’m still working; stop this task first. Start a fresh recording for another request.')
-    return this.accept({ text, ...(conversationId ? { conversationId } : {}) }, 'voice')
-  }
-
-  send(input: unknown): SendReceipt { return this.accept(input, 'chat') }
-
-  private accept(input: unknown, source: 'chat' | 'voice'): SendReceipt {
+  private accept(input: unknown): SendReceipt {
     const request = validated(sendSchema, input)
     this.idle()
     if (this.storageError) throw new AppProblem('storage', this.storageError)
@@ -178,7 +162,7 @@ export class AssistantCoordinator {
     // Local command, handled without asking Claude to route it. Parsed here so a
     // bad address is reported immediately instead of after a model call.
     const simplify = !image && this.simplifier ? parseSimplifyCommand(request.text) : null
-    return this.start(request, key, model, image, undefined, undefined, source, simplify ?? undefined)
+    return this.start(request, key, model, image, undefined, undefined, request.source ?? 'chat', simplify ?? undefined)
   }
 
   shake(trigger: ShakeTrigger, instruction: string, capture: () => Promise<ScreenPreview>, mode: 'explain' | 'highlight' = 'explain'): SendReceipt | null {
@@ -187,14 +171,14 @@ export class AssistantCoordinator {
     let problem: string | undefined
     try { key = this.credentials.getKey() } catch (error) { problem = publicProblem(error).message }
     const model = this.credentials.snapshot().model
-    if (this.active || this.connecting || this.voiceInput) problem = 'Shake skipped: finish or stop the current request first. No screenshot was taken.'
+    if (this.active || this.connecting) problem = 'Shake skipped: finish or stop the current request first. No screenshot was taken.'
     if (!model && !problem) problem = 'Connect your key and choose an available model in Settings.'
     const gesture = { ...trigger, point: { ...trigger.point }, instruction: redact(instruction, [key]) }
     if (problem) {
       try {
         const receipt = this.history.begin('[Shake to Help] ' + gesture.instruction, model || 'not-configured', undefined, undefined, gesture)
         this.history.finish(receipt.taskId, 'failed', problem)
-        if (!this.active && !this.connecting && !this.voiceInput) this.gestureRequest = receipt
+        if (!this.active && !this.connecting) this.gestureRequest = receipt
         this.emit()
         return receipt
       } catch { this.blockStorage(); return null }
@@ -275,6 +259,7 @@ export class AssistantCoordinator {
         const route = await this.gateway.route(key, model, context, request.controller.signal)
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         if (route.kind === 'reply') reply = route.text
+        else if (route.kind === 'open_page') reply = await this.navigate(request, route.destination, route.query)
         else {
           const checked = validateFlight(route.flight)
           const parentTaskId = this.history.clarificationParent(request.conversationId)
@@ -325,6 +310,20 @@ export class AssistantCoordinator {
     }
   }
 
+  /** Opens a curated destination in the user's browser; never a model-supplied URL. */
+  private async navigate(request: RunningRequest, destinationId: string, query?: string): Promise<string> {
+    let target
+    try { target = resolveDestination(destinationId, query) }
+    catch { throw new AppProblem('invalid_destination', 'I couldn’t find a safe page for that. Please say where you want to go another way.') }
+    if (target.opensIn !== 'default') throw new AppProblem('navigation_unavailable', 'Opening pages in Triage’s own browser isn’t available yet.')
+    if (!this.openPage) throw new AppProblem('navigation_unavailable', 'Opening pages is unavailable in this build.')
+    this.history.activity(request.id, 'page_open', `Opening ${target.name}.`, { destination: target.id, url: target.url })
+    try { await this.openPage(target.url) }
+    catch { throw new AppProblem('navigation_failed', `I couldn’t open ${target.name}. Check that a web browser is installed and try again.`) }
+    return `Opening ${target.name} in your web browser.
+If you can’t find something on the page, ask “show me where…” and I’ll point to it.`
+  }
+
   private blockStorage(): void {
     this.storageError = 'History could not be saved. New requests are paused; check disk space and restart Triage.'
     this.emit()
@@ -363,7 +362,6 @@ export class AssistantCoordinator {
   deleteConversation(input: unknown): void {
     if (this.disposed) throw new AppProblem('closed', 'Triage is closing.')
     const id = validated(idSchema, input)
-    if (this.voiceInput) throw new AppProblem('busy', 'Finish or cancel voice input before deleting history.')
     if (this.active?.conversationId === id) throw new AppProblem('busy', 'Stop this conversation’s request before deleting it.')
     try { this.history.delete(id) }
     catch (error) { this.blockStorage(); throw error }
@@ -380,7 +378,6 @@ export class AssistantCoordinator {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
-    this.voiceInput = null
     this.connecting?.abort()
     try {
       if (this.active) this.finish(this.active, 'stopped', 'Stopped because Triage quit.')

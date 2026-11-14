@@ -1,34 +1,44 @@
-import type { IpcMain, IpcMainInvokeEvent } from 'electron'
-import { z } from 'zod'
-import { voiceChannels, type VoiceSettings } from '../../shared/voice-contracts.ts'
+import type { IpcMain, IpcMainEvent, IpcMainInvokeEvent } from 'electron'
+import { voiceChannels } from '../../shared/voice-contracts.ts'
 import { AppProblem, resultOf } from '../assistant/errors.ts'
-import { validated } from '../assistant/schemas.ts'
-import { voiceSettingsSchema } from './settings.ts'
-import type { VoiceSession } from './session.ts'
+import type { VoiceController } from './controller.ts'
 
-export function installVoiceIpc(ipc: Pick<IpcMain, 'handle' | 'removeHandler'>, session: VoiceSession,
-  trusted: (event: IpcMainInvokeEvent) => boolean,
-  operations: { save(input: VoiceSettings): unknown; setup(): unknown } = session,
-  statusSurface: (event: IpcMainInvokeEvent) => boolean = () => false): () => void {
-  const installed: string[] = []
-  function register<T>(channel: string, schema: z.ZodType<T>, action: (input: T) => unknown): void {
-    ipc.handle(channel, (event, input: unknown, ...extra: unknown[]) => resultOf(() => {
-      if (!trusted(event) && !(statusSurface(event) && [voiceChannels.get, voiceChannels.cancel, voiceChannels.stop].includes(channel as typeof voiceChannels.get))) throw new AppProblem('untrusted', 'This window cannot access voice.')
-      if (extra.length) throw new AppProblem('invalid_input', 'Unexpected voice arguments.')
-      return action(validated(schema, input))
+function sessionId(input: unknown): string {
+  if (typeof input !== 'string' || input.length > 64) throw new AppProblem('invalid_input', 'Unknown recording.')
+  return input
+}
+
+function pcm(input: unknown): Uint8Array | null {
+  if (input instanceof ArrayBuffer) return new Uint8Array(input)
+  if (ArrayBuffer.isView(input)) return new Uint8Array(input.buffer, input.byteOffset, input.byteLength)
+  return null
+}
+
+export function installVoiceIpc(
+  ipcMain: IpcMain,
+  voice: VoiceController,
+  trusted: (event: IpcMainEvent | IpcMainInvokeEvent) => boolean
+): () => void {
+  const handle = (channel: string, action: (input: unknown) => unknown): void => {
+    ipcMain.handle(channel, (event, input: unknown) => resultOf(() => {
+      if (!trusted(event)) throw new AppProblem('untrusted', 'This window cannot use voice input.')
+      return action(input)
     }))
-    installed.push(channel)
   }
-  register(voiceChannels.stop, z.undefined(), () => session.stop())
-  register(voiceChannels.context, z.object({
-    view: z.enum(['chat', 'history', 'settings']), conversationId: z.string().uuid().nullable(),
-    explicitSelection: z.boolean().optional()
-  }).strict(), (input) => session.setContext(input))
-  register(voiceChannels.get, z.undefined(), () => session.snapshot())
-  register(voiceChannels.save, voiceSettingsSchema, (input) => operations.save(input))
-  register(voiceChannels.setup, z.undefined(), () => operations.setup())
-  register(voiceChannels.start, z.undefined(), () => session.start())
-  register(voiceChannels.finish, z.string().uuid(), (id) => session.finish(id))
-  register(voiceChannels.cancel, z.string().uuid(), (id) => session.cancel(id))
-  return () => { installed.forEach((channel) => ipc.removeHandler(channel)) }
+  handle(voiceChannels.start, () => voice.start())
+  handle(voiceChannels.finish, (input) => voice.finish(sessionId(input)))
+  handle(voiceChannels.cancel, (input) => voice.cancel(sessionId(input)))
+  handle(voiceChannels.list, () => voice.recent())
+
+  const audio = (event: IpcMainEvent, id: unknown, chunk: unknown): void => {
+    if (!trusted(event) || typeof id !== 'string') return
+    const bytes = pcm(chunk)
+    if (bytes) voice.pushAudio(id, bytes)
+  }
+  ipcMain.on(voiceChannels.audio, audio)
+
+  return () => {
+    for (const channel of [voiceChannels.start, voiceChannels.finish, voiceChannels.cancel, voiceChannels.list]) ipcMain.removeHandler(channel)
+    ipcMain.removeListener(voiceChannels.audio, audio)
+  }
 }

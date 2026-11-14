@@ -1,16 +1,17 @@
-import { VoiceShortcut } from './voice/shortcut'
-import { VoiceSession } from './voice/session'
-import { VoicePreferences } from './voice/settings'
-import { NativeSpeechAdapter } from './voice/native-adapter'
+import { PhishingMonitor } from './phishing/monitor'
+import { BrowserSupervisor } from './browser/supervisor'
+import { VoiceController, type VoiceEvent } from './voice/controller'
+import { TranscribeService, transcribeConfigFromEnv } from './voice/transcribe'
+import { LocalTranscriptStore } from './voice/transcript-store'
+import { ensureMicrophoneAccess } from './voice/microphone'
 import { installVoiceIpc } from './voice/ipc'
 import { voiceChannels } from '../shared/voice-contracts'
-import { BrowserSupervisor } from './browser/supervisor'
 import { createSimplifier } from './simplifier/index'
 import { SimplifierService } from './simplifier/service'
 import { SimplifiedWindow } from './simplifier/window'
 import { ThompsonPolicy } from './simplifier/thompson'
 import demoPageHtml from '../../demo/sites/cluttered-news.html?raw'
-import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
+import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
@@ -64,8 +65,9 @@ let removeAssistantIpc: (() => void) | undefined
 let shakeMonitor: ShakeMonitor | undefined
 let removeShakeListeners: (() => void) | undefined
 let presentedGesture: string | undefined
-let voiceShortcut: VoiceShortcut | undefined
-let voice: VoiceSession | undefined
+let voice: VoiceController | undefined
+let phishing: PhishingMonitor | undefined
+let phishingEnabled = false
 let removeVoiceIpc: (() => void) | undefined
 
 function trusted(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
@@ -89,6 +91,15 @@ function buildControls(): Electron.Menu {
     { label: 'Open chat', click: () => desktop?.openChat() },
     { label: 'Hide Triage', click: () => desktop?.hide() },
     { label: 'Stop current task', click: () => assistant?.stopActive() },
+    {
+      label: 'Chrome Link Warnings (Preview)', type: 'checkbox', checked: phishingEnabled,
+      enabled: Boolean(phishing), click: (item) => {
+        phishingEnabled = item.checked
+        if (phishingEnabled) phishing?.start(true)
+        else phishing?.stop()
+        tray?.setContextMenu(buildControls())
+      }
+    },
     { type: 'separator' },
     { label: 'Quit Triage', accelerator: 'CommandOrControl+Q', click: () => app.quit() }
   ])
@@ -152,9 +163,8 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true
     // Reject input and stop native timers immediately, before waiting for Chromium.
     // Each cleanup runs even when another resource has already failed.
-    const voiceClosed = Promise.all([voiceShortcut?.dispose(), voice?.dispose()])
     const cleanup = [
-      () => removeVoiceIpc?.(),
+      () => removeVoiceIpc?.(), () => voice?.dispose(), () => phishing?.stop(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(),
@@ -168,7 +178,7 @@ if (!app.requestSingleInstanceLock()) {
     for (const close of cleanup) {
       try { close() } catch { console.warn('A Triage resource could not finish closing.') }
     }
-    void Promise.resolve(voiceClosed).then(() => Promise.all([browser?.close(), simplifier?.close()])).catch(() => {
+    void Promise.all([browser?.close(), simplifier?.close()]).catch(() => {
       console.warn('Triage browser shutdown failed.')
     }).finally(() => {
       try { closeSimplifierLog?.() } catch { /* The log may already be closed. */ }
@@ -193,6 +203,19 @@ if (!app.requestSingleInstanceLock()) {
       return { x: x + 16, y: y + 16 }
     })
     await overlay.initialize()
+    if (process.platform === 'darwin') {
+      const bundledScanner = join(process.resourcesPath, '../Helpers/TriageLinkScanner.node')
+      const helper = app.isPackaged || existsSync(bundledScanner)
+        ? bundledScanner : join(app.getAppPath(), 'release/TriageLinkScanner.node')
+      phishing = new PhishingMonitor(helper, () => Boolean(quitting || desktop?.isCapturing),
+        (state) => overlay?.drawWarnings(state), (permissionDenied) => {
+          phishingEnabled = false
+          tray?.setContextMenu(buildControls())
+          dialog.showErrorBox('Chrome Link Warnings paused', permissionDenied
+            ? 'In System Settings → Privacy & Security → Accessibility, enable Triage, then turn Link Warnings back on.'
+            : 'Run npm run phishing:build. If using Triage.app, rebuild the bundle before turning Link Warnings back on.')
+        })
+    }
     highlights = new HighlightController({
       display: (id) => overlay!.display(id), draw: (state) => overlay!.draw(state), hide: () => overlay!.hide(),
       blocked: (target) => desktop!.coversTarget(target), observeClick: observeTargetClick
@@ -204,7 +227,7 @@ if (!app.requestSingleInstanceLock()) {
       window.on('show', () => overlay?.refreshArrow())
       window.on('hide', () => overlay?.refreshArrow())
     }
-    screens = new ScreenService(electronCapture(desktop))
+    screens = new ScreenService(electronCapture(desktop, () => phishing?.clear()))
     browser = new BrowserSupervisor(() => utilityProcess.fork(join(__dirname, 'browser-worker.js'), [], {
       serviceName: 'Triage flight search', stdio: 'ignore',
       env: Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'LANG'].flatMap((name) => process.env[name] ? [[name, process.env[name]!]] : []))
@@ -220,6 +243,8 @@ if (!app.requestSingleInstanceLock()) {
     assistant = new AssistantCoordinator({
       history: new HistoryStore(join(directory, 'history.sqlite')),
       credentials, gateway: new ClaudeGateway(), screens, highlights, browser, simplifier,
+      // The coordinator only passes URLs already checked against the destination allowlist.
+      openPage: (url) => shell.openExternal(url, { activate: true }),
       changed: (state) => {
         if (!desktop || quitting) return
         desktop.setThinking(Boolean(state.active))
@@ -254,49 +279,30 @@ if (!app.requestSingleInstanceLock()) {
     installIpc()
     removeAssistantIpc = installAssistantIpc(assistant, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
       screens, shake, () => shakeMonitor?.reset())
-    // Local ad-hoc builds retain Electron's executable name, which can make
-    // app.isPackaged false. Prefer the actual bundled helper before dev resources.
-    const bundledVoice = join(process.resourcesPath, '../Helpers/TriageVoiceHelper.app')
-    const voiceHelper = existsSync(bundledVoice) ? bundledVoice :
-      app.isPackaged ? bundledVoice : join(app.getAppPath(), 'release/TriageVoiceHelper.app')
-    voice = new VoiceSession(new VoicePreferences(directory), (event, lost) => new NativeSpeechAdapter(
-      voiceHelper, event, lost), (state) => {
-      voiceShortcut?.observe(state)
-      if (!quitting && desktop) {
-        for (const window of [desktop.chat, desktop.voicePanel]) {
-          if (!window.isDestroyed()) window.webContents.send(voiceChannels.state, state)
-        }
-        if (state.settings.enabled && state.activation === 'hold') desktop.showVoice()
-        else desktop.voicePanel.hide()
-      }
-    }, undefined, {
-      reserve: (id) => assistant!.reserveVoice(id),
-      release: (id) => assistant!.releaseVoice(id),
-      submit: (id, text, conversationId) => assistant!.sendVoice(id, text, conversationId),
-      stop: () => assistant!.stopActive(),
-      conversation: (id) => assistant!.history.summary(id)
+    voice = new VoiceController({
+      service: new TranscribeService(transcribeConfigFromEnv()),
+      store: new LocalTranscriptStore(directory),
+      ensureMicrophone: ensureMicrophoneAccess
     })
-    voiceShortcut = new VoiceShortcut(voice, (event, lost) => new NativeSpeechAdapter(voiceHelper, event, lost))
-    voice.setChatOpen(desktop.chat.isVisible())
-    removeVoiceIpc = installVoiceIpc(ipcMain, voice, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
-      voiceShortcut, (event) => trusted(event) && event.sender === desktop?.voicePanel.webContents)
-    desktop.chat.on('show', () => voice?.setChatOpen(true))
-    desktop.chat.on('hide', () => voice?.setChatOpen(false))
+    voice.subscribe((event: VoiceEvent) => {
+      if (quitting || !desktop || desktop.chat.isDestroyed()) return
+      if (event.type === 'speech_state') desktop.chat.webContents.send(voiceChannels.state, event)
+      else if (event.type === 'user_utterance') desktop.chat.webContents.send(voiceChannels.utterance, event)
+      // event.type === 'transcript': a finished, stored recording. The agent layer hooks in here.
+    })
+    removeVoiceIpc = installVoiceIpc(ipcMain, voice, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
     await desktop.initialize()
-    if (voice.snapshot().settings.enabled) {
-      void voiceShortcut.setup(false).catch(() => { /* Settings offers an explicit retry. */ })
-    }
     const interrupt = (message: string) => {
       assistant?.interrupt(message)
       screens?.clear()
       highlights?.clear()
     }
-    const reset = () => { shakeMonitor?.reset(); interrupt('Interrupted because the display configuration changed.') }
+    const reset = () => { phishing?.clear(); shakeMonitor?.reset(); interrupt('Interrupted because the display configuration changed.') }
     const paused = new Set<string>()
-    const sleep = () => { paused.add('sleep'); voiceShortcut?.suspend(); voice?.suspend(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac went to sleep.') }
-    const lock = () => { paused.add('lock'); voiceShortcut?.suspend(); voice?.suspend(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac was locked.') }
-    const wake = () => { paused.delete('sleep'); if (!paused.size) { shakeMonitor?.resume(); voice?.resume(); voiceShortcut?.resume() } }
-    const unlock = () => { paused.delete('lock'); if (!paused.size) { shakeMonitor?.resume(); voice?.resume(); voiceShortcut?.resume() } }
+    const sleep = () => { paused.add('sleep'); phishing?.stop(); voice?.interrupt(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac went to sleep.') }
+    const lock = () => { paused.add('lock'); phishing?.stop(); voice?.interrupt(); shakeMonitor?.pause(); interrupt('Interrupted because this Mac was locked.') }
+    const wake = () => { paused.delete('sleep'); if (!paused.size) { if (phishingEnabled) phishing?.start(); shakeMonitor?.resume() } }
+    const unlock = () => { paused.delete('lock'); if (!paused.size) { if (phishingEnabled) phishing?.start(); shakeMonitor?.resume() } }
     powerMonitor.on('suspend', sleep)
     powerMonitor.on('resume', wake)
     powerMonitor.on('lock-screen', lock)

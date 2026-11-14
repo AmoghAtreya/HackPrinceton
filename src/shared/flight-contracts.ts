@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { BrowserChannel } from './browser-config.ts'
+import { destinationIds } from './destinations.ts'
 
 export const flightDraftSchema = z.object({
   originAirport: z.string().max(80).nullable(), destinationAirport: z.string().max(80).nullable(),
@@ -14,7 +15,9 @@ export interface FlightSearchInput {
 }
 export const routeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reply'), text: z.string().trim().min(1).max(16000) }).strict(),
-  z.object({ kind: z.literal('flight_search'), flight: flightDraftSchema }).strict()
+  z.object({ kind: z.literal('flight_search'), flight: flightDraftSchema }).strict(),
+  // Opens a curated destination in the user's own browser; the model never supplies a URL.
+  z.object({ kind: z.literal('open_page'), destination: z.enum(destinationIds), query: z.string().trim().min(1).max(200).optional() }).strict()
 ])
 export type AssistantRoute = z.infer<typeof routeSchema>
 export interface ActivityEvent { seq: number; taskId: string; type: string; createdAt: number; detail: string }

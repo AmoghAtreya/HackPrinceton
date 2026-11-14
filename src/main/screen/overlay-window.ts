@@ -6,6 +6,7 @@ import type { HighlightPort } from './highlight'
 
 export class OverlayWindow implements HighlightPort {
   private window: BrowserWindow
+  private warningState: HighlightState | null = null
   private state: HighlightState | null = null
   constructor(private arrowOrigin?: () => { x: number; y: number } | undefined) {
     this.window = new BrowserWindow({
@@ -25,7 +26,7 @@ export class OverlayWindow implements HighlightPort {
     this.window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     this.window.webContents.on('will-navigate', (event) => event.preventDefault())
     this.window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
-    this.window.webContents.on('render-process-gone', () => this.hide())
+    this.window.webContents.on('render-process-gone', () => { this.warningState = null; this.hide() })
     ipcMain.handle(highlightChannels.get, (event) => {
       if (!this.trusted(event)) throw new Error('This window cannot access the overlay.')
       return this.state
@@ -62,7 +63,7 @@ export class OverlayWindow implements HighlightPort {
     this.updateGeometry(state)
   }
   private updateGeometry(state: HighlightState): void {
-    const origin = this.arrowOrigin?.()
+    const origin = state.warnings ? undefined : this.arrowOrigin?.()
     const bounds = state.bounds
     // Include both ends when Triage and the target are on different displays.
     const x = Math.min(bounds.x, origin ? origin.x - 16 : bounds.x)
@@ -76,20 +77,31 @@ export class OverlayWindow implements HighlightPort {
     this.window.setBounds(overlayBounds, false)
     this.window.webContents.send(highlightChannels.state, this.state)
   }
+  drawWarnings(state: HighlightState | null): void {
+    this.warningState = state
+    if (this.state && !this.state.warnings) return
+    if (state && state.id === this.state?.id) this.updateGeometry(state)
+    else if (state) this.draw(state)
+    else if (this.state) this.hide()
+  }
   refreshArrow(): void {
-    if (this.state && !this.window.isDestroyed()) this.updateGeometry(this.state)
+    if (this.state && !this.state.warnings && !this.window.isDestroyed()) this.updateGeometry(this.state)
   }
   private ready = (event: IpcMainEvent, id: unknown): void => {
     const state = this.state
     if (!this.trusted(event) || !state || id !== state.id || (state.expiresAt !== null && state.expiresAt <= Date.now())) return
     const display = this.display(state.displayId)
-    if (!display || !(['x', 'y', 'width', 'height'] as const).every((key) => display.bounds[key] === state.bounds[key])) { this.hide(); return }
+    if (!display || !(['x', 'y', 'width', 'height'] as const).every((key) => display.bounds[key] === state.bounds[key])) { this.warningState = null; this.hide(); return }
     // The renderer acknowledges only after painting this exact rectangle.
     this.window.showInactive()
   }
   hide(): void {
     this.state = null
     if (!this.window.isDestroyed()) {
+      if (this.warningState?.expiresAt && this.warningState.expiresAt > Date.now()) {
+        this.draw(this.warningState)
+        return
+      }
       this.window.hide()
       this.window.webContents.send(highlightChannels.state, null)
     }

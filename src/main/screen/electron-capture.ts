@@ -6,7 +6,7 @@ import type { DesktopWindows } from '../windows'
 import { AppProblem } from '../assistant/errors'
 import type { CapturePort } from './service'
 
-export function electronCapture(windows: DesktopWindows): CapturePort {
+export function electronCapture(windows: DesktopWindows, beforeCapture?: () => void): CapturePort {
   return {
     permission: () => systemPreferences.getMediaAccessStatus('screen'),
     permissionHelp: () => {
@@ -16,6 +16,7 @@ export function electronCapture(windows: DesktopWindows): CapturePort {
         (app.isPackaged ? '' : ' This is a terminal-launched development build. If Electron is enabled but access still fails, open release/Triage.app directly from Finder instead; see README for preparation.')
     },
     capture: async (options) => {
+      beforeCapture?.()
       const cursor = options?.cursor ?? screen.getCursorScreenPoint()
       const display = screen.getDisplayNearestPoint(cursor)
       const restore = windows.hideForCapture(options?.focusAfterCapture ?? true)
