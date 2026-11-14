@@ -4,6 +4,7 @@ import type { SimplifyResult } from './engine.ts'
 import type { SimplificationEngine } from './engine.ts'
 import { distillPage } from './distill.ts'
 import { renderSimplifiedView } from './render.ts'
+import { pageLinks } from './links.ts'
 import { AppProblem } from '../assistant/errors.ts'
 import type { LearningSummary } from '../../shared/assistant-contracts.ts'
 import type { PageType } from '../../shared/simplifier-contracts.ts'
@@ -152,7 +153,8 @@ export class SimplifierService {
     const result = await this.engine.simplify({ page: distilled, userId, voiceEnabled: false, credentials, signal })
     const html = renderSimplifiedView(result.view, result.arm, distilled, {
       pageType: result.pageType, policyMode: result.mode, hiddenRemoved: distilled.stats.hiddenRemoved,
-      originalElements: distilled.stats.interactiveElements
+      originalElements: distilled.stats.interactiveElements,
+      links: pageLinks(distilled, result.view.actions.map((action) => action.elementId))
     })
     this.presenter.show(html, result.view.title)
     if (this.current && !this.current.closedAt) this.current.closedAt = this.now()
