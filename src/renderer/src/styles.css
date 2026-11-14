@@ -205,3 +205,8 @@ button:disabled { opacity: .55; cursor: default; }
 .voice-chat-controls .voice-actions { margin: 8px 0; }
 .voice-chat-controls h3 { margin: 4px 0 8px; }
 .voice-chat-controls textarea { max-height: 100px; }
+
+.link-warning { position: absolute; box-sizing: border-box; border: 2px solid #b65a00; border-radius: 4px; }
+.link-warning span { position: absolute; left: -2px; top: 100%; padding: 2px 5px; border-radius: 3px; background: #873f00; color: white; font: 600 11px/1.25 system-ui; white-space: nowrap; }
+.link-warning[data-warning="Mock phishing"] { border-color: #bb253b; }
+.link-warning[data-warning="Mock phishing"] span { background: #a71931; }
