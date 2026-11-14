@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CareWell Pharmacy — Refill a prescription</title>
+<style>
+  body { font: 14px/1.45 Arial, sans-serif; margin: 0; background: #f4f7f6; color: #24302e; }
+  header { background: #0f6b5c; color: #fff; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; }
+  header b { font-size: 20px; } header nav a { color: #d9f3ee; margin-left: 14px; font-size: 13px; }
+  main { max-width: 620px; margin: 24px auto; background: #fff; border-radius: 10px; padding: 24px 28px; box-shadow: 0 1px 4px #0002; }
+  h1 { font-size: 22px; margin: 0 0 4px; } .lead { color: #5b6b68; margin: 0 0 18px; }
+  label { display: block; font-weight: 600; margin: 14px 0 4px; }
+  input, select { width: 100%; box-sizing: border-box; padding: 9px 10px; border: 1px solid #b9c7c4; border-radius: 6px; font: inherit; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  button { margin-top: 20px; background: #0f6b5c; color: #fff; border: 0; padding: 12px 18px; border-radius: 8px; font: 600 15px Arial; cursor: pointer; }
+  .error { color: #a3261b; margin-top: 10px; min-height: 1em; }
+  .done { background: #e7f6f1; border: 1px solid #8fd1bf; border-radius: 8px; padding: 16px; }
+  .done strong { font-size: 18px; }
+  footer { text-align: center; font-size: 11px; color: #7b8a87; padding: 20px; }
+</style>
+</head>
+<body>
+<header><b>CareWell Pharmacy</b><nav><a href="#">Prescriptions</a><a href="#">Store locator</a><a href="#">Help</a></nav></header>
+<main id="main">
+  <h1>Refill a prescription</h1>
+  <p class="lead">No account needed. We'll text you when it's ready. You pay at pickup.</p>
+  <form id="refill" novalidate>
+    <label for="name">Full name</label>
+    <input id="name" name="name" autocomplete="name">
+    <div class="row">
+      <div><label for="dob">Date of birth</label><input id="dob" name="dob" placeholder="MM/DD/YYYY" autocomplete="bday"></div>
+      <div><label for="rx">Prescription number</label><input id="rx" name="rx" placeholder="e.g. RX-12345"></div>
+    </div>
+    <div class="row">
+      <div><label for="store">Pickup store</label>
+        <select id="store" name="store">
+          <option value="">Choose a store</option>
+          <option>CareWell – Main Street</option>
+          <option>CareWell – Riverside Plaza</option>
+          <option>CareWell – Oak Avenue</option>
+        </select></div>
+      <div><label for="time">Pickup time</label>
+        <select id="time" name="time">
+          <option value="">Choose a time</option>
+          <option>Morning (9am–12pm)</option>
+          <option>Afternoon (12pm–5pm)</option>
+          <option>Evening (5pm–8pm)</option>
+        </select></div>
+    </div>
+    <button type="submit">Request refill</button>
+    <p class="error" id="error" role="alert"></p>
+  </form>
+</main>
+<footer>Demo site for Triage. Not a real pharmacy. Nothing you enter here is sent anywhere.</footer>
+<script>
+  document.getElementById('refill').addEventListener('submit', function (event) {
+    event.preventDefault()
+    var f = event.target
+    var missing = ['name', 'dob', 'rx', 'store', 'time'].filter(function (k) { return !f[k].value.trim() })
+    if (missing.length) { document.getElementById('error').textContent = 'Please fill in every field.'; return }
+    if (!/\d/.test(f.rx.value)) { document.getElementById('error').textContent = 'That prescription number does not look right.'; return }
+    var code = 'RF-' + String(Math.floor(100000 + Math.random() * 900000))
+    document.getElementById('main').innerHTML = '<div class="done" role="status"><strong>Refill requested</strong>' +
+      '<p>Confirmation number <b id="confirmation">' + code + '</b></p>' +
+      '<p>Ready at ' + f.store.value.replace(/[<>&]/g, '') + ', ' + f.time.value.replace(/[<>&]/g, '').toLowerCase() + '. Pay at pickup.</p></div>'
+  })
+</script>
+</body>
+</html>
