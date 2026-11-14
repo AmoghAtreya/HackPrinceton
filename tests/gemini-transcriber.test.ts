@@ -63,3 +63,45 @@ test('a slow Gemini reply times out and falls back', async () => {
     assert.ok(Date.now() - started < 2000)
   } finally { clearInterval(keepAlive) }
 })
+
+test('a busy main model (503) is retried once on the lighter model', async () => {
+  const { fetcher, calls } = fakeFetch(() => calls.length === 1 ? new Response('{}', { status: 503 }) : answer('{"text":"Is this safe?","clarity":"clear"}'))
+  const result = await new GeminiTranscriber({ fetcher }).transcribe(key, audio, 16000, signal)
+  assert.deepEqual(result, { text: 'Is this safe?', clarity: 'clear' })
+  assert.deepEqual(calls.map((call) => call.url.split('/models/')[1]), ['gemini-flash-latest:generateContent', 'gemini-flash-lite-latest:generateContent'])
+})
+
+test('a rejected key is not retried', async () => {
+  const { fetcher, calls } = fakeFetch(() => new Response('{}', { status: 401 }))
+  assert.equal(await new GeminiTranscriber({ fetcher }).transcribe(key, audio, 16000, signal), null)
+  assert.equal(calls.length, 1)
+})
+
+test('a slow main model hands over to the lighter model within the overall limit', async () => {
+  let call = 0
+  const fetcher = ((_url: string, init: RequestInit) => {
+    call++
+    if (call === 1) return new Promise<Response>((_resolve, reject) => init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
+    return Promise.resolve(answer('{"text":"Open Gmail.","clarity":"clear"}'))
+  }) as unknown as typeof fetch
+  const keepAlive = setInterval(() => {}, 1000)
+  try {
+    const started = Date.now()
+    const result = await new GeminiTranscriber({ fetcher, firstAttemptMs: 60, timeoutMs: 2000 }).transcribe(key, audio, 16000, signal)
+    assert.deepEqual(result, { text: 'Open Gmail.', clarity: 'clear' })
+    assert.equal(call, 2)
+    assert.ok(Date.now() - started < 1500)
+  } finally { clearInterval(keepAlive) }
+})
+
+test('cancelling stops without trying the lighter model', async () => {
+  const controller = new AbortController()
+  let calls = 0
+  const fetcher = ((_url: string, init: RequestInit) => {
+    calls++
+    return new Promise<Response>((_resolve, reject) => init.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError'))))
+  }) as unknown as typeof fetch
+  setTimeout(() => controller.abort(), 20)
+  assert.equal(await new GeminiTranscriber({ fetcher }).transcribe(key, audio, 16000, controller.signal), null)
+  assert.equal(calls, 1)
+})
