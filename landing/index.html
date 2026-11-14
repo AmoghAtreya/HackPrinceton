@@ -260,7 +260,8 @@
   }
   .trio h2 span { display: block; }
   .trio h2[id] { scroll-margin-top: 100px; }
-  .feature-row { margin-top: 70px; display: flex; justify-content: center; align-items: flex-end; gap: 24px; }
+  .feature-group { margin-top: 70px; display: grid; gap: 24px; }
+  .feature-row { min-height: 528px; display: flex; justify-content: center; align-items: flex-end; gap: 24px; }
   .feature {
     --card: #f7efe8;
     position: relative;
@@ -275,16 +276,6 @@
   }
   .feature:not(.is-active):hover { --card: #f3e5da; }
   .feature.is-active { --card: #ffe6d2; flex-basis: 422px; height: 528px; padding: 38px 36px 36px; color: var(--navy); }
-  /* Four-card row: cards share the width so the row stays put while one grows */
-  .feature-row--four .feature {
-    flex: 1 1 0; min-width: 0; max-width: 300px; height: 440px; padding: 28px 26px 30px;
-    transition: flex-grow .45s cubic-bezier(.2, .7, .2, 1), max-width .45s cubic-bezier(.2, .7, .2, 1), height .45s cubic-bezier(.2, .7, .2, 1), padding .45s cubic-bezier(.2, .7, .2, 1), background-color .3s ease, color .3s ease;
-  }
-  .feature-row--four .feature.is-active { flex-grow: 1.32; max-width: 384px; height: 540px; padding: 36px 30px 32px; }
-  .feature-row--four .feature h3 { font-size: 22px; }
-  .feature-row--four .feature.is-active h3 { font-size: 24px; }
-  .feature-row--four .feature p { font-size: 16.5px; }
-  .feature-row--four .feature.is-active p { max-height: 210px; }
   .feature h3 { margin: 0; font-size: 24px; font-weight: 500; line-height: 1.28; letter-spacing: -.012em; max-width: 13ch; }
   .feature.is-active h3 { font-weight: 600; font-size: 26px; max-width: none; }
   .feature h3 button { all: unset; cursor: pointer; }
@@ -348,12 +339,10 @@
   @media (max-width: 1000px) {
     .features { padding: 72px 16px 0; }
     .trio { padding-bottom: 96px; }
-    .feature-row { flex-direction: column; align-items: center; gap: 16px; margin-top: 44px; }
-    .feature, .feature.is-active,
-    .feature-row--four .feature, .feature-row--four .feature.is-active { flex: none; width: 100%; max-width: 520px; height: auto; padding: 28px 28px 30px; }
-    .feature h3, .feature.is-active h3,
-    .feature-row--four .feature h3, .feature-row--four .feature.is-active h3 { font-size: 23px; max-width: none; }
-    .feature-row--four .feature p { font-size: 18px; }
+    .feature-group { margin-top: 44px; gap: 16px; }
+    .feature-row { min-height: 0; flex-direction: column; align-items: center; gap: 16px; }
+    .feature, .feature.is-active { flex: none; width: 100%; max-width: 520px; height: auto; padding: 28px 28px 30px; }
+    .feature h3, .feature.is-active h3 { font-size: 23px; max-width: none; }
     .feature h3 button { cursor: default; }
     .art { height: 220px; flex: none; }
     .feature p, .feature.is-active p { max-height: none; opacity: 1; }
@@ -379,7 +368,7 @@
     </a>
     <div class="nav-links">
       <a href="#t1">How it works</a>
-      <a href="#t3">Safety</a>
+      <a href="#t1">Safety</a>
       <a href="#">For families</a>
       <a href="#">Pricing</a>
     </div>
@@ -524,33 +513,12 @@
 </svg>
 
 <main class="features">
-
-  <!-- Understand: chat, explain, point -->
   <section class="trio" aria-labelledby="t1">
     <h2 id="t1"><span>A new kind of</span><span>helper for your Mac</span></h2>
-    <div class="feature-row">
+    <div class="feature-group">
+      <div class="feature-row">
       <article class="feature">
-        <h3><button type="button" aria-expanded="false">Chat about anything</button></h3>
-        <div class="art" aria-hidden="true">
-          <svg viewBox="0 0 240 220">
-            <use href="#blob" x="34" y="30" width="62" height="60"/>
-            <path class="fl" d="M126 30h66a16 16 0 0 1 16 16v16a16 16 0 0 1-16 16h-58l-14 12v-12a16 16 0 0 1-10-15v-17a16 16 0 0 1 16-16z"/>
-            <circle class="dot" cx="142" cy="54" r="3.5"/><circle class="dot" cx="158" cy="54" r="3.5"/><circle class="dot" cx="174" cy="54" r="3.5"/>
-            <path class="fl" d="M54 122l26-13 26 13v10l-26 13-26-13z"/><path class="ln" d="M54 122l26 13 26-13M80 135v10"/>
-            <path class="fl" d="M112 122l26-13 26 13v10l-26 13-26-13z"/><path class="ln" d="M112 122l26 13 26-13M138 135v10"/>
-            <path class="fl" d="M83 152l26-13 26 13v10l-26 13-26-13z"/><path class="ln" d="M83 152l26 13 26-13M109 165v10"/>
-            <path class="fl" d="M141 152l26-13 26 13v10l-26 13-26-13z"/><path class="ln" d="M141 152l26 13 26-13M167 165v10"/>
-            <text transform="translate(80 126) scale(1 .62)" text-anchor="middle" font-size="15" font-weight="600">H</text>
-            <text transform="translate(138 126) scale(1 .62)" text-anchor="middle" font-size="15" font-weight="600">i</text>
-            <text transform="translate(109 156) scale(1 .62)" text-anchor="middle" font-size="15" font-weight="600">?</text>
-            <text transform="translate(167 156) scale(1 .62)" text-anchor="middle" font-size="15" font-weight="600">↵</text>
-          </svg>
-        </div>
-        <p>Click the companion and ask, by typing or holding the talk button. Follow-ups like “explain that more simply” pick up right where you left off.</p>
-      </article>
-
-      <article class="feature is-active">
-        <h3><button type="button" aria-expanded="true">Explains your screen</button></h3>
+        <h3><button type="button" aria-expanded="0">Explains your screen</button></h3>
         <div class="art" aria-hidden="true">
           <svg viewBox="0 0 240 220">
             <rect class="fl" x="30" y="30" width="150" height="110" rx="10"/>
@@ -565,9 +533,8 @@
         </div>
         <p>Ask what something means. Triage reads the window you’re in and answers in plain words, and tells you when part of the screen is hidden.</p>
       </article>
-
-      <article class="feature">
-        <h3><button type="button" aria-expanded="false">Points to the right button</button></h3>
+      <article class="feature is-active">
+        <h3><button type="button" aria-expanded="1">Points to the right button</button></h3>
         <div class="art" aria-hidden="true">
           <svg viewBox="0 0 240 220">
             <rect class="fl" x="22" y="34" width="196" height="132" rx="10"/>
@@ -584,15 +551,8 @@
         </div>
         <p>Say “show me where” and Triage draws a ring around the right button on your screen. You still do the clicking, so you learn the way.</p>
       </article>
-    </div>
-  </section>
-
-  <!-- Act and protect: do it, phishing, context, rebuild -->
-  <section class="trio" aria-labelledby="t3">
-    <h2 id="t3"><span>Does the work and</span><span>looks out for you</span></h2>
-    <div class="feature-row feature-row--four">
       <article class="feature">
-        <h3><button type="button" aria-expanded="false">Does it for you</button></h3>
+        <h3><button type="button" aria-expanded="0">Does it for you</button></h3>
         <div class="art" aria-hidden="true">
           <svg viewBox="0 0 240 220">
             <path class="ln dash" d="M20 204C48 196 70 174 80 148"/>
@@ -608,9 +568,10 @@
         </div>
         <p>Ask for Alaska Airlines flights and Triage fills in the search in its own browser, showing each step. Ask for “my Amazon orders” and it opens the real site, never a lookalike.</p>
       </article>
-
-      <article class="feature is-active">
-        <h3><button type="button" aria-expanded="true">Spots phishing links</button></h3>
+      </div>
+      <div class="feature-row">
+      <article class="feature">
+        <h3><button type="button" aria-expanded="0">Spots phishing links</button></h3>
         <div class="art" aria-hidden="true">
           <svg viewBox="0 0 240 220">
             <rect class="fl" x="26" y="44" width="92" height="26" rx="13"/>
@@ -629,9 +590,8 @@
         </div>
         <p>Triage checks links in Chrome and labels risky ones “Potential phishing” or “Unencrypted HTTP” before you click. The checks run on your Mac.</p>
       </article>
-
       <article class="feature">
-        <h3><button type="button" aria-expanded="false">Remembers your context</button></h3>
+        <h3><button type="button" aria-expanded="0">Remembers your context</button></h3>
         <div class="art" aria-hidden="true">
           <svg viewBox="0 0 240 220">
             <rect class="fl" x="52" y="40" width="128" height="152" rx="10"/>
@@ -649,9 +609,8 @@
         </div>
         <p>Triage keeps your past conversations on your Mac, so it remembers what you asked before and how you like things explained. Delete anything, anytime.</p>
       </article>
-
       <article class="feature">
-        <h3><button type="button" aria-expanded="false">Rebuilds busy websites</button></h3>
+        <h3><button type="button" aria-expanded="0">Rebuilds busy websites</button></h3>
         <div class="art" aria-hidden="true">
           <svg viewBox="0 0 240 220">
             <rect class="fl" x="20" y="44" width="90" height="122" rx="8"/>
@@ -670,6 +629,7 @@
         </div>
         <p>Type /simplify and Triage rebuilds a cluttered page as a clean, large-print version without the ads and pop-ups. Rate it, and it learns the layout you like.</p>
       </article>
+      </div>
     </div>
   </section>
 </main>
@@ -682,12 +642,12 @@
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
 
-    // In each row, the card under the mouse opens and the others close.
+    // The card under the mouse opens and the other five close.
     // Cards open on real mouse movement (not just pointerenter), and stay put while
     // the row is resizing, so a still cursor never makes cards flip back and forth.
     const RESIZE_MS = 450;
-    document.querySelectorAll('.feature-row').forEach(row => {
-      const cards = [...row.querySelectorAll('.feature')];
+    document.querySelectorAll('.feature-group').forEach(group => {
+      const cards = [...group.querySelectorAll('.feature')];
       let lockedUntil = 0;
       const open = card => {
         if (card.classList.contains('is-active')) return;
