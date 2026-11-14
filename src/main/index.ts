@@ -29,6 +29,7 @@ import { ScreenService } from './screen/service'
 import { ContextService } from './context/service'
 import { PairedCapture } from './context/paired-capture'
 import { electronContext } from './context/electron-context'
+import { screenContextBlock } from './context/chat-context'
 import { electronCapture } from './screen/electron-capture'
 import { HighlightController } from './screen/highlight'
 import { OverlayWindow } from './screen/overlay-window'
@@ -59,6 +60,7 @@ let quitting = false
 let screens: ScreenService | undefined
 let contexts: ContextService | undefined
 let captures: PairedCapture | undefined
+let chatContexts: ContextService | undefined
 let highlights: HighlightController | undefined
 let overlay: OverlayWindow | undefined
 let assistant: AssistantCoordinator | undefined
@@ -181,7 +183,7 @@ if (!app.requestSingleInstanceLock()) {
       () => removeVoiceIpc?.(), () => voice?.dispose(), () => phishing?.stop(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
-      () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(),
+      () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(), () => chatContexts?.dispose(),
       () => highlights?.dispose(), () => overlay?.dispose(),
       () => desktop?.dispose(), () => tray?.destroy(), () => screenSimplifier?.dispose(), () => simplifiedWindow?.dispose(),
       () => {
@@ -235,6 +237,8 @@ if (!app.requestSingleInstanceLock()) {
     const accessibility = process.platform === 'darwin' ? electronContext(app.isPackaged || existsSync(bundledContext)
       ? bundledContext : join(app.getAppPath(), 'release/TriageContextSnapshot.node')) : undefined
     contexts = accessibility ? new ContextService(accessibility.port) : undefined
+    // Its own instance: a chat message must not replace the snapshot paired with a pending screenshot.
+    chatContexts = accessibility ? new ContextService(accessibility.port) : undefined
     highlights = new HighlightController({
       display: (id) => overlay!.display(id), draw: (state) => overlay!.draw(state), hide: () => overlay!.hide(),
       redraw: (state) => overlay!.redraw(state),
@@ -272,6 +276,14 @@ if (!app.requestSingleInstanceLock()) {
     assistant = new AssistantCoordinator({
       history: new HistoryStore(join(directory, 'history.sqlite')),
       credentials, gateway: new ClaudeGateway(), screens, contexts: captures, highlights, browser, simplifier, screenSimplifier,
+      // Labels only, and only what is frontmost. Without Accessibility access chat simply gets no block.
+      screenContext: async () => {
+        if (!chatContexts) return undefined
+        const snapshot = await chatContexts.capture()
+        chatContexts.clear()
+        return screenContextBlock(snapshot)
+      },
+      captureScreen: () => captures!.capture(),
       // The coordinator only passes URLs already checked against the destination allowlist.
       openPage: (url) => shell.openExternal(url, { activate: true }),
       changed: (state) => {
