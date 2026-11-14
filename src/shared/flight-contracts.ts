@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { BrowserChannel } from './browser-config.ts'
 import { destinationIds } from './destinations.ts'
+import { contactDraftSchema } from './trust-contracts.ts'
 
 export const flightDraftSchema = z.object({
   originAirport: z.string().max(80).nullable(), destinationAirport: z.string().max(80).nullable(),
@@ -21,6 +22,8 @@ export const routeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('simplify_page') }).strict(),
   // The text snapshot of the screen is not enough; the app may take one redacted screenshot and ask again.
   z.object({ kind: z.literal('needs_screenshot'), reason: z.string().trim().min(1).max(300) }).strict(),
+  // The user stated how someone they know reaches them. A suggestion only: the app verifies it against the user's own words and asks before saving.
+  z.object({ kind: z.literal('remember_contact'), contact: contactDraftSchema }).strict(),
   z.object({ kind: z.literal('open_page'), destination: z.enum(destinationIds), query: z.string().trim().min(1).max(200).optional() }).strict()
 ])
 export type AssistantRoute = z.infer<typeof routeSchema>
