@@ -12,6 +12,10 @@ import { modelSchema } from './schemas.ts'
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 /** Google's alias for the current Flash model; used when a pinned model has been retired. */
 export const GEMINI_FLASH_ALIAS = 'gemini-flash-latest'
+/** The lighter Flash model. It has its own quota, so it can answer when Flash is rate-limited or busy. */
+export const GEMINI_FLASH_LITE_ALIAS = 'gemini-flash-lite-latest'
+/** How long the main model gets before the lighter one is tried: a quick answer matters more than a long wait. */
+const MAIN_MODEL_TIMEOUT_MS = 20000
 
 /**
  * Triage's requests are short and simple, so a quick answer matters more than
@@ -146,7 +150,8 @@ export class GeminiGateway implements ModelGateway {
       }
       const started = Date.now()
       try {
-        raw = await this.call(key, `/models/${encodeURIComponent(target)}:generateContent`, signal, body)
+        raw = await this.call(key, `/models/${encodeURIComponent(target)}:generateContent`, signal, body,
+          target === GEMINI_FLASH_LITE_ALIAS ? undefined : MAIN_MODEL_TIMEOUT_MS)
         console.info(`Gemini ${target} answered in ${Date.now() - started} ms.`)
         break
       } catch (error) {
@@ -154,6 +159,12 @@ export class GeminiGateway implements ModelGateway {
         if (error.code === 'thinking_unsupported') {
           if (this.thinkingRefused.has(target)) throw geminiProblem(400)
           this.thinkingRefused.add(target)
+          continue
+        }
+        // Out of quota, busy or too slow: the lighter model has its own quota and is quicker.
+        if (['rate_limit', 'provider_unavailable', 'connection'].includes(error.code) && target !== GEMINI_FLASH_LITE_ALIAS) {
+          console.warn(`Gemini ${target} could not answer (${error.code}); trying ${GEMINI_FLASH_LITE_ALIAS}.`)
+          target = GEMINI_FLASH_LITE_ALIAS
           continue
         }
         // Google retires model versions (they still appear in the list but return 404); use the current Flash instead.
