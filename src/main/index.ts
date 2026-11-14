@@ -249,7 +249,7 @@ if (!app.requestSingleInstanceLock()) {
       window.on('hide', () => overlay?.refreshArrow())
     }
     screens = new ScreenService(electronCapture(desktop, () => phishing?.clear(),
-      (cursor) => captures?.snapshotContext(cursor) ?? Promise.resolve()))
+      (cursor) => captures?.privateFields(cursor) ?? Promise.resolve(null)))
     captures = new PairedCapture(screens, contexts)
     browser = new BrowserSupervisor(() => utilityProcess.fork(join(__dirname, 'browser-worker.js'), [], {
       serviceName: 'Triage flight search', stdio: 'ignore',
