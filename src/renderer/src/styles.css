@@ -222,3 +222,22 @@ button:disabled { opacity: .55; cursor: default; }
 .speech-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .request-log-settings { margin-top: 22px; padding-top: 14px; border-top: 1px solid #e6dacc; }
 .request-log-settings h3 { margin: 0 0 8px; font-size: 16px; color: #66503d; }
+
+/* Simplified view and safety check */
+.screen-help-buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+.screen-help-buttons .secondary-button { padding: 9px 8px; font-size: 12.5px; background: #f6edd9; color: #66503d; }
+.screen-help-buttons .secondary-button:not(:disabled):hover { background: #efe1c4; }
+.screen-help { margin-bottom: 10px; padding: 10px 12px; border-radius: 12px; background: #fffaf3; border: 1px solid #eee6dc; max-height: 230px; overflow-y: auto; }
+.screen-help-header { display: flex; align-items: center; justify-content: space-between; font-size: 14px; color: var(--ink); }
+.screen-help-summary, .safety-headline, .safety-advice { margin: 6px 0; font-size: 13.5px; line-height: 1.4; color: var(--ink); }
+.simplified-actions { display: flex; flex-direction: column; gap: 6px; margin: 8px 0; }
+.simplified-action { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 12px; border: 0; border-radius: 10px; background: var(--accent); color: #fffaf3; font-size: 15px; font-weight: 600; text-align: left; }
+.simplified-action:not(:disabled):hover { background: #c65730; }
+.simplified-action:disabled { opacity: .5; }
+.safety-check--looks_safe { background: #eaf0e5; border-color: #c9dbc0; }
+.safety-check--be_careful { background: #f6edd9; border-color: #e6d2a8; }
+.safety-check--likely_scam { background: #fae2d9; border-color: #e7a990; }
+.safety-check--likely_scam .screen-help-header strong { color: #a3341a; font-size: 16px; }
+.safety-reasons { margin: 4px 0; padding-left: 18px; font-size: 13px; line-height: 1.45; }
+.safety-advice { font-weight: 600; }
+

@@ -11,6 +11,8 @@ import { matchVoiceIntent, needsConfirmation } from './voice/intents'
 import { speechPlayer } from './voice/speech-player'
 import { failureSpeech, prepareSpeech } from '../../shared/speech-text'
 import type { ReadAloud } from '../../shared/speech-contracts'
+import { analysisSpeech, type ScreenAnalysis, type ScreenAnalysisKind } from '../../shared/screen-analysis-contracts'
+import { ScreenHelpCard } from './ScreenHelpCard'
 import { displayError, unwrap } from './assistant-ui'
 import { appendConversations, refreshConversations } from './history-state'
 
@@ -30,6 +32,9 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   const [error, setError] = useState('')
   /** A gentle, non-error message about voice input (e.g. "Did I hear that right?"). */
   const [voiceNotice, setVoiceNotice] = useState('')
+  /** The current simplified view or safety check card, if any. */
+  const [screenHelp, setScreenHelp] = useState<ScreenAnalysis | null>(null)
+  const [analyzing, setAnalyzing] = useState<ScreenAnalysisKind | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const keepScroll = useRef(false)
@@ -181,7 +186,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
 
   function newConversation() {
     speechPlayer.stop()
-    setCapture(null); void bridge.discardScreen(); setSelected(null); setDetail(null); setDraft(''); setError(''); setVoiceNotice(''); setView('chat')
+    setCapture(null); void bridge.discardScreen(); setSelected(null); setDetail(null); setDraft(''); setError(''); setVoiceNotice(''); setScreenHelp(null); setView('chat')
   }
 
   /** Puts spoken words in the message box (after any typed text) instead of sending them. */
@@ -193,7 +198,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   }
 
   /** Uses the screenshot already waiting in the composer, or takes a fresh one, then sends. */
-  async function captureAndDeliver(text: string, mode: 'explain' | 'highlight') {
+  async function captureAndDeliver(text: string, mode: 'explain' | 'highlight', source: 'chat' | 'voice' = 'voice') {
     let shot = capture
     if (!shot) {
       setCapturing(true); setError('')
@@ -201,7 +206,22 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       catch (problem) { setError(displayError(problem)); return }
       finally { setCapturing(false) }
     }
-    await deliver(text, 'voice', shot, mode)
+    await deliver(text, source, shot, mode)
+  }
+
+  /** Simplified view or safety check of the current screen, shown as a card and optionally spoken. */
+  async function analyzeScreen(kind: ScreenAnalysisKind, source: 'chat' | 'voice') {
+    if (!assistant || analyzing || capturing || busy || assistant.active) return
+    if (!assistant.config.configured) { setView('settings'); return }
+    setAnalyzing(kind); setError(''); setVoiceNotice(''); setScreenHelp(null); setView('chat')
+    try {
+      const shot = capture ?? unwrap(await bridge.captureScreen())
+      setCapture(null)
+      const result = unwrap(await bridge.analyzeScreen({ captureId: shot.metadata.id, kind, source }))
+      setScreenHelp(result)
+      if (readAloud.current === 'always' || (readAloud.current === 'voice' && source === 'voice')) void speechPlayer.speak(analysisSpeech(result))
+    } catch (problem) { setError(displayError(problem)) }
+    finally { setAnalyzing(null) }
   }
 
   /** A finished voice recording: handle a local shortcut, or send it like a typed message. */
@@ -226,7 +246,8 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       holdForReview(text, 'Did I hear that right? I put your words in the message box. Fix anything that’s wrong, then press Send.')
       return
     }
-    if (intent.kind === 'explain_screen') await captureAndDeliver(text, 'explain')
+    if (intent.kind === 'simplify' || intent.kind === 'safety_check') await analyzeScreen(intent.kind === 'simplify' ? 'simplify' : 'safety', 'voice')
+    else if (intent.kind === 'explain_screen') await captureAndDeliver(text, 'explain')
     else if (intent.kind === 'show_me_where') await captureAndDeliver(text, 'highlight')
     else await deliver(text, 'voice', capture, highlightMode ? 'highlight' : 'explain')
   }
@@ -371,6 +392,14 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     </div>
     {view === 'chat' && <footer className="chat-footer">
       <VoiceButton bridge={bridge} onTranscript={(record) => void handleTranscript(record)} />
+      {screenHelp && <ScreenHelpCard analysis={screenHelp} disabled={capturing || busy || Boolean(active) || Boolean(analyzing)}
+        onClose={() => setScreenHelp(null)}
+        onAction={(action) => void captureAndDeliver(action.instruction, action.kind === 'show_me_where' ? 'highlight' : 'explain', 'chat')} />}
+      {analyzing && <p className="notice warning" role="status">{analyzing === 'simplify' ? 'Looking at your screen to simplify it…' : 'Checking your screen for scams or tricks…'}</p>}
+      <div className="screen-help-buttons">
+        <button type="button" className="secondary-button" disabled={Boolean(analyzing) || capturing || busy || Boolean(active)} onClick={() => void analyzeScreen('simplify', 'chat')}>Simplify this screen</button>
+        <button type="button" className="secondary-button safety-button" disabled={Boolean(analyzing) || capturing || busy || Boolean(active)} onClick={() => void analyzeScreen('safety', 'chat')}>Is this safe?</button>
+      </div>
       <div className="screen-controls">
         <button className="text-button" disabled={capturing || busy || Boolean(active)} onClick={() => void captureScreen()}>{capturing ? 'Capturing screen…' : 'Capture screen'}</button>
         <button className="text-button" disabled={Boolean(active) || busy} onClick={() => {
