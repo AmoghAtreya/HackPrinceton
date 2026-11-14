@@ -4,6 +4,7 @@ import { VoiceController, type VoiceEvent } from './voice/controller'
 import { TranscribeService, transcribeConfigFromEnv } from './voice/transcribe'
 import { AppleSpeechService } from './voice/apple-speech'
 import { GeminiTranscriber } from './voice/gemini-transcriber'
+import { VoiceKeyStore } from './voice/voice-key'
 import { isGeminiKey } from './assistant/gemini'
 import { LocalTranscriptStore } from './voice/transcript-store'
 import { ensureMicrophoneAccess } from './voice/microphone'
@@ -201,12 +202,16 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     const directory = app.getPath('userData')
-    const credentials = new Credentials(directory, {
+    const secretCrypto = {
       available: () => safeStorage.isAsyncEncryptionAvailable(),
-      encrypt: (text) => safeStorage.encryptStringAsync(text),
-      decrypt: (bytes) => safeStorage.decryptStringAsync(bytes)
-    })
+      encrypt: (text: string) => safeStorage.encryptStringAsync(text),
+      decrypt: (bytes: Buffer) => safeStorage.decryptStringAsync(bytes)
+    }
+    const credentials = new Credentials(directory, secretCrypto)
     await credentials.initialize()
+    // A Gemini key used only for voice transcription; the chatbot key can stay Anthropic.
+    const voiceKeys = new VoiceKeyStore(directory, secretCrypto)
+    await voiceKeys.initialize()
     desktop = new DesktopWindows(directory)
     overlay = new OverlayWindow(() => {
       const window = desktop!.chat.isVisible() ? desktop!.chat : desktop!.companion
@@ -295,12 +300,15 @@ if (!app.requestSingleInstanceLock()) {
     removeAssistantIpc = installAssistantIpc(assistant, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
       screens, shake, () => shakeMonitor?.reset())
     const speechPreferences = new SpeechPreferences(directory)
-    // Gemini key for voice: the connected chatbot key if it is a Gemini key, else GEMINI_API_KEY.
-    const geminiVoiceKey = (): string | null => {
-      try { const key = credentials.getKey(); if (isGeminiKey(key)) return key } catch { /* No chatbot key connected. */ }
+    // Gemini key for voice, in order: the voice-only key, a Gemini chatbot key, then GEMINI_API_KEY.
+    const geminiVoiceKeyWithSource = (): { key: string; source: 'voice' | 'chatbot' | 'env' } | null => {
+      const voiceOnly = voiceKeys.get()
+      if (voiceOnly) return { key: voiceOnly, source: 'voice' }
+      try { const key = credentials.getKey(); if (isGeminiKey(key)) return { key, source: 'chatbot' } } catch { /* No chatbot key connected. */ }
       const fromEnv = process.env.GEMINI_API_KEY?.trim()
-      return fromEnv && isGeminiKey(fromEnv) ? fromEnv : null
+      return fromEnv && isGeminiKey(fromEnv) ? { key: fromEnv, source: 'env' } : null
     }
+    const geminiVoiceKey = (): string | null => geminiVoiceKeyWithSource()?.key ?? null
     const geminiTranscriber = new GeminiTranscriber()
     voice = new VoiceController({
       // Free on-device Apple speech by default; TRIAGE_SPEECH_TO_TEXT=transcribe uses Amazon Transcribe.
@@ -328,7 +336,11 @@ if (!app.requestSingleInstanceLock()) {
     removeRequestLogIpc = installRequestLogIpc(ipcMain, requestLog, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
     polly = new PollyService()
     removeSpeechIpc = installSpeechIpc(ipcMain, polly, speechPreferences,
-      (event) => trusted(event) && event.sender === desktop?.chat.webContents, () => Boolean(geminiVoiceKey()))
+      (event) => trusted(event) && event.sender === desktop?.chat.webContents, {
+        status: () => { const found = geminiVoiceKeyWithSource(); return { geminiKeyAvailable: Boolean(found), geminiKeySource: found?.source ?? null, geminiVoiceKey: voiceKeys.status() } },
+        set: async (key, remember) => { await voiceKeys.set(key, remember) },
+        remove: () => { voiceKeys.remove() }
+      })
     await desktop.initialize()
     const interrupt = (message: string) => {
       assistant?.interrupt(message)

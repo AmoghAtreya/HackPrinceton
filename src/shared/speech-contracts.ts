@@ -24,6 +24,10 @@ export interface SpeechSettings {
   geminiTranscription: boolean
   /** Read-only: whether a Gemini key is available for voice right now. */
   geminiKeyAvailable?: boolean
+  /** Read-only: where that key comes from (the voice-only key, a Gemini chatbot key, or GEMINI_API_KEY). */
+  geminiKeySource?: 'voice' | 'chatbot' | 'env' | null
+  /** Read-only: state of the voice-only Gemini key. */
+  geminiVoiceKey?: 'none' | 'session' | 'encrypted' | 'locked'
   warning?: string
 }
 
@@ -42,10 +46,15 @@ export interface SpeechBridge {
   getSpeechSettings(): Promise<Result<SpeechSettings>>
   saveSpeechSettings(input: { readAloud: ReadAloud; rate: SpeechRate; voice: SpeechVoice; geminiTranscription?: boolean }): Promise<Result<SpeechSettings>>
   synthesizeSpeech(text: string): Promise<Result<SynthesizedSpeech>>
+  /** Saves a Gemini key used only for voice transcription (the chatbot key is unchanged). */
+  setGeminiVoiceKey(input: { key: string; remember: boolean }): Promise<Result<SpeechSettings>>
+  removeGeminiVoiceKey(): Promise<Result<SpeechSettings>>
 }
 
 export const speechChannels = {
   getSettings: 'speech:get-settings',
   saveSettings: 'speech:save-settings',
-  synthesize: 'speech:synthesize'
+  synthesize: 'speech:synthesize',
+  setGeminiKey: 'speech:set-gemini-key',
+  removeGeminiKey: 'speech:remove-gemini-key'
 } as const
