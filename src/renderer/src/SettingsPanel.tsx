@@ -3,6 +3,7 @@ import type { DesktopBridge } from '../../shared/contracts'
 import type { PublicConfig } from '../../shared/assistant-contracts'
 import { displayError, unwrap } from './assistant-ui'
 import { ShakeSettingsPanel } from './ShakeSettingsPanel'
+import { TrustPanel } from './TrustPanel'
 
 export function SettingsPanel({ bridge, config, active }: {
   bridge: DesktopBridge; config: PublicConfig; active: boolean
@@ -80,11 +81,12 @@ export function SettingsPanel({ bridge, config, active }: {
     </div>
     {(config.configured || config.keyStorage === 'locked') &&
       <button className="text-button danger" disabled={busy || active} onClick={() => void remove()}>Remove key from Triage</button>}
+    <TrustPanel bridge={bridge} />
     <ShakeSettingsPanel bridge={bridge} />
     <div className="privacy-note">
       <strong>Your data</strong>
       <p>Messages and recent context go to Anthropic for replies. Conversations are saved unencrypted on this Mac. Recognized keys and tokens are redacted, but avoid sharing secrets.</p>
-      <p>Each chat message also carries a short text description of the app in front: its name, window title, website name and the labels of visible buttons and fields, never what you typed into them. If that is not enough to answer, Triage may take one screenshot, with password and card fields blacked out, and send it. Triage uses a bounded recent context, not your entire saved history. Screen capture is available from Chat: preview locally, then explicitly send it for explanation. With Shake to Help enabled, a shake sends a screen capture automatically using your saved instruction. Images are not saved. Alaska flight searches run in a separate visible browser; Triage never selects a fare or purchases a ticket.</p>
+      <p>Each chat message also carries a short text description of the app in front: its name, window title, website name and the labels of visible buttons and fields, never what you typed into them. If that is not enough to answer, Triage may take one screenshot, with password and card fields blacked out, and send it. Your list of people and organizations stays on this Mac. When it is relevant, Claude is told a contact’s name and relationship and a partly hidden hint (such as the first letter of an email), never the full address or number. Triage uses a bounded recent context, not your entire saved history. Screen capture is available from Chat: preview locally, then explicitly send it for explanation. With Shake to Help enabled, a shake sends a screen capture automatically using your saved instruction. Images are not saved. Alaska flight searches run in a separate visible browser; Triage never selects a fare or purchases a ticket.</p>
     </div>
   </section>
 }
