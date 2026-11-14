@@ -11,6 +11,7 @@ import type { ModelGateway } from './model.ts'
 import { AppProblem, publicProblem } from './errors.ts'
 import { connectSchema, idSchema, modelSchema, sendSchema, validated } from './schemas.ts'
 import { redact } from './redaction.ts'
+import { resolveDestination } from '../../shared/destinations.ts'
 
 interface RunningRequest extends ActiveRequest {
   highlight?: boolean
@@ -35,13 +36,17 @@ export class AssistantCoordinator {
   private offHighlights?: () => void
   private gestureRequest?: SendReceipt
   private browser?: BrowserRunner
+  private openPage?: (url: string) => Promise<void>
   private screens?: ScreenAccess
 
   constructor(options: {
     history: HistoryStore; credentials: Credentials; gateway: ModelGateway
     changed: (state: AssistantState) => void; browser?: BrowserRunner; requestTimeout?: number; screens?: ScreenAccess; highlights?: HighlightController
+    /** Opens a vetted https URL in the user's own browser. */
+    openPage?: (url: string) => Promise<void>
   }) {
     this.browser = options.browser
+    this.openPage = options.openPage
     this.highlights = options.highlights
     this.offHighlights = options.highlights?.onChange(() => this.emit())
     this.screens = options.screens
@@ -221,6 +226,7 @@ export class AssistantCoordinator {
         const route = await this.gateway.route(key, model, context, request.controller.signal)
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         if (route.kind === 'reply') reply = route.text
+        else if (route.kind === 'open_page') reply = await this.navigate(request, route.destination, route.query)
         else {
           const checked = validateFlight(route.flight)
           const parentTaskId = this.history.clarificationParent(request.conversationId)
@@ -269,6 +275,20 @@ export class AssistantCoordinator {
       // it settles so the gesture conversation can be opened without spoiling capture.
       if (capture && !this.disposed) this.emit()
     }
+  }
+
+  /** Opens a curated destination in the user's browser; never a model-supplied URL. */
+  private async navigate(request: RunningRequest, destinationId: string, query?: string): Promise<string> {
+    let target
+    try { target = resolveDestination(destinationId, query) }
+    catch { throw new AppProblem('invalid_destination', 'I couldn’t find a safe page for that. Please say where you want to go another way.') }
+    if (target.opensIn !== 'default') throw new AppProblem('navigation_unavailable', 'Opening pages in Triage’s own browser isn’t available yet.')
+    if (!this.openPage) throw new AppProblem('navigation_unavailable', 'Opening pages is unavailable in this build.')
+    this.history.activity(request.id, 'page_open', `Opening ${target.name}.`, { destination: target.id, url: target.url })
+    try { await this.openPage(target.url) }
+    catch { throw new AppProblem('navigation_failed', `I couldn’t open ${target.name}. Check that a web browser is installed and try again.`) }
+    return `Opening ${target.name} in your web browser.
+If you can’t find something on the page, ask “show me where…” and I’ll point to it.`
   }
 
   private blockStorage(): void {
