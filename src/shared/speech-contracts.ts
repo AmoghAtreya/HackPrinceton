@@ -16,10 +16,18 @@ export interface SpeechSettings {
   readAloud: ReadAloud
   rate: SpeechRate
   voice: SpeechVoice
+  /**
+   * Voice input: live captions stay on this Mac, then the finished recording is
+   * sent to Google Gemini for a more accurate transcript. Falls back to the
+   * on-device transcript without a Gemini key or internet.
+   */
+  geminiTranscription: boolean
+  /** Read-only: whether a Gemini key is available for voice right now. */
+  geminiKeyAvailable?: boolean
   warning?: string
 }
 
-export const DEFAULT_SPEECH_SETTINGS: SpeechSettings = { readAloud: 'voice', rate: 90, voice: 'Joanna' }
+export const DEFAULT_SPEECH_SETTINGS: SpeechSettings = { readAloud: 'voice', rate: 90, voice: 'Joanna', geminiTranscription: true }
 
 /** Longest text the main process will synthesize in one call. */
 export const SPEECH_MAX_CHARS = 1500
@@ -32,7 +40,7 @@ export interface SynthesizedSpeech {
 
 export interface SpeechBridge {
   getSpeechSettings(): Promise<Result<SpeechSettings>>
-  saveSpeechSettings(input: { readAloud: ReadAloud; rate: SpeechRate; voice: SpeechVoice }): Promise<Result<SpeechSettings>>
+  saveSpeechSettings(input: { readAloud: ReadAloud; rate: SpeechRate; voice: SpeechVoice; geminiTranscription?: boolean }): Promise<Result<SpeechSettings>>
   synthesizeSpeech(text: string): Promise<Result<SynthesizedSpeech>>
 }
 

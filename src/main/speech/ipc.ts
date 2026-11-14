@@ -8,7 +8,8 @@ export function installSpeechIpc(
   ipcMain: IpcMain,
   polly: PollyService,
   preferences: SpeechPreferences,
-  trusted: (event: IpcMainInvokeEvent) => boolean
+  trusted: (event: IpcMainInvokeEvent) => boolean,
+  geminiKeyAvailable: () => boolean = () => false
 ): () => void {
   const handle = (channel: string, action: (input: unknown) => unknown): void => {
     ipcMain.handle(channel, (event, input: unknown) => resultOf(() => {
@@ -16,8 +17,8 @@ export function installSpeechIpc(
       return action(input)
     }))
   }
-  handle(speechChannels.getSettings, () => preferences.snapshot())
-  handle(speechChannels.saveSettings, (input) => preferences.save(input))
+  handle(speechChannels.getSettings, () => ({ ...preferences.snapshot(), geminiKeyAvailable: geminiKeyAvailable() }))
+  handle(speechChannels.saveSettings, (input) => ({ ...preferences.save(input), geminiKeyAvailable: geminiKeyAvailable() }))
   handle(speechChannels.synthesize, async (input): Promise<SynthesizedSpeech> => {
     if (typeof input !== 'string' || !input.trim() || input.length > SPEECH_MAX_CHARS)
       throw new AppProblem('invalid_input', 'That reply is too long to read aloud.')

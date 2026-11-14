@@ -3,6 +3,8 @@ import { BrowserSupervisor } from './browser/supervisor'
 import { VoiceController, type VoiceEvent } from './voice/controller'
 import { TranscribeService, transcribeConfigFromEnv } from './voice/transcribe'
 import { AppleSpeechService } from './voice/apple-speech'
+import { GeminiTranscriber } from './voice/gemini-transcriber'
+import { isGeminiKey } from './assistant/gemini'
 import { LocalTranscriptStore } from './voice/transcript-store'
 import { ensureMicrophoneAccess } from './voice/microphone'
 import { installVoiceIpc } from './voice/ipc'
@@ -292,6 +294,14 @@ if (!app.requestSingleInstanceLock()) {
     installIpc()
     removeAssistantIpc = installAssistantIpc(assistant, (event) => trusted(event) && event.sender === desktop?.chat.webContents,
       screens, shake, () => shakeMonitor?.reset())
+    const speechPreferences = new SpeechPreferences(directory)
+    // Gemini key for voice: the connected chatbot key if it is a Gemini key, else GEMINI_API_KEY.
+    const geminiVoiceKey = (): string | null => {
+      try { const key = credentials.getKey(); if (isGeminiKey(key)) return key } catch { /* No chatbot key connected. */ }
+      const fromEnv = process.env.GEMINI_API_KEY?.trim()
+      return fromEnv && isGeminiKey(fromEnv) ? fromEnv : null
+    }
+    const geminiTranscriber = new GeminiTranscriber()
     voice = new VoiceController({
       // Free on-device Apple speech by default; TRIAGE_SPEECH_TO_TEXT=transcribe uses Amazon Transcribe.
       service: process.env.TRIAGE_SPEECH_TO_TEXT === 'transcribe' || process.platform !== 'darwin'
@@ -300,7 +310,13 @@ if (!app.requestSingleInstanceLock()) {
           ? join(process.resourcesPath, '../Helpers/TriageSpeechHelper.app')
           : join(app.getAppPath(), 'release/TriageSpeechHelper.app')),
       store: new LocalTranscriptStore(directory),
-      ensureMicrophone: ensureMicrophoneAccess
+      ensureMicrophone: ensureMicrophoneAccess,
+      // Apple writes the live captions; Gemini writes the final transcript when it can.
+      finalTranscriber: async (recording, sampleRate, signal) => {
+        const key = geminiVoiceKey()
+        if (!key || !speechPreferences.snapshot().geminiTranscription) return null
+        return geminiTranscriber.transcribe(key, recording, sampleRate, signal)
+      }
     })
     voice.subscribe((event: VoiceEvent) => {
       if (quitting || !desktop || desktop.chat.isDestroyed()) return
@@ -311,8 +327,8 @@ if (!app.requestSingleInstanceLock()) {
     removeVoiceIpc = installVoiceIpc(ipcMain, voice, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
     removeRequestLogIpc = installRequestLogIpc(ipcMain, requestLog, (event) => trusted(event) && event.sender === desktop?.chat.webContents)
     polly = new PollyService()
-    removeSpeechIpc = installSpeechIpc(ipcMain, polly, new SpeechPreferences(directory),
-      (event) => trusted(event) && event.sender === desktop?.chat.webContents)
+    removeSpeechIpc = installSpeechIpc(ipcMain, polly, speechPreferences,
+      (event) => trusted(event) && event.sender === desktop?.chat.webContents, () => Boolean(geminiVoiceKey()))
     await desktop.initialize()
     const interrupt = (message: string) => {
       assistant?.interrupt(message)
