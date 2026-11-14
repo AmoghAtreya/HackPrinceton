@@ -121,3 +121,14 @@ test('Gemini gets screen context in the user turn and trusted context in the sys
   }
   assert.match(JSON.parse(String(calls[0].init.body)).systemInstruction.parts[0].text, /needs_screenshot/)
 })
+
+test('a vague "invalid argument" is asked once more without the thinking setting', async () => {
+  const bodies: Array<{ generationConfig: { thinkingConfig?: unknown } }> = []
+  const { fetcher } = fakeFetch((_url, init) => {
+    const body = JSON.parse(String(init.body))
+    bodies.push(body)
+    return { status: 400, body: '{"error":{"message":"Request contains an invalid argument."}}' }
+  })
+  await assert.rejects(new GeminiGateway(fetcher).reply(key, 'gemini-flash-latest', [{ role: 'user', content: 'hi' }], signal), { code: 'request_rejected' })
+  assert.deepEqual(bodies.map((body) => Boolean(body.generationConfig.thinkingConfig)), [true, false], 'one retry, then a plain error')
+})

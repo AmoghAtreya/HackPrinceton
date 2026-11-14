@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { destinations } from '../../shared/destinations.ts'
-import { googleReason } from '../assistant/gemini.ts'
+import { googleReason, rejectsThinking } from '../assistant/gemini.ts'
 
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
 /** Google's alias for the current Flash model, so retired versions never break voice. */
@@ -133,7 +133,7 @@ export class GeminiTranscriber {
       if (!response.ok) {
         const detail = await response.text().catch(() => '')
         // A model that cannot skip thinking: ask the same model again without that setting.
-        if (response.status === 400 && !this.thinkingRefused.has(model) && /thinking/i.test(detail)) {
+        if (!this.thinkingRefused.has(model) && rejectsThinking(response.status, detail)) {
           this.thinkingRefused.add(model)
           return { kind: 'again' }
         }

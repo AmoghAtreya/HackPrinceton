@@ -20,9 +20,13 @@ export const GEMINI_FLASH_ALIAS = 'gemini-flash-latest'
  */
 const QUICK_THINKING = { thinkingBudget: 0 } as const
 
-/** True when Gemini refused a request because of the thinking setting. */
-function rejectsThinking(status: number, body: string): boolean {
-  return status === 400 && /thinking/i.test(body)
+/**
+ * True when Gemini may have refused a request because of the thinking setting.
+ * Some models name it; newer ones only say "Request contains an invalid argument".
+ * Such requests are asked once more without the setting.
+ */
+export function rejectsThinking(status: number, body: string): boolean {
+  return status === 400 && /thinking|invalid argument/i.test(body) && !/API key/i.test(body)
 }
 
 /**
@@ -146,8 +150,12 @@ export class GeminiGateway implements ModelGateway {
         console.info(`Gemini ${target} answered in ${Date.now() - started} ms.`)
         break
       } catch (error) {
-        if (attempt >= 2 || !(error instanceof AppProblem)) throw error
-        if (error.code === 'thinking_unsupported' && !this.thinkingRefused.has(target)) { this.thinkingRefused.add(target); continue }
+        if (attempt >= 4 || !(error instanceof AppProblem)) throw error
+        if (error.code === 'thinking_unsupported') {
+          if (this.thinkingRefused.has(target)) throw geminiProblem(400)
+          this.thinkingRefused.add(target)
+          continue
+        }
         // Google retires model versions (they still appear in the list but return 404); use the current Flash instead.
         if (error.code === 'model_unavailable' && target !== GEMINI_FLASH_ALIAS) {
           console.warn(`Gemini model ${target} is unavailable; using ${GEMINI_FLASH_ALIAS}.`)

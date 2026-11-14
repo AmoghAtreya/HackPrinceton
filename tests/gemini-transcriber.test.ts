@@ -121,3 +121,15 @@ test('thinking is switched off, and a model that refuses that setting is asked a
   assert.equal(bodies.length, 3, 'remembered: the next request skips the refused setting')
   assert.equal(bodies[2].generationConfig.thinkingConfig, undefined)
 })
+
+test('a vague "invalid argument" is asked again without the thinking setting', async () => {
+  const bodies: Array<{ generationConfig: { thinkingConfig?: unknown } }> = []
+  const fetcher = (async (_url: string, init: RequestInit) => {
+    const body = JSON.parse(String(init.body))
+    bodies.push(body)
+    if (body.generationConfig.thinkingConfig) return new Response('{"error":{"message":"Request contains an invalid argument."}}', { status: 400 })
+    return answer('{"text":"Circle the button.","clarity":"clear"}')
+  }) as unknown as typeof fetch
+  assert.deepEqual(await new GeminiTranscriber({ fetcher, fallbackModel: null }).transcribe(key, audio, 16000, signal), { text: 'Circle the button.', clarity: 'clear' })
+  assert.deepEqual(bodies.map((body) => Boolean(body.generationConfig.thinkingConfig)), [true, false])
+})
