@@ -19,6 +19,8 @@ const NSUInteger kMaxValue = 500;
 const NSUInteger kMaxElementUrl = 2048;
 const NSUInteger kMaxDocumentUrl = 4000;
 const NSUInteger kMaxTitle = 500;
+const size_t kMaxPath = 128;
+const uint32_t kMaxChildIndex = 100000;
 const char kEmpty[] = "{\"app\":{\"bundleId\":\"\",\"name\":\"\",\"pid\":0},"
     "\"window\":{\"title\":\"\",\"frame\":{\"x\":0,\"y\":0,\"width\":0,\"height\":0}},\"elements\":[]}";
 
@@ -96,8 +98,35 @@ bool isLayoutRole(NSString *role) {
     return [roles containsObject:role];
 }
 
+// The app the person is looking at. When Triage itself is active (its chat has
+// focus, or its windows were just hidden for a capture) that is the owner of the
+// topmost ordinary window belonging to another process.
 pid_t frontPid() {
-    return NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
+    const pid_t front = NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier;
+    const pid_t self = getpid();
+    if (front > 0 && front != self) return front;
+    NSArray *windows = CFBridgingRelease(CGWindowListCopyWindowInfo(
+        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements, kCGNullWindowID));
+    for (NSDictionary *info in windows) {
+        const pid_t owner = [info[(__bridge NSString *)kCGWindowOwnerPID] intValue];
+        if (owner <= 0 || owner == self || [info[(__bridge NSString *)kCGWindowLayer] intValue] != 0) continue;
+        CGRect bounds;
+        id rawBounds = info[(__bridge NSString *)kCGWindowBounds];
+        if (![rawBounds isKindOfClass:NSDictionary.class] ||
+            !CGRectMakeWithDictionaryRepresentation((__bridge CFDictionaryRef)rawBounds, &bounds) ||
+            bounds.size.width < 40 || bounds.size.height < 40) continue;
+        return owner;
+    }
+    return 0;
+}
+
+// The window snapshots and frame probes are both rooted at, so a recorded path means the same thing to each.
+id focusedWindow(AXUIElementRef app) {
+    for (CFStringRef name : { kAXFocusedWindowAttribute, kAXMainWindowAttribute }) {
+        id window = attribute(app, name);
+        if (window && CFGetTypeID((__bridge CFTypeRef)window) == AXUIElementGetTypeID()) return window;
+    }
+    return nil;
 }
 
 struct Scan {
@@ -113,6 +142,7 @@ struct Entry {
     id element;
     int depth; // number of EMITTED ancestors, so consumers can rebuild ancestry from the flat list
     bool root;
+    std::vector<uint32_t> path; // child indexes from the window, so frameOf() can find the element again
 };
 
 void collect(napi_env, void *data) {
@@ -121,8 +151,8 @@ void collect(napi_env, void *data) {
         id app = CFBridgingRelease(AXUIElementCreateApplication(scan.pid));
         auto appRef = (__bridge AXUIElementRef)app;
         AXUIElementSetMessagingTimeout(appRef, 0.08);
-        id window = attribute(appRef, kAXFocusedWindowAttribute);
-        if (!window || CFGetTypeID((__bridge CFTypeRef)window) != AXUIElementGetTypeID()) return;
+        id window = focusedWindow(appRef);
+        if (!window) return;
         auto windowRef = (__bridge AXUIElementRef)window;
         CGRect windowFrame = rect(attribute(windowRef, kAXPositionAttribute), attribute(windowRef, kAXSizeAttribute));
         if (CGRectIsNull(windowFrame) || CGRectIsEmpty(windowFrame)) return;
@@ -141,7 +171,7 @@ void collect(napi_env, void *data) {
         NSMutableArray *elements = [NSMutableArray array];
         NSInteger focusedIndex = -1;
         std::vector<Entry> pending;
-        pending.push_back({window, 0, true});
+        pending.push_back({window, 0, true, {}});
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(400);
         size_t visited = 0;
         while (!pending.empty() && visited < kMaxNodes && elements.count < kMaxElements &&
@@ -183,6 +213,9 @@ void collect(napi_env, void *data) {
                 if (label || value || url || subrole || secure || !isLayoutRole(role)) {
                     NSMutableDictionary *item = [@{ @"role": role, @"label": label ?: @"", @"frame": frameObject(bounds),
                         @"secure": @(secure), @"enabled": @(enabled), @"depth": @(entry.depth) } mutableCopy];
+                    NSMutableArray *path = [NSMutableArray arrayWithCapacity:entry.path.size()];
+                    for (uint32_t index : entry.path) [path addObject:@(index)];
+                    item[@"path"] = path;
                     if (subrole) item[@"subrole"] = subrole;
                     if (value) item[@"value"] = value;
                     if (url) item[@"url"] = url;
@@ -194,15 +227,18 @@ void collect(napi_env, void *data) {
             }
 
             NSArray *children = present(base[4]);
-            if (![children isKindOfClass:NSArray.class]) continue;
+            if (![children isKindOfClass:NSArray.class] || entry.path.size() >= kMaxPath) continue;
             const size_t queued = visited + pending.size();
             const size_t remaining = queued < kMaxNodes ? kMaxNodes - queued : 0;
-            const NSUInteger take = std::min<size_t>(children.count, remaining);
+            const NSUInteger take = std::min<size_t>(std::min<size_t>(children.count, remaining), kMaxChildIndex + 1);
             const int childDepth = entry.depth + (emitted ? 1 : 0);
             // Reverse push so the stack pops children in document order.
             for (NSUInteger index = take; index-- > 0;) {
                 id child = children[index];
-                if (CFGetTypeID((__bridge CFTypeRef)child) == AXUIElementGetTypeID()) pending.push_back({child, childDepth, false});
+                if (CFGetTypeID((__bridge CFTypeRef)child) != AXUIElementGetTypeID()) continue;
+                std::vector<uint32_t> path = entry.path;
+                path.push_back(static_cast<uint32_t>(index));
+                pending.push_back({child, childDepth, false, std::move(path)});
             }
         }
 
@@ -231,7 +267,8 @@ void complete(napi_env env, napi_status status, void *data) {
 }
 
 napi_value snapshot(napi_env env, napi_callback_info) {
-    NSRunningApplication *front = NSWorkspace.sharedWorkspace.frontmostApplication;
+    const pid_t target = frontPid();
+    NSRunningApplication *front = target > 0 ? [NSRunningApplication runningApplicationWithProcessIdentifier:target] : nil;
     napi_value result;
     if (!front || front.processIdentifier <= 0) {
         napi_create_string_utf8(env, kEmpty, sizeof(kEmpty) - 1, &result);
@@ -255,6 +292,110 @@ napi_value snapshot(napi_env env, napi_callback_info) {
     return result;
 }
 
+// ---------------------------------------------------------------------------
+// frameOf(pid, path): where is a previously snapshotted element now? Reads only
+// role, position and size - never a label or a value.
+// ---------------------------------------------------------------------------
+
+struct Probe {
+    pid_t pid = 0;
+    std::vector<uint32_t> path;
+    napi_async_work work = nullptr;
+    napi_deferred deferred = nullptr;
+    NSString *role = nil;
+    CGRect frame = CGRectNull;
+};
+
+void locate(napi_env, void *data) {
+    @autoreleasepool {
+        auto &probe = *static_cast<Probe *>(data);
+        id app = CFBridgingRelease(AXUIElementCreateApplication(probe.pid));
+        auto appRef = (__bridge AXUIElementRef)app;
+        AXUIElementSetMessagingTimeout(appRef, 0.05);
+        id current = focusedWindow(appRef);
+        if (!current) return;
+        auto windowRef = (__bridge AXUIElementRef)current;
+        const CGRect windowFrame = rect(attribute(windowRef, kAXPositionAttribute), attribute(windowRef, kAXSizeAttribute));
+        if (CGRectIsNull(windowFrame) || CGRectIsEmpty(windowFrame)) return;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(120);
+        for (uint32_t index : probe.path) {
+            if (std::chrono::steady_clock::now() >= deadline) return;
+            CFArrayRef raw = nullptr;
+            // Fetch exactly one child per level instead of every sibling.
+            if (AXUIElementCopyAttributeValues((__bridge AXUIElementRef)current, kAXChildrenAttribute, index, 1, &raw) != kAXErrorSuccess) return;
+            NSArray *child = CFBridgingRelease(raw);
+            if (child.count != 1 || CFGetTypeID((__bridge CFTypeRef)child[0]) != AXUIElementGetTypeID()) return;
+            current = child[0];
+        }
+        auto element = (__bridge AXUIElementRef)current;
+        NSArray *values = attributes(element, @[ (__bridge NSString *)kAXRoleAttribute,
+            (__bridge NSString *)kAXPositionAttribute, (__bridge NSString *)kAXSizeAttribute ]);
+        if (!values) return;
+        NSString *role = present(values[0]);
+        const CGRect bounds = rect(present(values[1]), present(values[2]));
+        if (![role isKindOfClass:NSString.class] || !role.length || role.length > 80 || CGRectIsNull(bounds) ||
+            CGRectIsEmpty(bounds) || !CGRectIntersectsRect(windowFrame, bounds)) return;
+        probe.role = role;
+        probe.frame = bounds;
+    }
+}
+
+void located(napi_env env, napi_status status, void *data) {
+    auto *probe = static_cast<Probe *>(data);
+    NSMutableDictionary *reply = [@{ @"frontmost": @(frontPid() == probe->pid), @"frame": NSNull.null } mutableCopy];
+    if (status == napi_ok && probe->role) {
+        reply[@"role"] = probe->role;
+        reply[@"frame"] = frameObject(probe->frame);
+    }
+    NSData *bytes = [NSJSONSerialization dataWithJSONObject:reply options:0 error:nil];
+    napi_value result;
+    napi_create_string_utf8(env, static_cast<const char *>(bytes.bytes), bytes.length, &result);
+    napi_resolve_deferred(env, probe->deferred, result);
+    napi_delete_async_work(env, probe->work);
+    delete probe;
+}
+
+napi_value frameOf(napi_env env, napi_callback_info info) {
+    size_t count = 2;
+    napi_value arguments[2];
+    int32_t pid = 0;
+    uint32_t length = 0;
+    bool isArray = false;
+    if (napi_get_cb_info(env, info, &count, arguments, nullptr, nullptr) != napi_ok || count < 2 ||
+        napi_get_value_int32(env, arguments[0], &pid) != napi_ok || pid <= 0 ||
+        napi_is_array(env, arguments[1], &isArray) != napi_ok || !isArray ||
+        napi_get_array_length(env, arguments[1], &length) != napi_ok || length > kMaxPath) {
+        napi_throw_type_error(env, nullptr, "frameOf(pid, path) needs a process id and a child-index path");
+        return nullptr;
+    }
+    auto *probe = new Probe;
+    probe->pid = pid;
+    for (uint32_t position = 0; position < length; position++) {
+        napi_value item;
+        uint32_t index = 0;
+        if (napi_get_element(env, arguments[1], position, &item) != napi_ok ||
+            napi_get_value_uint32(env, item, &index) != napi_ok || index > kMaxChildIndex) {
+            delete probe;
+            napi_throw_type_error(env, nullptr, "frameOf path entries must be small non-negative integers");
+            return nullptr;
+        }
+        probe->path.push_back(index);
+    }
+    napi_value result;
+    napi_value name;
+    napi_status status = napi_create_promise(env, &probe->deferred, &result);
+    if (status == napi_ok) status = napi_create_string_utf8(env, "Triage element frame", NAPI_AUTO_LENGTH, &name);
+    if (status == napi_ok) status = napi_create_async_work(env, nullptr, name, locate, located, probe, &probe->work);
+    if (status == napi_ok) status = napi_queue_async_work(env, probe->work);
+    if (status != napi_ok) {
+        if (probe->work) napi_delete_async_work(env, probe->work);
+        delete probe;
+        napi_throw_error(env, nullptr, "Could not schedule element frame lookup");
+        return nullptr;
+    }
+    return result;
+}
+
 // Lets the caller tell "no permission" apart from "nothing on screen".
 napi_value accessibilityTrusted(napi_env env, napi_callback_info) {
     napi_value result;
@@ -266,6 +407,8 @@ napi_value initialize(napi_env env, napi_value exports) {
     napi_value function;
     napi_create_function(env, "snapshot", NAPI_AUTO_LENGTH, snapshot, nullptr, &function);
     napi_set_named_property(env, exports, "snapshot", function);
+    napi_create_function(env, "frameOf", NAPI_AUTO_LENGTH, frameOf, nullptr, &function);
+    napi_set_named_property(env, exports, "frameOf", function);
     napi_create_function(env, "accessibilityTrusted", NAPI_AUTO_LENGTH, accessibilityTrusted, nullptr, &function);
     napi_set_named_property(env, exports, "accessibilityTrusted", function);
     return exports;
