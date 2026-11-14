@@ -9,6 +9,7 @@ import { voiceChannels } from '../shared/voice-contracts'
 import { createSimplifier } from './simplifier/index'
 import { SimplifierService } from './simplifier/service'
 import { SimplifiedWindow } from './simplifier/window'
+import { ScreenSimplifier } from './simplifier/screen'
 import { ThompsonPolicy } from './simplifier/thompson'
 import demoPageHtml from '../../demo/sites/cluttered-news.html?raw'
 import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
@@ -35,7 +36,7 @@ import { observeTargetClick } from './screen/target-click'
 import { ShakePreferences } from './gestures/settings'
 import { ShakeMonitor } from './gestures/monitor'
 import { redact } from './assistant/redaction'
-import { AppProblem } from './assistant/errors'
+import { AppProblem, publicProblem } from './assistant/errors'
 import { DEFAULT_BROWSER_CHANNEL, browserChannelFrom, type BrowserChannel } from '../shared/browser-config'
 
 // A typo in TRIAGE_BROWSER_CHANNEL should not stop the app from launching.
@@ -64,6 +65,7 @@ let assistant: AssistantCoordinator | undefined
 let browser: BrowserSupervisor | undefined
 let simplifier: SimplifierService | undefined
 let simplifiedWindow: SimplifiedWindow | undefined
+let screenSimplifier: ScreenSimplifier | undefined
 let closeSimplifierLog: (() => void) | undefined
 let shutdownReady = false
 let removeAssistantIpc: (() => void) | undefined
@@ -96,6 +98,13 @@ function buildControls(): Electron.Menu {
     { label: 'Open chat', click: () => desktop?.openChat() },
     { label: 'Hide Triage', click: () => desktop?.hide() },
     { label: 'Stop current task', click: () => assistant?.stopActive() },
+    {
+      // Reads the page in front and shows a simpler version. It never clicks anything on the page.
+      label: 'Simplify this page', enabled: Boolean(screenSimplifier), click: () => {
+        try { assistant?.simplifyPage() }
+        catch (error) { dialog.showErrorBox('Triage could not simplify this page', publicProblem(error).message) }
+      }
+    },
     {
       label: 'Chrome Link Warnings (Preview)', type: 'checkbox', checked: phishingEnabled,
       enabled: Boolean(phishing), click: (item) => {
@@ -174,7 +183,7 @@ if (!app.requestSingleInstanceLock()) {
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(),
       () => highlights?.dispose(), () => overlay?.dispose(),
-      () => desktop?.dispose(), () => tray?.destroy(), () => simplifiedWindow?.dispose(),
+      () => desktop?.dispose(), () => tray?.destroy(), () => screenSimplifier?.dispose(), () => simplifiedWindow?.dispose(),
       () => {
         ipcMain.removeHandler(channels.getState)
         for (const channel of Object.values(channels)) ipcMain.removeAllListeners(channel)
@@ -248,15 +257,21 @@ if (!app.requestSingleInstanceLock()) {
     }), join(directory, 'browser-profile'), () => highlights?.clear(), configuredBrowserChannel())
     const simplifierParts = createSimplifier(directory)
     closeSimplifierLog = simplifierParts.close
-    simplifiedWindow = new SimplifiedWindow((url) => { void simplifier?.open(url) }, () => simplifier?.viewClosed())
+    simplifiedWindow = new SimplifiedWindow((url) => { void simplifier?.open(url) },
+      () => { simplifier?.viewClosed(); screenSimplifier?.viewClosed() }, (link) => screenSimplifier?.handle(link))
     const policy = simplifierParts.policy
     simplifier = new SimplifierService({
       engine: simplifierParts.engine, presenter: simplifiedWindow, channel: configuredBrowserChannel(), demoHtml: demoPageHtml,
-      log: simplifierParts.log, lockedLayouts: (userId) => (policy instanceof ThompsonPolicy ? policy.frozenArms(userId) : {})
+      log: simplifierParts.log, lockedLayouts: (userId) => (policy instanceof ThompsonPolicy ? policy.frozenArms(userId) : {}),
+      observed: (decisionId) => screenSimplifier?.signals(decisionId)
     })
+    // Needs the accessibility module; its only powers over the real page are reading it and drawing a highlight.
+    screenSimplifier = contexts && accessibility ? new ScreenSimplifier({
+      contexts, engine: simplifierParts.engine, presenter: simplifiedWindow, highlights, probe: accessibility.frameOf
+    }) : undefined
     assistant = new AssistantCoordinator({
       history: new HistoryStore(join(directory, 'history.sqlite')),
-      credentials, gateway: new ClaudeGateway(), screens, contexts: captures, highlights, browser, simplifier,
+      credentials, gateway: new ClaudeGateway(), screens, contexts: captures, highlights, browser, simplifier, screenSimplifier,
       // The coordinator only passes URLs already checked against the destination allowlist.
       openPage: (url) => shell.openExternal(url, { activate: true }),
       changed: (state) => {
@@ -285,8 +300,9 @@ if (!app.requestSingleInstanceLock()) {
       trigger: (trigger) => {
         if (!assistant || !captures || quitting) return
         try {
+          if (shake.snapshot().mode === 'simplify') { assistant.simplifyPage(); return }
           assistant.shake(trigger, shake.snapshot().instruction,
-            () => captures!.capture({ cursor: trigger.point, focusAfterCapture: false }), shake.snapshot().mode)
+            () => captures!.capture({ cursor: trigger.point, focusAfterCapture: false }), shake.snapshot().mode === 'highlight' ? 'highlight' : 'explain')
         } catch { /* The coordinator publishes a blocking notice if history cannot be saved. */ }
       }
     })
