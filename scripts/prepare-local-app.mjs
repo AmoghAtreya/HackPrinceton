@@ -101,13 +101,10 @@ try {
       directory = parent
     }
   }
-  copyPackage('@anthropic-ai/sdk', root)
-  copyPackage('@aws-sdk/client-transcribe-streaming', root)
-  copyPackage('zod', root)
-  copyPackage('playwright', root)
-  // Memory (LangChain vector store) and multi-step tasks (LangGraph).
-  copyPackage('@langchain/core', root)
-  copyPackage('@langchain/langgraph', root)
+  // Electron is already supplied by the app bundle copied above.
+  for (const name of Object.keys(project.dependencies)) {
+    if (name !== 'electron') copyPackage(name, root)
+  }
 
   const plist = join(staging, 'Contents', 'Info.plist')
   for (const [key, value] of Object.entries({
