@@ -208,8 +208,10 @@ export class AssistantCoordinator {
     if (this.analyzing) throw new AppProblem('busy', 'I’m still looking at your screen. One moment.')
     if (!this.gateway.analyze || !this.screens) throw new AppProblem('analysis_unavailable', 'Checking the screen is unavailable in this build.')
     const key = this.credentials.getKey()
-    const model = this.credentials.snapshot().model
-    if (!model) throw new AppProblem('missing_model', 'Connect your key and choose an available model in Settings.')
+    const config = this.credentials.snapshot()
+    if (!config.model) throw new AppProblem('missing_model', 'Connect your key and choose an available model in Settings.')
+    // Reading a screenshot is a vision request, so it follows the same model tier as Explain screen.
+    const model = pickModel('vision', config.models, config.model, config.fastModel).model
     const image = this.screens.take(captureId)
     const controller = new AbortController()
     this.analyzing = controller
