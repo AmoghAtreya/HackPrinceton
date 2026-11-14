@@ -23,7 +23,16 @@ interface ActiveSession {
   limit: ReturnType<typeof setTimeout>
   finishing?: Promise<TranscriptRecord>
   cancelled?: boolean
+  /** The whole recording, kept in memory only so a final transcriber can read it. */
+  recording: Uint8Array[]
+  recordedBytes: number
+  /** Cancels the final transcriber if the recording is cancelled meanwhile. */
+  finalAbort: AbortController
 }
+
+/** A second engine that rewrites the whole recording once it ends (Gemini); null keeps the live transcript. */
+export type FinalTranscriber = (recording: readonly Uint8Array[], sampleRate: number, signal: AbortSignal) =>
+  Promise<{ text: string; clarity: 'clear' | 'unclear' } | null>
 
 export interface VoiceControllerOptions {
   service: SpeechToTextService
@@ -31,6 +40,11 @@ export interface VoiceControllerOptions {
   /** Resolves when the OS allows microphone use; throws an AppProblem otherwise. */
   ensureMicrophone: () => Promise<void>
   finishTimeoutMs?: number
+  /**
+   * Optional: transcribes the finished recording (Gemini) and replaces the
+   * live-caption text. Returning null, or failing, keeps the live text.
+   */
+  finalTranscriber?: FinalTranscriber
 }
 
 /**
@@ -77,7 +91,7 @@ export class VoiceController {
     const abort = new AbortController()
     const session: ActiveSession = {
       id: randomUUID(), startedAt: Date.now(), queue, abort, segments: new Map(),
-      stream: Promise.resolve(),
+      stream: Promise.resolve(), recording: [], recordedBytes: 0, finalAbort: new AbortController(),
       limit: setTimeout(() => { void this.finish(session.id).catch(() => undefined) }, VOICE_MAX_SECONDS * 1000)
     }
     session.stream = this.options.service.stream(queue, VOICE_SAMPLE_RATE, abort.signal, (result) => this.receive(session, result))
@@ -98,6 +112,10 @@ export class VoiceController {
     if (!session || session.id !== sessionId || session.finishing) return
     if (chunk.byteLength === 0 || chunk.byteLength > VOICE_MAX_CHUNK_BYTES || chunk.byteLength % 2 !== 0) return
     session.queue.push(chunk)
+    if (this.options.finalTranscriber && session.recordedBytes + chunk.byteLength <= VOICE_SAMPLE_RATE * 2 * (VOICE_MAX_SECONDS + 1)) {
+      session.recording.push(chunk.slice())
+      session.recordedBytes += chunk.byteLength
+    }
   }
 
   finish(sessionId: string): Promise<TranscriptRecord> {
@@ -148,15 +166,37 @@ export class VoiceController {
     if (outcome === 'timeout') session.abort.abort()
 
     const segments = [...session.segments.values()].sort((a, b) => a.startTime - b.startTime)
-    const record: TranscriptRecord = {
+    const liveText = segments.map((segment) => segment.text).filter(Boolean).join(' ')
+    let record: TranscriptRecord = {
       id: session.id,
       startedAt: session.startedAt,
       endedAt: Date.now(),
       languageCode: this.options.service.config.languageCode,
       status: session.error ? 'failed' : 'completed',
-      text: segments.map((segment) => segment.text).filter(Boolean).join(' '),
+      text: liveText,
       segments,
+      transcribedBy: this.options.service.id,
       ...(session.error ? { error: session.error.message } : {})
+    }
+    // Live captions came from the on-device engine; the final words come from Gemini when it can.
+    // It also rescues a recording whose live engine failed.
+    if (this.options.finalTranscriber && session.recording.length && !session.cancelled) {
+      let refined: Awaited<ReturnType<FinalTranscriber>> = null
+      try { refined = await this.options.finalTranscriber(session.recording, VOICE_SAMPLE_RATE, session.finalAbort.signal) }
+      catch { refined = null }
+      session.recording = []
+      if (refined?.text && !session.cancelled) {
+        record = {
+          ...record,
+          status: 'completed',
+          text: refined.text,
+          segments: [{ id: 'gemini', text: refined.text, confidence: refined.clarity === 'clear' ? 0.95 : 0.5, startTime: 0, endTime: (Date.now() - session.startedAt) / 1000 }],
+          transcribedBy: 'gemini',
+          ...(liveText ? { captionText: liveText } : {}),
+          endedAt: Date.now()
+        }
+        delete record.error
+      }
     }
     const result = this.store(session, record)
     this.finished.set(session.id, result)
@@ -200,6 +240,8 @@ export class VoiceController {
 
   private teardown(session: ActiveSession): void {
     session.cancelled = true
+    session.finalAbort.abort()
+    session.recording = []
     clearTimeout(session.limit)
     session.abort.abort()
     session.queue.end()

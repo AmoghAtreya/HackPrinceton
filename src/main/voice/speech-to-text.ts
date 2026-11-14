@@ -17,6 +17,7 @@ export interface SpeechToTextService {
   readonly config: { languageCode: string }
   /** Short label for logs and docs, e.g. "Amazon Transcribe". */
   readonly name: string
+  readonly id: 'apple' | 'transcribe'
   /** Fails fast with a readable AppProblem when this backend cannot run. */
   verify(): Promise<void>
   /** Streams audio until it ends, reporting partial and final results. */

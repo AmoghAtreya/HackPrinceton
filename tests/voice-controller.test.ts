@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { VoiceController, type VoiceEvent } from '../src/main/voice/controller.ts'
+import { VoiceController, type FinalTranscriber, type VoiceEvent } from '../src/main/voice/controller.ts'
 import { LocalTranscriptStore } from '../src/main/voice/transcript-store.ts'
 import { AudioQueue } from '../src/main/voice/audio-queue.ts'
 import { parseResult, type TranscribeResult } from '../src/main/voice/transcribe.ts'
@@ -13,6 +13,7 @@ function fakeService(options: { fail?: Error } = {}) {
   return {
     config: { region: 'test', languageCode: 'en-US' as const },
     name: 'fake',
+    id: 'apple' as const,
     verify: async () => {},
     dispose() {},
     async stream(audio: AsyncIterable<Uint8Array>, _rate: number, signal: AbortSignal, onResult: (result: TranscribeResult) => void) {
@@ -28,11 +29,11 @@ function fakeService(options: { fail?: Error } = {}) {
   }
 }
 
-function setup(service = fakeService()) {
+function setup(service = fakeService(), finalTranscriber?: FinalTranscriber) {
   const directory = mkdtempSync(join(tmpdir(), 'triage-voice-'))
   const store = new LocalTranscriptStore(directory)
   // The fake implements SpeechToTextService.
-  const voice = new VoiceController({ service: service as never, store, ensureMicrophone: async () => {} })
+  const voice = new VoiceController({ service: service as never, store, ensureMicrophone: async () => {}, finalTranscriber })
   const events: VoiceEvent[] = []
   voice.subscribe((event) => events.push(event))
   return { directory, store, voice, events, cleanup: () => { voice.dispose(); rmSync(directory, { recursive: true, force: true }) } }
@@ -118,4 +119,84 @@ test('Transcribe results become segments with mean word confidence on finals onl
   assert.deepEqual(final, { segmentId: 'r1', text: 'Open Gmail', isFinal: true, confidence: 0.9, startTime: 0.5, endTime: 1.5 })
   assert.equal(parseResult({ ResultId: 'r2', IsPartial: true, Alternatives: [{ Transcript: 'Open' }] })?.confidence, null)
   assert.equal(parseResult({ IsPartial: false, Alternatives: [{ Transcript: 'x' }] }), null)
+})
+
+test('Gemini writes the final transcript while the live engine only captions', async () => {
+  let received = 0
+  const { store, voice, cleanup } = setup(fakeService(), async (recording, rate) => {
+    received = recording.reduce((total, chunk) => total + chunk.byteLength, 0)
+    assert.equal(rate, 16000)
+    return { text: 'Track my package, please.', clarity: 'clear' }
+  })
+  try {
+    const { sessionId } = await voice.start()
+    voice.pushAudio(sessionId, new Uint8Array(3200)); voice.pushAudio(sessionId, new Uint8Array(3200))
+    const record = await voice.finish(sessionId)
+    assert.equal(received, 6400)
+    assert.equal(record.text, 'Track my package, please.')
+    assert.equal(record.transcribedBy, 'gemini')
+    assert.equal(record.captionText, 'track my package 6400')
+    assert.equal(record.segments[0].confidence, 0.95)
+    assert.equal((await store.recent(1))[0].transcribedBy, 'gemini')
+  } finally { cleanup() }
+})
+
+test('no Gemini answer keeps the on-device transcript', async () => {
+  for (const answer of [null, { text: '', clarity: 'clear' as const }]) {
+    const { voice, cleanup } = setup(fakeService(), async () => answer)
+    try {
+      const { sessionId } = await voice.start()
+      voice.pushAudio(sessionId, new Uint8Array(3200))
+      const record = await voice.finish(sessionId)
+      assert.equal(record.text, 'track my package 3200')
+      assert.equal(record.transcribedBy, 'apple')
+      assert.equal(record.captionText, undefined)
+    } finally { cleanup() }
+  }
+  const { voice, cleanup } = setup(fakeService(), async () => { throw new Error('offline') })
+  try {
+    const { sessionId } = await voice.start()
+    voice.pushAudio(sessionId, new Uint8Array(3200))
+    assert.equal((await voice.finish(sessionId)).transcribedBy, 'apple')
+  } finally { cleanup() }
+})
+
+test('an unclear Gemini transcript is marked low confidence so it is checked before sending', async () => {
+  const { voice, cleanup } = setup(fakeService(), async () => ({ text: 'Open G mail', clarity: 'unclear' }))
+  try {
+    const { sessionId } = await voice.start()
+    voice.pushAudio(sessionId, new Uint8Array(3200))
+    assert.equal((await voice.finish(sessionId)).segments[0].confidence, 0.5)
+  } finally { cleanup() }
+})
+
+test('cancelling a recording aborts Gemini and stores nothing', async () => {
+  let aborted = false
+  const { store, voice, cleanup } = setup(fakeService(), (_recording, _rate, signal) => new Promise((resolve) => {
+    signal.addEventListener('abort', () => { aborted = true; resolve(null) })
+  }))
+  try {
+    const { sessionId } = await voice.start()
+    voice.pushAudio(sessionId, new Uint8Array(3200))
+    const finishing = voice.finish(sessionId)
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    await voice.cancel(sessionId)
+    await finishing
+    assert.equal(aborted, true)
+    assert.deepEqual(await store.recent(5), [])
+  } finally { cleanup() }
+})
+
+test('Gemini rescues a recording when the live engine fails', async () => {
+  const { AppProblem } = await import('../src/main/assistant/errors.ts')
+  const { voice, events, cleanup } = setup(fakeService({ fail: new AppProblem('speech_failed', 'Helper stopped.') }),
+    async () => ({ text: 'Is this safe?', clarity: 'clear' }))
+  try {
+    const { sessionId } = await voice.start()
+    voice.pushAudio(sessionId, new Uint8Array(3200))
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    const transcript = events.find((event) => event.type === 'transcript')
+    assert.equal(transcript?.type === 'transcript' && transcript.record.text, 'Is this safe?')
+    assert.equal(transcript?.type === 'transcript' && transcript.record.status, 'completed')
+  } finally { cleanup() }
 })

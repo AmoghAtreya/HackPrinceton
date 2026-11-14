@@ -10,10 +10,28 @@ import type { ScreenAnalysisKind } from '../../shared/screen-analysis-contracts.
 import { modelSchema } from './schemas.ts'
 
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta'
+/** Google's alias for the current Flash model; used when a pinned model has been retired. */
+export const GEMINI_FLASH_ALIAS = 'gemini-flash-latest'
 
-/** Google AI Studio keys look like this; used to pick the provider for a key. */
+/**
+ * Triage's requests are short and simple, so a quick answer matters more than
+ * long reasoning: ask Gemini to skip its "thinking" step. Models that reject
+ * the setting are asked again without it.
+ */
+const QUICK_THINKING = { thinkingBudget: 0 } as const
+
+/** True when Gemini refused a request because of the thinking setting. */
+function rejectsThinking(status: number, body: string): boolean {
+  return status === 400 && /thinking/i.test(body)
+}
+
+/**
+ * Google AI Studio keys: the classic "AIza…" format or the newer "AQ.…" format.
+ * Used to pick the provider for a key.
+ */
 export function isGeminiKey(key: string): boolean {
-  return /^AIza[0-9A-Za-z_-]{30,}$/.test(key.trim())
+  const trimmed = key.trim()
+  return /^AIza[0-9A-Za-z_-]{30,}$/.test(trimmed) || /^AQ\.[0-9A-Za-z_.-]{20,}$/.test(trimmed)
 }
 
 type Part = { text: string } | { inline_data: { mime_type: string; data: string } }
@@ -35,7 +53,8 @@ const modelsResponse = z.object({
 
 export function geminiProblem(status: number | undefined, body = ''): AppProblem {
   if (status === 400 && /API key not valid|API_KEY_INVALID/i.test(body)) return new AppProblem('authentication', 'Google rejected the Gemini API key. Reconnect in Settings.')
-  if (status === 401 || status === 403) return new AppProblem('access_denied', 'This Gemini key does not have access to the requested model.')
+  if (status === 401) return new AppProblem('authentication', 'Google rejected this Gemini key. Check it was copied in full and created in Google AI Studio (aistudio.google.com/apikey) for the Gemini API.')
+  if (status === 403) return new AppProblem('access_denied', 'This Gemini key does not have access to the requested model.')
   if (status === 404) return new AppProblem('model_unavailable', 'The selected Gemini model is unavailable. Reconnect or choose another model.')
   if (status === 429) return new AppProblem('rate_limit', 'Gemini is rate-limiting requests. Wait a moment before trying again.')
   if (status === 400) return new AppProblem('request_rejected', 'Gemini could not accept this request. Check your model and message length.')
@@ -46,6 +65,10 @@ export function geminiProblem(status: number | undefined, body = ''): AppProblem
 /** Google Gemini over its REST API; same prompts and safety rules as the Claude gateway. */
 export class GeminiGateway implements ModelGateway {
   private fetcher: typeof globalThis.fetch
+  /** Models Google answered 404 for this session: go straight to the Flash alias next time. */
+  private retired = new Set<string>()
+  /** Models that rejected QUICK_THINKING. */
+  private thinkingRefused = new Set<string>()
   constructor(fetcher: typeof globalThis.fetch = globalThis.fetch) { this.fetcher = fetcher }
 
   private async call(key: string, path: string, signal: AbortSignal, body?: object, timeoutMs = 45000): Promise<unknown> {
@@ -64,6 +87,7 @@ export class GeminiGateway implements ModelGateway {
       throw geminiProblem(undefined)
     }
     const text = await response.text().catch(() => '')
+    if (!response.ok && rejectsThinking(response.status, text)) throw new AppProblem('thinking_unsupported', 'This Gemini model does not accept the thinking setting.')
     if (!response.ok) throw geminiProblem(response.status, text)
     try { return JSON.parse(text) }
     catch { throw new AppProblem('invalid_response', 'Gemini returned an unreadable reply. Please try again.') }
@@ -92,11 +116,36 @@ export class GeminiGateway implements ModelGateway {
         { text: screenUserText(messages.at(-1)!.content, options.image, options.elements) }
       ]
     }
-    const raw = await this.call(key, `/models/${encodeURIComponent(model)}:generateContent`, signal, {
-      systemInstruction: { parts: [{ text: system }] },
-      contents,
-      generationConfig: { maxOutputTokens: 2048, ...(options.json ? { responseMimeType: 'application/json' } : {}) }
-    })
+    let target = this.retired.has(model) ? GEMINI_FLASH_ALIAS : model
+    let raw: unknown
+    for (let attempt = 0; ; attempt++) {
+      const body = {
+        systemInstruction: { parts: [{ text: system }] },
+        contents,
+        generationConfig: {
+          maxOutputTokens: 2048,
+          ...(options.json ? { responseMimeType: 'application/json' } : {}),
+          ...(this.thinkingRefused.has(target) ? {} : { thinkingConfig: QUICK_THINKING })
+        }
+      }
+      const started = Date.now()
+      try {
+        raw = await this.call(key, `/models/${encodeURIComponent(target)}:generateContent`, signal, body)
+        console.info(`Gemini ${target} answered in ${Date.now() - started} ms.`)
+        break
+      } catch (error) {
+        if (attempt >= 2 || !(error instanceof AppProblem)) throw error
+        if (error.code === 'thinking_unsupported' && !this.thinkingRefused.has(target)) { this.thinkingRefused.add(target); continue }
+        // Google retires model versions (they still appear in the list but return 404); use the current Flash instead.
+        if (error.code === 'model_unavailable' && target !== GEMINI_FLASH_ALIAS) {
+          console.warn(`Gemini model ${target} is unavailable; using ${GEMINI_FLASH_ALIAS}.`)
+          this.retired.add(target)
+          target = GEMINI_FLASH_ALIAS
+          continue
+        }
+        throw error
+      }
+    }
     if (signal.aborted) throw new AppProblem('stopped', 'Reply stopped.')
     const parsed = generateResponse.safeParse(raw)
     if (!parsed.success) throw new AppProblem('invalid_response', 'Gemini returned an unreadable reply. Please try again.')

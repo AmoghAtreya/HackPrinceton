@@ -60,6 +60,10 @@ export interface TranscriptRecord {
   text: string
   segments: TranscriptSegment[]
   error?: string
+  /** Which engine produced `text`: the live-caption engine, or Gemini when it refined the recording. */
+  transcribedBy?: 'apple' | 'transcribe' | 'gemini'
+  /** What the live-caption engine heard, kept when Gemini wrote the final text. */
+  captionText?: string
 }
 
 export interface VoiceStartReceipt { sessionId: string; sampleRate: number; maxSeconds: number }

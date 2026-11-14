@@ -7,6 +7,24 @@
 
 The chat window has a **Hold to talk** button. Hold it while speaking and let go to stop. A quick tap starts recording, and a second tap stops it. Esc cancels. Live captions appear as you speak. When you stop, the finished transcript is saved locally and handed to the chatbot (see [Voice commands](#voice-commands)).
 
+## Live captions on this Mac, final transcript by Gemini
+
+Two engines work on the same recording:
+
+```
+hold to talk ──▶ mic ──┬──▶ Apple on-device speech ──▶ live captions while you speak
+                       └──▶ kept in memory (≤ 60 s) ──▶ on release: WAV ──▶ Gemini ──▶ final transcript ──▶ shortcuts / chatbot
+```
+
+- **When Gemini is used:** **Settings → Voice input → More accurate voice with Google Gemini** is on (the default), and a Gemini key is available. Triage uses the connected chatbot key if it's a Gemini key, otherwise `GEMINI_API_KEY`.
+- **Fallback to the on-device text:** Triage keeps Apple's transcript when there's no key, no internet, an HTTP error or rate limit, an unreadable answer, an empty answer, or no reply within **8 s** (`GEMINI_TRANSCRIBE_TIMEOUT_MS`). A busy (429/5xx), retired (404) or slow main model gets one retry on the lighter `gemini-flash-lite-latest` first. If the live engine fails mid-recording, Gemini can still write the transcript.
+- **Model:** `gemini-flash-latest` by default (Google's alias for the current Flash), with `gemini-flash-lite-latest` as the busy/slow fallback; set `TRIAGE_GEMINI_TRANSCRIBE_MODEL` to change it.
+- **Prompt:** Gemini is asked to write down only what was said, never to answer it. It gets word hints (destination names and shortcut phrases), and it flags `"clarity":"unclear"` when it couldn't make something out. An unclear transcript gets confidence 0.5, so it's held for **"Did I hear that right?"**.
+- **Engine label:** each transcript records `transcribedBy` (`gemini`, `apple` or `transcribe`) and, when Gemini rewrote it, the live `captionText`. The talk button shows "Heard: … · Gemini" or "· on this Mac".
+- **Privacy:** with the toggle on, every finished recording goes to Google. On Gemini's free tier, Google's terms allow using that data to improve its products, and Settings and the privacy note say so. Turn the toggle off to keep all audio on the Mac. The recording is never written to disk.
+
+Code: `src/main/voice/gemini-transcriber.ts` (WAV encoding, request, fallback rules) and `finalTranscriber` in `src/main/voice/controller.ts`.
+
 ## Setup
 
 Triage uses the AWS SDK's default credential chain **in the main process only**. The renderer never sees AWS keys.

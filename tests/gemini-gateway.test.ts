@@ -22,6 +22,10 @@ const textReply = (text: string, finishReason = 'STOP') => ({ candidates: [{ con
 test('Gemini keys are recognised and redacted', () => {
   assert.equal(isGeminiKey(key), true)
   assert.equal(isGeminiKey('sk-ant-api03-abcdefghijklmnop'), false)
+  const newFormat = 'AQ.Ab8RN6' + 'x'.repeat(40)
+  assert.equal(isGeminiKey(newFormat), true)
+  assert.equal(isGeminiKey('AQ.short'), false)
+  assert.equal(redact(`key ${newFormat} end`), 'key [redacted API key] end')
   assert.equal(redact(`my key is ${key} ok`), 'my key is [redacted API key] ok')
 })
 
@@ -68,6 +72,38 @@ test('the provider gateway sends Gemini keys to Gemini and others to Claude', as
   const gateway = new ProviderGateway(fake('claude'), fake('gemini'))
   assert.equal(await gateway.reply(key, 'm', [], signal), 'gemini')
   assert.equal(await gateway.reply('sk-ant-api03-abcdefghijklmnop', 'm', [], signal), 'claude')
+})
+
+test('a retired model (404) is retried once on the current Flash alias', async () => {
+  const { fetcher, calls } = fakeFetch((url) => url.includes('gemini-2.5-flash:') ? { status: 404, body: '{}' } : { body: textReply('Peanut butter.') })
+  assert.equal(await new GeminiGateway(fetcher).reply(key, 'gemini-2.5-flash', [{ role: 'user', content: 'Say peanut butter' }], signal), 'Peanut butter.')
+  assert.deepEqual(calls.map((call) => call.url.split('/models/')[1]), ['gemini-2.5-flash:generateContent', 'gemini-flash-latest:generateContent'])
+  const missing = fakeFetch(() => ({ status: 404, body: '{}' }))
+  await assert.rejects(new GeminiGateway(missing.fetcher).reply(key, 'gemini-2.5-flash', [{ role: 'user', content: 'x' }], signal), { code: 'model_unavailable' })
+  assert.equal(missing.calls.length, 2, 'only one retry')
+})
+
+test('replies skip the thinking step, falling back for models that refuse it', async () => {
+  const bodies: Array<{ generationConfig: { thinkingConfig?: unknown } }> = []
+  const { fetcher } = fakeFetch((_url, init) => {
+    const body = JSON.parse(String(init.body))
+    bodies.push(body)
+    return body.generationConfig.thinkingConfig
+      ? { status: 400, body: '{"error":{"message":"Thinking budget is not supported for this model."}}' }
+      : { body: textReply('Hello!') }
+  })
+  const gateway = new GeminiGateway(fetcher)
+  assert.equal(await gateway.reply(key, 'gemini-flash-latest', [{ role: 'user', content: 'hi' }], signal), 'Hello!')
+  await gateway.reply(key, 'gemini-flash-latest', [{ role: 'user', content: 'hi again' }], signal)
+  assert.deepEqual(bodies.map((body) => Boolean(body.generationConfig.thinkingConfig)), [true, false, false])
+})
+
+test('a retired model is remembered, so later replies go straight to the Flash alias', async () => {
+  const { fetcher, calls } = fakeFetch((url) => url.includes('gemini-2.5-flash:') ? { status: 404, body: '{}' } : { body: textReply('ok') })
+  const gateway = new GeminiGateway(fetcher)
+  await gateway.reply(key, 'gemini-2.5-flash', [{ role: 'user', content: 'one' }], signal)
+  await gateway.reply(key, 'gemini-2.5-flash', [{ role: 'user', content: 'two' }], signal)
+  assert.deepEqual(calls.map((call) => call.url.split('/models/')[1].split(':')[0]), ['gemini-2.5-flash', 'gemini-flash-latest', 'gemini-flash-latest'])
 })
 
 test('Gemini gets screen context in the user turn and trusted context in the system prompt, like Claude', async () => {
