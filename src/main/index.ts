@@ -17,6 +17,11 @@ import { SimplifierService } from './simplifier/service'
 import { SimplifiedWindow } from './simplifier/window'
 import { ThompsonPolicy } from './simplifier/thompson'
 import demoPageHtml from '../../demo/sites/cluttered-news.html?raw'
+import pharmacyPageHtml from '../../demo/sites/pharmacy-refill.html?raw'
+import { MemoryService } from './memory/service'
+import { SqliteCheckpointer } from './tasks/checkpointer'
+import { DemoPharmacyDriver } from './tasks/pharmacy-driver'
+import { TaskRunner } from './tasks/runner'
 import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -67,6 +72,9 @@ let browser: BrowserSupervisor | undefined
 let simplifier: SimplifierService | undefined
 let simplifiedWindow: SimplifiedWindow | undefined
 let closeSimplifierLog: (() => void) | undefined
+let memory: MemoryService | undefined
+let tasks: TaskRunner | undefined
+let checkpointer: SqliteCheckpointer | undefined
 let shutdownReady = false
 let removeAssistantIpc: (() => void) | undefined
 let shakeMonitor: ShakeMonitor | undefined
@@ -192,7 +200,9 @@ if (!app.requestSingleInstanceLock()) {
     void Promise.all([browser?.close(), simplifier?.close()]).catch(() => {
       console.warn('Triage browser shutdown failed.')
     }).finally(() => {
-      try { closeSimplifierLog?.() } catch { /* The log may already be closed. */ }
+      for (const close of [() => closeSimplifierLog?.(), () => tasks?.close(), () => checkpointer?.close(), () => memory?.close()]) {
+        try { close() } catch { /* Already closed. */ }
+      }
       shutdownReady = true; app.quit()
     })
   })
@@ -252,10 +262,18 @@ if (!app.requestSingleInstanceLock()) {
       log: simplifierParts.log, lockedLayouts: (userId) => (policy instanceof ThompsonPolicy ? policy.frozenArms(userId) : {})
     })
     const requestLog = new LocalRequestLog(directory, app.getVersion())
+    // Personal memory (LangChain vector store) and multi-step tasks (LangGraph),
+    // both stored only in this Mac's Triage data folder.
+    memory = new MemoryService(join(directory, 'memory.sqlite'))
+    checkpointer = new SqliteCheckpointer(join(directory, 'tasks.sqlite'))
+    tasks = new TaskRunner({
+      file: join(directory, 'tasks.sqlite'), memory, checkpointer,
+      driver: new DemoPharmacyDriver(() => simplifier!.browserPage(), pharmacyPageHtml)
+    })
     assistant = new AssistantCoordinator({
       requestLog,
       history: new HistoryStore(join(directory, 'history.sqlite')),
-      credentials, gateway: new ProviderGateway(new ClaudeGateway(), new GeminiGateway()), screens, highlights, browser, simplifier,
+      credentials, gateway: new ProviderGateway(new ClaudeGateway(), new GeminiGateway()), screens, highlights, browser, simplifier, memory, tasks,
       // The coordinator only passes URLs already checked against the destination allowlist.
       openPage: (url) => shell.openExternal(url, { activate: true }),
       changed: (state) => {
