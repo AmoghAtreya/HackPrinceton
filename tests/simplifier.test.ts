@@ -220,3 +220,49 @@ test('the current-tab reader takes the first web address and skips Triage’s ow
   assert.equal(await currentTabReader([async () => 'https://a.example/x'])('https://a.example/x'), 'https://a.example/x')
   assert.equal(await currentTabReader([async () => undefined])(), undefined)
 })
+
+test('a rebuilt shop page keeps its account, order and menu links, grouped and de-duplicated', async () => {
+  const { pageLinks } = await import('../src/main/simplifier/links.ts')
+  const link = (id: number, label: string, href: string, region: PageElement['region']) => el(id, { kind: 'link', label, href, region })
+  const shop = page([
+    link(0, 'Hello, sign in Account & Lists', 'https://www.shop.example/signin', 'header'),
+    link(1, 'Returns & Orders', 'https://www.shop.example/orders#top', 'header'),
+    link(2, 'Today’s Deals', 'https://www.shop.example/deals', 'nav'),
+    link(3, 'Wireless headphones', 'https://www.shop.example/p/1', 'main'),
+    link(4, 'Wireless headphones (again)', 'https://www.shop.example/p/1', 'main'),
+    link(5, 'Read more', 'https://www.shop.example/p/2', 'main'),
+    link(6, 'Big sale!', 'https://ads.example/x', 'promo'),
+    link(7, 'Careers', 'https://jobs.other.example/', 'footer'),
+    link(8, 'Run script', 'javascript:alert(1)', 'main'),
+    link(9, 'This page', 'https://example.com/page#section', 'main'),
+    link(10, 'Gift cards', 'https://www.shop.example/gift', 'main')
+  ], { url: 'https://www.shop.example/home' })
+  shop.elements[9].href = 'https://www.shop.example/home#section'
+  const groups = pageLinks(shop, ['e10'])
+  assert.deepEqual(groups.map((g) => g.id), ['account', 'menu', 'content', 'footer'])
+  assert.deepEqual(groups[0].links.map((l) => [l.label, l.href]), [
+    ['Hello, sign in Account & Lists', 'https://www.shop.example/signin'], ['Returns & Orders', 'https://www.shop.example/orders']
+  ])
+  assert.deepEqual(groups[1].links.map((l) => l.elementId), ['e2'])
+  // Duplicates, filler labels, promos, javascript:, links to this page and links already shown as buttons are dropped.
+  assert.deepEqual(groups[2].links.map((l) => l.elementId), ['e3'])
+  assert.equal(groups[2].links[0].externalHost, undefined)
+  assert.equal(groups[3].links[0].externalHost, 'jobs.other.example')
+})
+
+test('rebuilt-page links render as escaped, clickable anchors and are left out of screen views', async () => {
+  const { renderSimplifiedView } = await import('../src/main/simplifier/render.ts')
+  const p = page([el(0, { label: 'Next' })])
+  const view = { title: 'T', purpose: 'P', summary: [], actions: [], narration: '', concerns: [], source: 'rules' as const }
+  const links = [{ id: 'account' as const, title: 'Your account, orders and help', links: [
+    { elementId: 'e1', label: '<b>Orders</b>', href: 'https://shop.example/orders?a=1&b=2' },
+    { elementId: 'e2', label: 'Jobs', href: 'https://jobs.other.example/', externalHost: 'jobs.other.example' }
+  ] }]
+  const meta = { pageType: 'other', policyMode: 'rules', hiddenRemoved: 0, originalElements: 1, links }
+  const html = renderSimplifiedView(view, armById('a06'), p, meta)
+  assert.match(html, /<a class="link" href="https:\/\/shop\.example\/orders\?a=1&amp;b=2">&lt;b&gt;Orders&lt;\/b&gt;/)
+  assert.match(html, /Goes to another website: jobs\.other\.example/)
+  assert.match(html, /<details class="group" open>/)
+  const screenHtml = renderSimplifiedView(view, armById('a06'), p, { ...meta, screen: { token: 't', fromScreen: false } })
+  assert.doesNotMatch(screenHtml, /class="link"/)
+})
