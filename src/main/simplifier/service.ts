@@ -7,7 +7,7 @@ import { renderSimplifiedView } from './render.ts'
 import { pageLinks } from './links.ts'
 import { AppProblem } from '../assistant/errors.ts'
 import type { LearningSummary } from '../../shared/assistant-contracts.ts'
-import type { PageType } from '../../shared/simplifier-contracts.ts'
+import type { DistilledPage, PageType } from '../../shared/simplifier-contracts.ts'
 import { armById } from './arms.ts'
 import type { DecisionLog } from './decision-log.ts'
 import { EXPECTED_MS } from './reward.ts'
@@ -58,6 +58,58 @@ async function loadPage(page: Page, url: string): Promise<void> {
   try { await page.goto(url, { waitUntil: 'domcontentloaded' }) }
   catch { throw new AppProblem('page_load', 'I couldn’t open ' + hostOf(url) + ' in Triage’s browser. Check your internet connection, then try /simplify again.') }
   await page.waitForLoadState('load', { timeout: 8000 }).catch(() => {})
+  // Sites that redirect or draw everything with JavaScript can still be blank here.
+  const drawn = await page.waitForFunction(hasContent, undefined, { timeout: CONTENT_WAIT_MS }).then(() => true, () => false)
+  // Shops like Amazon blank and redraw the page after "load", then fill in product cards over a few seconds.
+  if (drawn) await page.waitForFunction(isSettled, SETTLE_QUIET_MS, { timeout: SETTLE_WAIT_MS, polling: 300 }).catch(() => {})
+}
+
+const SETTLE_QUIET_MS = 1200
+const SETTLE_WAIT_MS = 8000
+
+/**
+ * Runs inside the page, polled: true once it has links or controls and their
+ * number has not changed for `quietMs`. The running count is kept on window.
+ */
+function isSettled(quietMs: number): boolean {
+  const state = window as unknown as { __triageCount?: number; __triageSince?: number }
+  const count = document.querySelectorAll('a[href], button, input, select, textarea, h1, h2, h3').length
+  const now = Date.now()
+  if (state.__triageCount !== count) { state.__triageCount = count; state.__triageSince = now; return false }
+  return count > 0 && now - (state.__triageSince ?? now) >= quietMs
+}
+
+const CONTENT_WAIT_MS = 10000
+const READ_ATTEMPTS = 3
+const RETRY_WAIT_MS = 3000
+
+/** Runs inside the page: true once there is something a person could read or press. */
+function hasContent(): boolean {
+  const body = document.body
+  return Boolean(body && (body.innerText.trim().length > 0 || body.querySelector('a[href], button, input, select, textarea')))
+}
+
+const isEmpty = (page: DistilledPage) => page.elements.length === 0 && !page.mainText.trim()
+
+/**
+ * Reads the page, retrying when it is blank or a redirect replaces it
+ * mid-read ("Execution context was destroyed"). A page that stays blank is
+ * reported instead of being handed to the model, which would only describe
+ * an empty page.
+ */
+async function readPage(page: Page, signal: AbortSignal): Promise<DistilledPage> {
+  for (let attempt = 1; ; attempt++) {
+    let distilled: DistilledPage | undefined
+    try { distilled = await distillPage(page, PAGE_ELEMENT_LIMIT) }
+    catch (error) { if (attempt >= READ_ATTEMPTS) throw error }
+    if (distilled && !isEmpty(distilled)) return distilled
+    if (signal.aborted) throw new AppProblem('stopped', 'Simplification stopped.')
+    if (attempt >= READ_ATTEMPTS) {
+      throw new AppProblem('empty_page', 'The page from ' + hostOf(page.url()) + ' was still blank in Triage’s browser, so there was nothing to rebuild. It may still be loading, or the site may be asking Triage’s browser to prove it is a person. Look at the Triage browser window, then type /simplify again.')
+    }
+    await page.waitForLoadState('domcontentloaded', { timeout: RETRY_WAIT_MS }).catch(() => {})
+    await page.waitForFunction(hasContent, undefined, { timeout: RETRY_WAIT_MS }).catch(() => {})
+  }
 }
 
 function hostOf(url: string): string {
@@ -149,7 +201,7 @@ export class SimplifierService {
     if (signal.aborted) throw new AppProblem('stopped', 'Simplification stopped.')
     await page.bringToFront().catch(() => {})
     // Busy sites (shops, portals) have hundreds of links; read up to the schema's limit so footer and menu links survive.
-    const distilled = await distillPage(page, PAGE_ELEMENT_LIMIT)
+    const distilled = await readPage(page, signal)
     const result = await this.engine.simplify({ page: distilled, userId, voiceEnabled: false, credentials, signal })
     const html = renderSimplifiedView(result.view, result.arm, distilled, {
       pageType: result.pageType, policyMode: result.mode, hiddenRemoved: distilled.stats.hiddenRemoved,
