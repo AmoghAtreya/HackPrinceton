@@ -27,7 +27,9 @@ const elementShape = {
   secure: z.boolean(),
   enabled: z.boolean(),
   /** Number of ancestors that are also in `elements`, so ancestry can be rebuilt from the flat list. */
-  depth: z.number().int().min(0).max(CONTEXT_MAX_ELEMENTS)
+  depth: z.number().int().min(0).max(CONTEXT_MAX_ELEMENTS),
+  /** Child indexes from the focused window down to this element; lets frameOf() find it again. */
+  path: z.array(z.number().int().min(0).max(100000)).max(128)
 }
 
 // Defence in depth: even if a native build regressed, a snapshot in which a
@@ -85,3 +87,13 @@ export const contextSnapshotSchema = z.object({
   generation: z.number().int().min(0)
 }).strict().superRefine(focusCheck)
 export type ContextSnapshot = z.infer<typeof contextSnapshotSchema>
+
+/** What the native frameOf(pid, path) reports: geometry and role only, never a label or a value. */
+export const frameProbeSchema = z.object({
+  /** Whether the element's app is still the one the person is looking at. */
+  frontmost: z.boolean(),
+  role: z.string().min(1).max(80).optional(),
+  /** null when the path no longer leads to an element inside the window. */
+  frame: contextFrameSchema.nullable()
+}).strict()
+export type FrameProbe = z.infer<typeof frameProbeSchema>
