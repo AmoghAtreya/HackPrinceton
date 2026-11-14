@@ -17,6 +17,7 @@ import { LocalRequestLog } from './logging/request-log'
 import { installRequestLogIpc } from './logging/ipc'
 import { createSimplifier } from './simplifier/index'
 import { SimplifierService } from './simplifier/service'
+import { chromeActiveTabUrl, currentTabReader } from './simplifier/current-tab'
 import { SimplifiedWindow } from './simplifier/window'
 import { ScreenSimplifier } from './simplifier/screen'
 import { ThompsonPolicy } from './simplifier/thompson'
@@ -84,6 +85,7 @@ let screens: ScreenService | undefined
 let contexts: ContextService | undefined
 let captures: PairedCapture | undefined
 let chatContexts: ContextService | undefined
+let tabContexts: ContextService | undefined
 let trust: TrustService | undefined
 let trustContexts: ContextService | undefined
 let trustTimer: ReturnType<typeof setInterval> | undefined
@@ -246,7 +248,7 @@ if (!app.requestSingleInstanceLock()) {
       () => removeSpeechIpc?.(), () => polly?.dispose(), () => removeRequestLogIpc?.(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
-      () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(), () => chatContexts?.dispose(),
+      () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(), () => chatContexts?.dispose(), () => tabContexts?.dispose(),
       () => highlights?.dispose(), () => overlay?.dispose(),
       () => desktop?.dispose(), () => tray?.destroy(), () => screenSimplifier?.dispose(), () => simplifiedWindow?.dispose(),
       () => {
@@ -309,6 +311,8 @@ if (!app.requestSingleInstanceLock()) {
     // Its own instance: a chat message must not replace the snapshot paired with a pending screenshot.
     chatContexts = accessibility ? new ContextService(accessibility.port) : undefined
     trustContexts = accessibility ? new ContextService(accessibility.port) : undefined
+    // Reads only the address of the page behind Triage, for a bare "/simplify".
+    tabContexts = accessibility ? new ContextService(accessibility.port) : undefined
     // The trust graph is optional equipment: if it cannot be opened, everything else still works.
     try {
       const store = new TrustStore(join(directory, 'trust-graph.sqlite'))
@@ -353,7 +357,15 @@ if (!app.requestSingleInstanceLock()) {
       engine: simplifierParts.engine, presenter: simplifiedWindow, channel: configuredBrowserChannel(), demoHtml: demoPageHtml,
       log: simplifierParts.log, lockedLayouts: (userId) => (policy instanceof ThompsonPolicy ? policy.frozenArms(userId) : {}),
       observed: (decisionId) => screenSimplifier?.signals(decisionId),
-      reported: (userId, pageType, signals) => tutor?.observePage(userId, pageType, signals)
+      reported: (userId, pageType, signals) => tutor?.observePage(userId, pageType, signals),
+      // The window behind Triage (accessibility, no prompt), else Chrome's active tab (asks once to control Chrome).
+      currentTab: currentTabReader([
+        async () => {
+          if (!tabContexts) return undefined
+          try { return (await tabContexts.capture()).url } finally { tabContexts.clear() }
+        },
+        chromeActiveTabUrl()
+      ])
     })
     // Needs the accessibility module; its only powers over the real page are reading it and drawing a highlight.
     screenSimplifier = contexts && accessibility ? new ScreenSimplifier({
