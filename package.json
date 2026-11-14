@@ -11,6 +11,7 @@
   "scripts": {
     "predev": "install-electron",
     "dev": "electron-vite dev",
+    "phishing:build": "mkdir -p release/link-scanner-cache && /usr/bin/swiftc -O -module-cache-path release/link-scanner-cache native/phishing/LinkScanner.swift -o release/TriageLinkScanner",
     "voice:build": "node scripts/build-voice-helper.mjs",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && electron-vite build",
