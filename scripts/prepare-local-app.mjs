@@ -16,7 +16,7 @@ function run(command, args) {
 }
 
 if (process.platform !== 'darwin') throw new Error('This local app preparation script requires macOS.')
-for (const path of [runtime, join(root, 'out', 'main', 'index.js'), join(root, 'out', 'preload', 'index.js'), join(root, 'out', 'renderer', 'index.html'), join(root, 'release', 'TriageVoiceHelper.app', 'Contents', 'MacOS', 'TriageVoiceHelper')]) {
+for (const path of [runtime, join(root, 'out', 'main', 'index.js'), join(root, 'out', 'preload', 'index.js'), join(root, 'out', 'renderer', 'index.html')]) {
   if (!existsSync(path)) throw new Error('Missing ' + path + '. Install dependencies and run npm run build first.')
 }
 
@@ -28,11 +28,6 @@ try {
   run('/usr/bin/ditto', [runtime, staging])
   const resources = join(staging, 'Contents', 'Resources')
   rmSync(join(resources, 'default_app.asar'), { force: true })
-  // Native speech is compiled before packaging, outside ASAR, with its own stable identity.
-  const helper = join(staging, 'Contents', 'Helpers', 'TriageVoiceHelper.app')
-  mkdirSync(dirname(helper), { recursive: true })
-  cpSync(join(root, 'release', 'TriageVoiceHelper.app'), helper, { recursive: true })
-  run('/usr/bin/codesign', ['--verify', '--strict', helper])
   const appRoot = join(resources, 'app')
   mkdirSync(appRoot, { recursive: true })
   cpSync(join(root, 'out'), join(appRoot, 'out'), { recursive: true })
@@ -85,7 +80,7 @@ try {
   })) run('/usr/libexec/PlistBuddy', ['-c', 'Set :' + key + ' ' + value, plist])
   // Re-sign the local Electron runtime inside out. Some npm Electron distributions
   // carry incomplete framework resource signatures; outer signing cannot repair them.
-  // Keep any Electron entitlements; never replace them with the speech helper's list.
+  // Keep any Electron entitlements.
   function signRuntime(path) {
     const stat = lstatSync(path)
     if (stat.isSymbolicLink()) return
@@ -102,15 +97,6 @@ try {
     }
   }
   signRuntime(join(staging, 'Contents', 'Frameworks'))
-  run('/usr/bin/codesign', ['--verify', '--strict', helper])
-  // TCC may attribute nested Launch Services permission requests to the parent.
-  for (const [key, value] of Object.entries({
-    NSMicrophoneUsageDescription: 'Triage records only during explicitly started voice input and releases the microphone on Finish or Cancel.',
-    NSSpeechRecognitionUsageDescription: 'Triage transcribes explicitly started voice input on this Mac. Recognition that requires a server is rejected.'
-  })) {
-    const present = spawnSync('/usr/libexec/PlistBuddy', ['-c', 'Print :' + key, plist], { encoding: 'utf8' }).status === 0
-    run('/usr/libexec/PlistBuddy', ['-c', (present ? 'Set :' + key + ' ' : 'Add :' + key + ' string ') + value, plist])
-  }
   run('/usr/bin/codesign', ['--force', '--sign', '-', staging])
   run('/usr/bin/codesign', ['--verify', '--deep', '--strict', staging])
   // Replacing this generated app never removes application user data.
