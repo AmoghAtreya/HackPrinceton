@@ -19,12 +19,15 @@ export interface TaskSummary {
   steps: string[]; stepCount: number; question: string | null; createdAt: number; updatedAt: number
 }
 
-/** "Refill my blood pressure medicine" and similar. Returns the request, or null. */
+/**
+ * "Refill my blood pressure medicine", "can you refill my meds?", "/refill lisinopril".
+ * Returns a normalised request, or null. Questions about refilling ("how do I
+ * refill…") start with other words and are left to the normal chat.
+ */
 export function parseRefillCommand(text: string): string | null {
-  const trimmed = text.trim()
-  return /^(?:\/refill\b|(?:(?:please|can you|could you|triage,?)\s+)*(?:refill|reorder|renew)\s+(?:my|the)\s+\S)/i.test(trimmed) &&
-    /\b(?:refill|reorder|renew)\b/i.test(trimmed) && !/\?\s*$/.test(trimmed.replace(/^(?:can|could) you\b.*/i, ''))
-    ? trimmed.replace(/^\/refill\s*/i, 'refill my ') : null
+  const match = /^(?:\/refill\s+(.+?)|(?:(?:please|can you|could you|triage,?)\s+)*(?:refill|reorder|renew)\s+(?:my|the)\s+(.+?))\s*(?:please|for me)?\s*[.!?]*$/i.exec(text.trim())
+  if (!match) return null
+  return 'refill my ' + (match[1] ?? match[2]).trim()
 }
 
 export const WHERE_WAS_I = /^(?:where was i|where were we|what was i doing|what step (?:am i|are we) on)\??$/i
