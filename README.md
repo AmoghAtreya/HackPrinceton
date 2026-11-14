@@ -51,3 +51,20 @@ Plain chat messages carry a short text description of what is in front: the app 
 When that text is not enough (for example "what does this picture show"), Claude can ask for a screenshot. Triage then takes one, with private fields blacked out, and asks the same question again with the image, at most once per request. If the private-field check could not run, the screenshot is not sent and Triage asks you to use **Capture screen** instead.
 
 With **Use faster model for simple requests** on (the default, in Settings), routing and ordinary replies go to a Haiku model when your key lists one. Screenshots, "show me where" and page simplifying use the model you selected, or a Sonnet model if you selected Haiku. History records which tier answered and whether a screenshot was taken, never the content.
+
+## People & organizations (the trust graph)
+
+Triage keeps a local list of the people and organizations you really deal with and how they really reach you: email addresses, phone numbers and website names. It is stored in `trust-graph.sqlite` in Triage's data folder on this Mac. It holds no message text, no full web addresses and no passwords.
+
+**What goes in.** Only three things can add to the list: a caregiver (or you) in **Settings → People & organizations**; something you tell Triage in chat and then confirm with "yes"; and the built-in organizations Triage already knows how to open (Amazon, Medicare, Social Security, USPS and others). Nothing Triage reads from the screen can add to it or change it. You can see, edit and delete every entry, and every answer you gave, in Settings.
+
+**What it does.** When an email or a sign-in or payment page claims to be someone on your list but arrives from a different address or website, Triage shows a warning in plain words, with the facts behind it, and two buttons: **This is a scam** and **It's really them**. Your answer is remembered for that sender. Checks run when you send a chat message, and continuously if you turn on **Warn About Impersonation (Preview)** in the menu bar menu (off at each launch; needs Accessibility permission and `npm run context:build`).
+
+**What Claude sees.** When it is relevant, Claude is told a contact's name, relationship and a partly hidden hint such as `r…@example.com`, plus the result of Triage's own check. Full addresses and numbers do not leave this Mac.
+
+### Demo: a fake "Ravi" asking for gift cards
+
+1. In **Settings → People & organizations**, add a person named `Ravi` (relationship `son`) with email `ravi.kumar@example.com` and phone `(555) 010-0142`. Use **Edit** to add `Ravi Kumar` under "Also known as". Or say it in chat: "My son Ravi's email is ravi.kumar@example.com and his number is 555-010-0142", then answer "yes".
+2. Turn on **Warn About Impersonation (Preview)** in the menu bar menu.
+3. Open [the demo message](demos/impersonation-ravi.html) in Chrome and keep it in front. Triage should open with: "This says it's from Ravi, but Ravi uses a different email. Call Ravi at the number you have." Open "Why Triage says this" to see the two addresses, the phone number on your list, and that the message asks for gift cards, says it is urgent and asks you to keep it secret.
+4. Press **This is a scam**. The same sender is then flagged as a scam you reported, whatever name it uses.
