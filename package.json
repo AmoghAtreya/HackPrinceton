@@ -21,7 +21,8 @@
     "browser:install": "playwright install chromium",
     "test": "npm run test:unit && npm run test:browser",
     "test:unit": "node --experimental-strip-types --test tests/*.test.ts",
-    "test:browser": "node --experimental-strip-types --test tests/browser/*.test.ts"
+    "test:browser": "node --experimental-strip-types --test tests/browser/*.test.ts",
+    "eval:routing": "node --experimental-strip-types scripts/eval-routing.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.7.0",
