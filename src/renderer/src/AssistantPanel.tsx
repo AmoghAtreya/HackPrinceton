@@ -10,7 +10,7 @@ import { HistoryPanel } from './HistoryPanel'
 import { VoiceButton, type VoiceButtonHandle } from './VoiceButton'
 import { matchVoiceIntent, needsConfirmation } from './voice/intents'
 import { speechPlayer } from './voice/speech-player'
-import { failureSpeech, prepareSpeech } from '../../shared/speech-text'
+import { failureSpeech, phishingSpeech, prepareSpeech } from '../../shared/speech-text'
 import { isNextStep, isShowAgain } from '../../shared/guide-contracts'
 import type { ReadAloud } from '../../shared/speech-contracts'
 import { analysisSpeech, type ScreenAnalysis, type ScreenAnalysisKind } from '../../shared/screen-analysis-contracts'
@@ -145,6 +145,9 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   useEffect(() => {
     if (view === 'chat' && state.chatOpen) input.current?.focus()
   }, [view, state.chatOpen])
+
+  // Chrome Link Warnings: say it out loud when a phishing link shows up, whether or not the chat is open.
+  useEffect(() => bridge.onLinkWarning((count) => { void speechPlayer.speak(phishingSpeech(count)) }), [bridge])
 
   // Global voice shortcut: switch to the chat tab if needed, then start or stop listening.
   useEffect(() => bridge.onVoiceShortcut(() => {

@@ -323,6 +323,12 @@ if (!app.requestSingleInstanceLock()) {
           dialog.showErrorBox('Chrome Link Warnings paused', permissionDenied
             ? 'In System Settings → Privacy & Security → Accessibility, enable Triage, then turn Link Warnings back on.'
             : 'Run npm run phishing:build. If using Triage.app, rebuild the bundle before turning Link Warnings back on.')
+        }, (count) => {
+          // Spoken by the chat window. Wait while the user is talking, so Triage never records itself.
+          if (quitting || !desktop || desktop.chat.isDestroyed()) return false
+          if (voice && voice.snapshot().state !== 'idle') return false
+          desktop.chat.webContents.send(channels.linkWarning, count)
+          return true
         })
     }
     // Optional: without this module (or without Accessibility access) highlights use pixel boxes.

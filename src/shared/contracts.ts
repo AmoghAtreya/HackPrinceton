@@ -28,7 +28,8 @@ export const channels = {
   menu: 'desktop:menu',
   dragStart: 'desktop:drag-start',
   dragEnd: 'desktop:drag-end',
-  pointer: 'desktop:pointer'
+  pointer: 'desktop:pointer',
+  linkWarning: 'desktop:link-warning'
 } as const
 
 export interface DesktopBridge extends AssistantBridge, VoiceBridge, SpeechBridge, RequestLogBridge, TrustBridge, SkillsBridge {
@@ -42,4 +43,6 @@ export interface DesktopBridge extends AssistantBridge, VoiceBridge, SpeechBridg
   beginDrag(point: DesktopPoint): void
   endDrag(allowClick?: boolean, point?: DesktopPoint): void
   setPointerInteractive(interactive: boolean): void
+  /** Chrome Link Warnings found phishing links that just appeared on screen (how many). */
+  onLinkWarning(listener: (count: number) => void): () => void
 }

@@ -90,6 +90,13 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(channels.state, receive)
     return () => { ipcRenderer.removeListener(channels.state, receive) }
   },
+  onLinkWarning: (listener) => {
+    const receive = (_event: Electron.IpcRendererEvent, count: unknown): void => {
+      if (typeof count === 'number' && Number.isInteger(count) && count > 0) listener(count)
+    }
+    ipcRenderer.on(channels.linkWarning, receive)
+    return () => { ipcRenderer.removeListener(channels.linkWarning, receive) }
+  },
   toggleChat: () => ipcRenderer.send(channels.toggleChat),
   closeChat: () => ipcRenderer.send(channels.closeChat),
   hide: () => ipcRenderer.send(channels.hide),
