@@ -15,6 +15,8 @@ A separate view that shows, live, what Triage's models are doing: every LangGrap
 
 The counters at the top count real LangChain and LangGraph runs reported by LangChain's own callback system, not estimates.
 
+A second tab, **How it works**, explains each learner (the layout bandit, knowledge tracing, memory retrieval, the task graph), the maths behind it, the research each refinement comes from, how to implement it step by step, and where a neural network would fit next. Under each layout bar, the Live tab also shows the bandit's learned reward noise (σ²) and how many recent ratings it is based on.
+
 ## Opening it
 
 - **Same computer:** Triage menu-bar icon → **Show learning monitor**, or start Triage with `TRIAGE_MONITOR=1`.
