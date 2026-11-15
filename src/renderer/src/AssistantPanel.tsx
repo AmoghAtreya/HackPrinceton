@@ -7,7 +7,7 @@ import { Character } from './Character'
 import { SettingsPanel } from './SettingsPanel'
 import { TrustWarning } from './TrustWarning'
 import { HistoryPanel } from './HistoryPanel'
-import { VoiceButton } from './VoiceButton'
+import { VoiceButton, type VoiceButtonHandle } from './VoiceButton'
 import { matchVoiceIntent, needsConfirmation } from './voice/intents'
 import { speechPlayer } from './voice/speech-player'
 import { failureSpeech, prepareSpeech } from '../../shared/speech-text'
@@ -39,6 +39,9 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   const [analyzing, setAnalyzing] = useState<ScreenAnalysisKind | null>(null)
   const input = useRef<HTMLTextAreaElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
+  const voiceButton = useRef<VoiceButtonHandle>(null)
+  /** A shortcut press that arrived while another tab was open; handled once the talk button mounts. */
+  const pendingVoiceToggle = useRef(false)
   const keepScroll = useRef(false)
   const lastGesture = useRef<string | undefined>(undefined)
   /** Task ids whose reply should be read aloud when it arrives. */
@@ -140,6 +143,18 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   useEffect(() => {
     if (view === 'chat' && state.chatOpen) input.current?.focus()
   }, [view, state.chatOpen])
+
+  // Global voice shortcut: switch to the chat tab if needed, then start or stop listening.
+  useEffect(() => bridge.onVoiceShortcut(() => {
+    if (voiceButton.current) voiceButton.current.toggle()
+    else { pendingVoiceToggle.current = true; setView('chat') }
+  }), [bridge])
+
+  useEffect(() => {
+    if (view !== 'chat' || !pendingVoiceToggle.current || !voiceButton.current) return
+    pendingVoiceToggle.current = false
+    voiceButton.current.toggle()
+  }, [view])
 
   useEffect(() => {
     if (keepScroll.current) { keepScroll.current = false; return }
@@ -430,7 +445,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       {view === 'chat' && <div ref={bottom} />}
     </div>
     {view === 'chat' && <footer className="chat-footer">
-      <VoiceButton bridge={bridge} onTranscript={(record) => void handleTranscript(record)} />
+      <VoiceButton ref={voiceButton} bridge={bridge} shortcut={state.voiceShortcut} onTranscript={(record) => void handleTranscript(record)} />
       {screenHelp && <ScreenHelpCard analysis={screenHelp} disabled={capturing || busy || Boolean(active) || Boolean(analyzing)}
         onClose={() => setScreenHelp(null)}
         onAction={(action) => void captureAndDeliver(action.instruction, action.kind === 'show_me_where' ? 'highlight' : 'explain', 'chat')} />}

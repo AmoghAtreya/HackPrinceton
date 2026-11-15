@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type KeyboardEvent } from 'react'
 import type { TranscriptRecord, VoiceBridge } from '../../shared/voice-contracts'
 import { displayError, unwrap } from './assistant-ui'
 import { MicrophoneCapture, MicrophoneProblem } from './voice/microphone'
@@ -15,7 +15,10 @@ const TAP_MS = 400
  * The finished transcript is stored by the main process; nothing is sent to
  * the assistant yet.
  */
-export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onTranscript?: (record: TranscriptRecord) => void }) {
+/** Lets the global voice shortcut drive the button: start listening, or stop if already listening. */
+export interface VoiceButtonHandle { toggle(): void }
+
+export const VoiceButton = forwardRef<VoiceButtonHandle, { bridge: VoiceBridge; onTranscript?: (record: TranscriptRecord) => void; shortcut?: string[] | null }>(function VoiceButton({ bridge, onTranscript, shortcut }, ref) {
   const [phase, setPhaseState] = useState<Phase>('idle')
   const [caption, setCaption] = useState('')
   const [level, setLevel] = useState(0)
@@ -122,6 +125,15 @@ export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onT
     void end()
   }
 
+  /** The keyboard shortcut works like a tap: press once to start, press again to stop. */
+  function toggle() {
+    speechPlayer.stop()
+    if (phaseRef.current === 'idle') { tapMode.current = true; void begin() }
+    else if (phaseRef.current === 'recording' || phaseRef.current === 'starting') void end()
+  }
+
+  useImperativeHandle(ref, () => ({ toggle }))
+
   useEffect(() => speechPlayer.subscribe(setPlayback), [])
 
   useEffect(() => {
@@ -191,4 +203,4 @@ export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onT
     {playback.notice && <p className="notice warning voice-notice" role="status">{playback.notice}
       <button type="button" className="text-button" onClick={() => speechPlayer.dismissNotice()}>Dismiss</button></p>}
   </section>
-}
+})
