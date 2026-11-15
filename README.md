@@ -1,14 +1,27 @@
 # Triage
 
-**A calm, voice-first helper that lives on your Mac and helps older and less tech-confident people get things done on the web, by pointing, explaining and talking them through it.**
+**A calm, voice-first tutor that lives on your Mac and teaches older and less tech-confident people to use the web by pointing at the real button, explaining it in plain words, and letting them press it themselves.**
 
-HackPrinceton Fall 2026 · Tracks: Amazon *Best Practical AI*, Education
+HackPrinceton Fall 2026 · **Main track: Education** · Special tracks: Amazon, LangChain, Peri
 
 ---
 
 ## The problem
 
-Many older adults know *what* they want to do: track a package, reorder pills, check Medicare. What they can't do is find *where* to click on a cluttered page. They get overwhelmed, give up, or call a family member. They are also the people scammers target most.
+Many older adults know *what* they want to do: track a package, reorder pills, check Medicare. What they can't do is find *where* to click on a cluttered page. They get overwhelmed, give up, or wait for a family member or technician to do it for them. Each time someone else does it, they learn nothing for next time. They are also the people scammers target most.
+
+We called a senior-living facility to check this ([interview transcript](docs/Skyline_Health_Transcript.md)). About half the residents use computers. Most of their questions are "where to go or what to click on", not broken machines. The technician isn't there every day, so residents often wait. Some residents follow spoken directions fine, and others need someone to point. Staff added that scam warnings should say *why* something is suspicious, not just "don't click".
+
+## Our goal: help people learn, not just get it done
+
+Triage is built to make people **more confident and more independent with technology over time**, not to keep doing things for them. Every feature leans the same way:
+
+- **Show, don't take over.** Triage draws a box or an arrow on the real control and lets the person click it. Guided help gives one step at a time. On a simplified page, the buttons point at the real control instead of pressing it.
+- **Explain why.** Answers are short and plain, read aloud, and give the next step instead of a wall of instructions. Scam warnings come with the facts behind them, so the person learns what a scam looks like.
+- **Meet people where they are.** A **skill graph** keeps track of what each person already does well, using Bayesian Knowledge Tracing. Explanations skip what they already know and start with what's missing. A caregiver can mark a skill **Practice this** so Triage walks through it every time.
+- **Learn from what actually happens.** Clicking the highlighted control on the first try counts as a skill shown. Losing the highlight or going back counts against it. Ratings of simplified pages teach the layout chooser which layouts work for this person.
+
+The aim is that, over weeks, a person needs Triage less: first it points, then it reminds, and eventually they just do it.
 
 ## What Triage does
 
