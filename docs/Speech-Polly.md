@@ -13,7 +13,7 @@ Triage reads its answers aloud in a slow, clear neural voice. If Polly is unavai
   - click **Stop** next to "Speaking…",
   - start a new conversation.
 - **Replay.** **Say that again** replays the last reply from cached audio, without calling Polly again. Every Triage message also has a **Read aloud** button.
-- **Settings.** Voice: Joanna, Matthew, Ruth or Stephen (US English, neural). Speed: Slower (80%), Relaxed (90%, the default) or Normal. **Test voice** saves your choices and plays a sample.
+- **Settings.** Voice: Joanna, Matthew, Ruth or Stephen (US English, neural). Speed: Slower (80%), Relaxed (90%, the default), Normal (100%) or Faster (115%). **Test voice** saves your choices and plays a sample.
 
 ## Setup
 

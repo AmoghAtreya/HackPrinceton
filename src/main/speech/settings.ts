@@ -6,7 +6,7 @@ import { AppProblem } from '../assistant/errors.ts'
 
 const schema = z.object({
   readAloud: z.enum(['voice', 'always', 'off']),
-  rate: z.union(speechRates.map((rate) => z.literal(rate)) as [z.ZodLiteral<80>, z.ZodLiteral<90>, z.ZodLiteral<100>]),
+  rate: z.union(speechRates.map((rate) => z.literal(rate)) as [z.ZodLiteral<80>, z.ZodLiteral<90>, z.ZodLiteral<100>, z.ZodLiteral<115>]),
   voice: z.enum(speechVoices),
   geminiTranscription: z.boolean().optional()
 }).strict()
