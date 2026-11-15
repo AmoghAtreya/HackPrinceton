@@ -5,8 +5,8 @@ import type { Result } from './assistant-contracts'
 export const speechVoices = ['Joanna', 'Matthew', 'Ruth', 'Stephen'] as const
 export type SpeechVoice = typeof speechVoices[number]
 
-/** SSML prosody rate in percent: 80 = slower, 90 = relaxed, 100 = normal. */
-export const speechRates = [80, 90, 100] as const
+/** SSML prosody rate in percent: 80 = slower, 90 = relaxed, 100 = normal, 115 = faster. */
+export const speechRates = [80, 90, 100, 115] as const
 export type SpeechRate = typeof speechRates[number]
 
 /** When replies are read aloud: after voice or shake requests, after every request, or never. */

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { DesktopBridge } from '../../shared/contracts'
-import { speechVoices, type ReadAloud, type SpeechRate, type SpeechSettings, type SpeechVoice } from '../../shared/speech-contracts'
+import { speechRates, speechVoices, type ReadAloud, type SpeechRate, type SpeechSettings, type SpeechVoice } from '../../shared/speech-contracts'
 import { displayError, unwrap } from './assistant-ui'
 import { speechPlayer } from './voice/speech-player'
 
@@ -9,7 +9,7 @@ const readAloudLabels: Record<ReadAloud, string> = {
   always: 'Always',
   off: 'Never'
 }
-const rateLabels: Record<SpeechRate, string> = { 80: 'Slower', 90: 'Relaxed', 100: 'Normal' }
+const rateLabels: Record<SpeechRate, string> = { 80: 'Slower', 90: 'Relaxed', 100: 'Normal', 115: 'Faster' }
 
 export function SpeechSettingsPanel({ bridge }: { bridge: DesktopBridge }) {
   const [settings, setSettings] = useState<SpeechSettings | null>(null)
@@ -107,7 +107,7 @@ export function SpeechSettingsPanel({ bridge }: { bridge: DesktopBridge }) {
       <label htmlFor="speech-rate">Speaking speed</label>
       <select id="speech-rate" value={settings.rate} disabled={busy}
         onChange={(event) => { setSettings({ ...settings, rate: Number(event.target.value) as SpeechRate }); setNotice('') }}>
-        {([80, 90, 100] as SpeechRate[]).map((value) => <option key={value} value={value}>{rateLabels[value]}</option>)}
+        {speechRates.map((value) => <option key={value} value={value}>{rateLabels[value]}</option>)}
       </select>
       <label htmlFor="speech-voice">Voice</label>
       <select id="speech-voice" value={settings.voice} disabled={busy}
