@@ -74,7 +74,10 @@ Requirements: macOS on Apple Silicon, Node 22 (`.nvmrc`), and an **Anthropic (Cl
 npm install
 npm run browser:install     # Chromium for the flight-search task browser
 npm run speech:build        # free on-device speech helper (voice input)
+npm run context:build       # reads on-screen controls: hides private fields in screenshots, outlines real buttons
 ```
+
+Then allow Triage in **System Settings → Privacy & Security → Accessibility**. Without it (or without `context:build`), guided help and screenshots sent without a preview are refused, because private fields can't be hidden.
 
 > **After every `git pull`, run `npm install` again.** Teammates add packages (for example LangChain and LangGraph for memory and tasks); without them Triage fails to build or start. Re-run `npm run speech:build` too if `native/speech/` changed.
 
@@ -155,6 +158,10 @@ Quit any running copy of Triage before opening the rebuilt app. macOS may ask yo
 When you ask where to click, Triage takes an accessibility snapshot of the app in front alongside the screenshot and offers the model up to 60 of its controls (id, kind, label and region; never typed values). If the model picks one, the highlight uses that control's real frame and follows it while the page scrolls, re-reading its position every 150 ms. When the control leaves the screen or you switch apps for more than a second, the highlight clears and Triage says so in chat.
 
 This needs `npm run context:build` and **Accessibility** permission for Triage. Triage never prompts for it here: without the permission or the module, highlights fall back to the model's pixel box exactly as before. Activity History records only whether a highlight came from `element_id` or `pixel_box`.
+
+## Guided help
+
+Ask "help me attach a photo" (or "walk me through it") and Triage guides you one step at a time: a box around the one button to press and a single short sentence, read aloud when you asked by voice. Click the outlined button, or say "next", to get the next step. See [docs/Screen-Help.md](docs/Screen-Help.md#guided-help-one-step-at-a-time).
 
 ## Simplify this page
 

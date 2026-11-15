@@ -291,3 +291,10 @@ button:disabled { opacity: .55; cursor: default; }
 .task-submitted { color: #4f6b3d; }
 .task-steps { margin: 4px 0 2px; padding-left: 16px; font-size: 10px; line-height: 1.5; color: #8d7d6e; }
 .task-question { font-style: italic; color: #6b513d; }
+
+/* Guided help: what Triage is walking the person through, and the way to move on. */
+.guide-bar { display: flex; flex-direction: column; gap: 4px; padding: 10px 16px; color: #5e4633; background: #f9ecd9; border-bottom: 1px solid #ecd9c0; }
+.guide-goal { font-size: 13px; line-height: 1.35; }
+.guide-hint { font-size: 11px; color: #8a6c52; }
+.guide-actions { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.guide-actions .primary-button { font-size: 13px; padding: 9px 18px; }

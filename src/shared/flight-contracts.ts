@@ -26,6 +26,8 @@ export const routeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('remember_contact'), contact: contactDraftSchema }).strict(),
   // A how-to question. `skills` are meant to be catalogue ids; anything that is not is dropped by the app, never stored.
   z.object({ kind: z.literal('how_to'), skills: z.array(z.string().max(60)).max(5) }).strict(),
+  // Walk the person through a task on the screen in front of them, one outlined step at a time. `goal` is their request in a few words.
+  z.object({ kind: z.literal('guide'), goal: z.string().trim().min(1).max(200) }).strict(),
   z.object({ kind: z.literal('open_page'), destination: z.enum(destinationIds), query: z.string().trim().min(1).max(200).optional() }).strict()
 ])
 export type AssistantRoute = z.infer<typeof routeSchema>

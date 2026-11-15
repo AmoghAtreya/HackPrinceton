@@ -31,6 +31,33 @@ const elementOutputSchema = z.object({
 }).strict()
 export const elementHighlightResponseFormat = zodOutputFormat(elementOutputSchema)
 
+// Guided help asks for one step at a time: the same shapes plus whether the goal is already reached.
+const guideDone = z.boolean().describe('True only when the goal is already complete on this screen; then elementId and target are null.')
+export const guideResponseFormat = zodOutputFormat(outputSchema.extend({ done: guideDone }).strict())
+export const elementGuideResponseFormat = zodOutputFormat(elementOutputSchema.extend({ done: guideDone }).strict())
+
+/**
+ * A guided-help step: a highlight reply plus `done`. The location is checked by
+ * parseHighlightReply exactly as for "Show me where"; a missing or non-boolean
+ * `done` fails closed.
+ */
+export function parseGuideReply(text: string, capture: CaptureMetadata, offered?: ReadonlySet<string>): HighlightReply {
+  const problem = new AppProblem('invalid_target', 'No reliable next step was returned. Say “next” to try again. No highlight was shown.')
+  let decoded: unknown
+  try {
+    if (text.length > 12000) throw Error()
+    const trimmed = text.trim()
+    const wrapped = /^\x60\x60\x60(?:json)?\s*\n([\s\S]*?)\n\x60\x60\x60$/i.exec(trimmed)
+    decoded = JSON.parse(wrapped ? wrapped[1] : trimmed)
+  } catch { throw problem }
+  if (typeof decoded !== 'object' || decoded === null || Array.isArray(decoded)) throw problem
+  const { done, ...rest } = decoded as Record<string, unknown>
+  if (typeof done !== 'boolean') throw problem
+  const reply = parseHighlightReply(JSON.stringify(rest), capture, offered)
+  // A finished goal has nothing left to point at.
+  return done ? { explanation: reply.explanation, captureId: reply.captureId, target: null, done: true } : { ...reply, done: false }
+}
+
 /**
  * `offered` is the set of element ids sent with this request. When present the
  * reply must use the element format, and an id outside the set fails closed.

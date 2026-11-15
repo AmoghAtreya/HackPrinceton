@@ -402,6 +402,7 @@ if (!app.requestSingleInstanceLock()) {
         return screenContextBlock(snapshot)
       },
       captureScreen: () => captures!.capture(), trust, tutor,
+      makeRoom: () => desktop?.moveAside() ?? false,
       // The coordinator only passes URLs already checked against the destination allowlist.
       openPage: (url) => shell.openExternal(url, { activate: true }),
       changed: (state) => {
