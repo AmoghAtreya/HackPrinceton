@@ -565,11 +565,10 @@ if (!app.requestSingleInstanceLock()) {
     if (!registered) console.warn('Triage shortcut is unavailable; use the menu bar or Dock to restore it.')
 
     // Talk from anywhere: press once to start listening, press again to stop. Global shortcuts only
-    // report key-down, so this is tap-to-toggle rather than hold-to-talk. The chat opens without
-    // taking focus, so the page the user asks about stays in front.
+    // report key-down, so this is tap-to-toggle rather than hold-to-talk. The chat stays as it is:
+    // when it is closed, the hidden chat window records and answers out loud, hands-free.
     const toggleVoice = (): void => {
-      if (!desktop) return
-      desktop.openChat(false)
+      if (!desktop || desktop.chat.isDestroyed()) return
       desktop.chat.webContents.send(voiceChannels.shortcut)
     }
     const voiceShortcut = VOICE_SHORTCUTS.find((candidate) => globalShortcut.register(candidate.accelerator, toggleVoice))

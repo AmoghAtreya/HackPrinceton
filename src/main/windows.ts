@@ -58,7 +58,8 @@ export class DesktopWindows {
       title: 'Triage — Chat', show: false, frame: false, transparent: true,
       resizable: false, maximizable: false, minimizable: false,
       fullscreenable: false, hasShadow: false, alwaysOnTop: true,
-      webPreferences
+      // The voice shortcut records, answers and speaks from the chat window while it is hidden.
+      webPreferences: { ...webPreferences, backgroundThrottling: false }
     })
     for (const window of [this.companion, this.chat]) {
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -214,12 +215,11 @@ export class DesktopWindows {
     this.publish()
   }
 
-  /** focus: false shows the chat without taking focus from the app the user is working in. */
-  openChat(focus = true): void {
+  openChat(): void {
     this.show()
     this.positionChat()
-    if (focus) { this.chat.show(); this.chat.focus() }
-    else if (!this.chat.isVisible()) this.chat.showInactive()
+    this.chat.show()
+    this.chat.focus()
     this.publish()
   }
 
