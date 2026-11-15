@@ -136,6 +136,9 @@ try {
   const micText = 'Triage listens only while you hold or tap the talk button, and sends that audio to Amazon Transcribe to write down what you said.'
   const micPresent = spawnSync('/usr/libexec/PlistBuddy', ['-c', 'Print :' + micKey, plist], { encoding: 'utf8' }).status === 0
   run('/usr/libexec/PlistBuddy', ['-c', (micPresent ? 'Set :' + micKey + ' ' : 'Add :' + micKey + ' string ') + micText, plist])
+  // macOS can attribute a nested speech helper's permission request to the outer app.
+  run('/usr/bin/plutil', ['-replace', 'NSSpeechRecognitionUsageDescription', '-string',
+    'Triage uses on-device speech recognition to transcribe what you say while the talk button is active.', plist])
   // Needed before macOS lets "/simplify" ask Google Chrome for the address of its active tab.
   const eventsKey = 'NSAppleEventsUsageDescription'
   const eventsText = 'Triage asks Google Chrome only for the address of the page you have open, when you type /simplify.'
