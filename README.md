@@ -74,7 +74,10 @@ Requirements: macOS on Apple Silicon, Node 22 (`.nvmrc`), and an **Anthropic (Cl
 npm install
 npm run browser:install     # Chromium for the flight-search task browser
 npm run speech:build        # free on-device speech helper (voice input)
+npm run context:build       # reads on-screen controls: hides private fields in screenshots, outlines real buttons
 ```
+
+Then allow Triage in **System Settings → Privacy & Security → Accessibility**. Without it (or without `context:build`), guided help and screenshots sent without a preview are refused, because private fields can't be hidden.
 
 > **After every `git pull`, run `npm install` again.** Teammates add packages (for example LangChain and LangGraph for memory and tasks); without them Triage fails to build or start. Re-run `npm run speech:build` too if `native/speech/` changed.
 
