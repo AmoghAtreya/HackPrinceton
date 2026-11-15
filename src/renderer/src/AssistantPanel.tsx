@@ -479,12 +479,6 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
         <button type="button" className="secondary-button" disabled={Boolean(analyzing) || capturing || busy || Boolean(active)} onClick={() => void analyzeScreen('simplify', 'chat')}>Simplify this screen</button>
         <button type="button" className="secondary-button safety-button" disabled={Boolean(analyzing) || capturing || busy || Boolean(active)} onClick={() => void analyzeScreen('safety', 'chat')}>Is this safe?</button>
       </div>
-      <div className="screen-controls">
-        <button className="text-button" disabled={capturing || busy || Boolean(active)} onClick={() => void captureScreen()}>{capturing ? 'Capturing screen…' : 'Capture screen'}</button>
-        <button className="text-button" disabled={Boolean(active) || busy} onClick={() => {
-          void bridge.closeBrowser().then(unwrap).catch((problem) => setError(displayError(problem)))
-        }}>Close task browser</button>
-      </div>
       {capture && <div className="screen-preview">
         <img src={capture.dataUrl} alt="Current display screenshot preview" />
         <div><strong>{capture.metadata.displayName}</strong><p>Sent to your AI provider only when you submit. Not saved; expires in one minute.</p>
@@ -493,8 +487,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
           {highlightMode && <p>Describe the control below. The marker stays until you click the control or dismiss it. If the screen moves, dismiss and capture again.</p>}
           <button className="text-button" onClick={() => { setCapture(null); void bridge.discardScreen() }}>Discard screenshot</button></div>
       </div>}
-      <div className="preview-label"><span />{active ? activity : ready ? `Connected · ${assistant?.config.model}` : 'Connect a key to start'}
-        <span className="preview-description">Saved on this Mac</span></div>
+      {assistant && !ready && !active && <div className="preview-label"><span />Connect a key to start</div>}
       <form className="composer" onSubmit={submit}>
         <label className="sr-only" htmlFor="message">Message Triage</label>
         <textarea ref={input} id="message" value={draft} maxLength={4000} rows={2}
@@ -508,8 +501,11 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
         <button className={capture ? 'send-button screen-send' : 'send-button'} type="submit" disabled={(!draft.trim() && (!capture || highlightMode)) || Boolean(active) || busy || capturing || Boolean(assistant?.storageError)}
           aria-label={ready ? (capture ? (highlightMode ? 'Show me where' : 'Explain screen') : 'Send message') : 'Open key settings'} title="Send · Enter">{capture ? (ready ? (highlightMode ? 'Show me where' : 'Explain screen') : 'Connect key') : '↑'}</button>
       </form>
-      <div className="footer-meta"><span>Stop task: ⌘⇧Esc · local history</span>
-        {state.shortcutAvailable ? <span className="shortcut"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>space</kbd> to open</span> : <span>Restore from the menu bar</span>}
+      <div className="screen-controls">
+        <button className="text-button" disabled={capturing || busy || Boolean(active)} onClick={() => void captureScreen()}>{capturing ? 'Capturing screen…' : 'Capture screen'}</button>
+        <button className="text-button" disabled={Boolean(active) || busy} onClick={() => {
+          void bridge.closeBrowser().then(unwrap).catch((problem) => setError(displayError(problem)))
+        }}>Close task browser</button>
       </div>
     </footer>}
   </main>
