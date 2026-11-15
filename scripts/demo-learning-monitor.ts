@@ -1,6 +1,9 @@
 // Scripted run of Triage's learning stack with the Learning Monitor open.
 //
-//   node --experimental-strip-types scripts/demo-learning-monitor.ts [--share] [--fast]
+//   node --experimental-strip-types scripts/demo-learning-monitor.ts [--share] [--fast] [--simplifier-only]
+//
+// --simplifier-only skips the memory and refill parts and starts the
+// simplifier's layout learning right away, at normal pace.
 //
 // Uses the real code paths: LangChain memory (vector store + retriever), the
 // LangGraph refill graph driving the mock CareWell pharmacy in a visible Chrome
@@ -27,7 +30,11 @@ import { SimplificationEngine } from '../src/main/simplifier/engine.ts'
 import { distillPage } from '../src/main/simplifier/distill.ts'
 import { armById } from '../src/main/simplifier/arms.ts'
 
-const { values: args } = parseArgs({ options: { share: { type: 'boolean', default: false }, fast: { type: 'boolean', default: false } } })
+const { values: args } = parseArgs({ options: {
+  share: { type: 'boolean', default: false },
+  fast: { type: 'boolean', default: false },
+  'simplifier-only': { type: 'boolean', default: false }
+} })
 const root = new URL('..', import.meta.url).pathname
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, args.fast ? ms / 4 : ms))
 const say = (text: string) => console.log('\n▶ ' + text)
@@ -56,30 +63,35 @@ await taskPage.setContent('<body style="font:20px system-ui;padding:40px;color:#
 console.log('Learning Monitor: ' + address.localUrl + (address.lanUrl ? '\nOn another device:  ' + address.lanUrl : ''))
 await pause(2500)
 
-// 1. Memory: LangChain vector store writes.
 const memory = new MemoryService(join(directory, 'memory.sqlite'), monitor)
-say('Teaching Triage about the person (LangChain vector store)')
-for (const text of ['my name is Margaret Lee', 'my date of birth is 04/12/1951', 'my pharmacy is CareWell on Main Street',
-  'I prefer to pick up in the morning', 'my blood pressure medication is RX-48213']) {
-  const statement = parseRememberCommand('remember that ' + text)!
-  await memory.remember(statement.kind, statement.text, { ...(statement.key ? { key: statement.key } : {}), ...(statement.extra ?? {}) })
-  console.log('  remembered: ' + text)
-  await pause(900)
-}
+let checkpointer: SqliteCheckpointer | undefined
+let runner: TaskRunner | undefined
 
-// 2. LangGraph refill driving the mock pharmacy in Chrome.
-say('“Refill my blood pressure medicine” (LangGraph)')
-const file = join(directory, 'tasks.sqlite')
-const checkpointer = new SqliteCheckpointer(file)
-const driver = new DemoPharmacyDriver(async () => taskPage, readFileSync(join(root, 'demo/sites/pharmacy-refill.html'), 'utf8'))
-const runner = new TaskRunner({ file, memory, driver, checkpointer, monitor, callbacks })
-const first = await runner.start('demo', 'refill my blood pressure medicine', (step) => console.log('  step: ' + step))
-console.log('  Triage asks: ' + first.reply.split('\n').at(-1))
-await pause(5000)
-say('The person replies “yes”')
-const done = await runner.resume('demo', 'yes', (step) => console.log('  step: ' + step))
-console.log('  ' + done.reply)
-await pause(4000)
+if (!args['simplifier-only']) {
+  // 1. Memory: LangChain vector store writes.
+  say('Teaching Triage about the person (LangChain vector store)')
+  for (const text of ['my name is Margaret Lee', 'my date of birth is 04/12/1951', 'my pharmacy is CareWell on Main Street',
+    'I prefer to pick up in the morning', 'my blood pressure medication is RX-48213']) {
+    const statement = parseRememberCommand('remember that ' + text)!
+    await memory.remember(statement.kind, statement.text, { ...(statement.key ? { key: statement.key } : {}), ...(statement.extra ?? {}) })
+    console.log('  remembered: ' + text)
+    await pause(900)
+  }
+
+  // 2. LangGraph refill driving the mock pharmacy in Chrome.
+  say('“Refill my blood pressure medicine” (LangGraph)')
+  const file = join(directory, 'tasks.sqlite')
+  checkpointer = new SqliteCheckpointer(file)
+  const driver = new DemoPharmacyDriver(async () => taskPage, readFileSync(join(root, 'demo/sites/pharmacy-refill.html'), 'utf8'))
+  runner = new TaskRunner({ file, memory, driver, checkpointer, monitor, callbacks })
+  const first = await runner.start('demo', 'refill my blood pressure medicine', (step) => console.log('  step: ' + step))
+  console.log('  Triage asks: ' + first.reply.split('\n').at(-1))
+  await pause(5000)
+  say('The person replies “yes”')
+  const done = await runner.resume('demo', 'yes', (step) => console.log('  step: ' + step))
+  console.log('  ' + done.reply)
+  await pause(4000)
+}
 
 // 3. Simplifier pipeline + layout learning with simulated ratings.
 say('Simplifying the cluttered news page, rated by a person who likes big text and few buttons')
@@ -104,7 +116,7 @@ for (let round = 1; round <= 12; round++) {
 
 say('Done. The monitor stays open; press Ctrl+C or close the windows to finish.')
 const finish = async () => {
-  runner.close(); checkpointer.close(); memory.close(); log.close()
+  runner?.close(); checkpointer?.close(); memory.close(); log.close()
   await server.close(); await browser.close().catch(() => {})
   rmSync(directory, { recursive: true, force: true })
   process.exit(0)
