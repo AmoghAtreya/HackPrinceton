@@ -67,23 +67,46 @@ For the learning side (memory, the refill task graph and the layout learner, sho
 ## How it works
 
 ```
-             ┌──────────────────────── Electron app (runs in the background) ─────────────────────────┐
- mic ──▶ chat window: AudioWorklet → 16 kHz PCM ──IPC──▶ main process ──▶ Apple on-device speech (free) or Amazon Transcribe
-                     live captions ◀───────────────────── partial / final text
-                     voice shortcuts (stop, explain, show-me-where) ─┐
-                     "Did I hear that right?" check                  │
-                                                                     ▼
-                                                   Assistant coordinator ──▶ Claude or Gemini (routes the request)
-                                                     ├─ reply ............ answer in chat
-                                                     ├─ open_page ........ approved list → your default browser
-                                                     ├─ flight_search .... Playwright task browser (Alaska Air)
-                                                     ├─ screenshot + highlight → arrow overlay on the real screen
-                                                     └─ screenshot → simplify (task buttons) / safety check (verdict card)
- speaker ◀── Web Audio ◀── mp3 ◀──IPC── main process ◀── Amazon Polly (neural, SSML prosody 90%)
+             ┌──────────────────────────── Electron app (runs in the background) ─────────────────────────────┐
+ ⌘⇧9 / talk button ─▶ chat window (may stay hidden): AudioWorklet → 16 kHz PCM ──IPC──▶ main process
+                                                      ──▶ Apple on-device speech (free) or Amazon Transcribe
+                      live captions ◀──────────────── partial text;  on release: Gemini writes the final transcript
+                      voice shortcuts (stop, start over, explain, show me where) ──────┐
+                      "Did I hear that right?" check                                   │
+                                                                                       ▼
+ macOS Accessibility (native AXSnapshot) ──▶ <screen_context> labels ──▶  Assistant coordinator
+   also: private-field boxes for redaction,                                 │
+   real control frames for highlights                                       ├─ fixed rules first (no model): "remember…", "refill my…",
+                                                                            │   "where was I?", answers to a paused task
+                                                                            │     ├─ memory ......... LangChain vector store + retriever (memory.sqlite)
+                                                                            │     └─ refill task .... LangGraph graph → Playwright (demo pharmacy),
+                                                                            │                         checkpoints in tasks.sqlite, pauses for "yes"
+                                                                            │
+                                                                            └─ router: Claude (Haiku tier for simple requests) or Gemini
+                                                                                  ├─ reply .............. answer (+ trust check, + screenshot if needed)
+                                                                                  ├─ open_page .......... approved list → your default browser
+                                                                                  ├─ how_to ............. skill graph (BKT) → explain only what's missing
+                                                                                  ├─ guide .............. one boxed step at a time on the real screen
+                                                                                  ├─ simplify_page ...... simplifier (LangChain RunnableSequence +
+                                                                                  │                       Thompson-sampling layout learner) → big-button window
+                                                                                  ├─ remember_contact ... trust graph (people & organizations)
+                                                                                  └─ flight_search ...... Playwright task browser (Alaska Air)
+     screenshot (private fields blacked out) ──▶ highlight → arrow / box overlay;  simplify / safety → card
+
+ Chrome Link Warnings: native link scanner over Chrome's accessibility tree → badges + spoken warning
+ Learning Monitor: LangChain callbacks → event bus → monitor window / LAN page (read-only, masked)
+
+ speaker ◀── Web Audio ◀── mp3 ◀──IPC── main process ◀── Amazon Polly (neural, SSML prosody 80–115%)
              (fallback: the macOS built-in voice)
 ```
 
-AWS credentials stay in the main process. The chat window never sees them.
+API keys and AWS credentials stay in the main process. The chat window never sees them. Everything Triage keeps lives in SQLite files in its data folder on this Mac: `history.sqlite` (conversations and activity), `memory.sqlite`, `tasks.sqlite`, `simplifier.sqlite` (layout decisions and rewards), `skill-knowledge.sqlite` and `trust-graph.sqlite`.
+
+### LangChain and LangGraph
+- **LangGraph `StateGraph`** for multi-step tasks (the prescription refill), with `interrupt` to pause for the person and a SQLite checkpointer so tasks survive a restart.
+- **LangChain vector store and `VectorStoreRetriever`** over on-device memory, with on-device `Embeddings`.
+- **LangChain `RunnableSequence`** for the page simplifier: classify → choose layout → rewrite → log.
+- **LangChain callbacks** feed the Learning Monitor, so every node and step it shows is a real run.
 
 ### AWS services
 - **Amazon Transcribe (streaming):** optional cloud speech-to-text with live partial captions and per-word confidence. It needs an AWS account on the Paid plan. By default Triage uses **free on-device Apple speech** instead (no audio leaves the Mac).
@@ -96,9 +119,10 @@ Requirements: macOS on Apple Silicon, Node 22 (`.nvmrc`), and an **Anthropic (Cl
 
 ```bash
 npm install
-npm run browser:install     # Chromium for the flight-search task browser
+npm run browser:install     # Chromium for the task browser (flight search, prescription refill, /simplify)
 npm run speech:build        # free on-device speech helper (voice input)
 npm run context:build       # reads on-screen controls: hides private fields in screenshots, outlines real buttons
+npm run phishing:build      # link scanner for Chrome Link Warnings
 ```
 
 Then allow Triage in **System Settings → Privacy & Security → Accessibility**. Without it (or without `context:build`), guided help and screenshots sent without a preview are refused, because private fields can't be hidden.
@@ -135,15 +159,31 @@ npm run build
 
 | Path | What |
 |---|---|
-| `src/main/` | Electron main process: windows, assistant coordinator, screen capture and highlight overlay, gestures |
-| `src/main/voice/` | voice sessions, Apple on-device speech and Amazon Transcribe backends, audio queue, transcript store |
-| `native/speech/` | Swift helper app for free on-device speech recognition |
+| `src/main/index.ts`, `src/main/windows.ts` | Electron main process: tray menu, global shortcuts (⌘⇧9 talk, ⌘⇧Space chat, ⌘⇧Esc stop), windows |
+| `src/main/assistant/` | coordinator, Claude and Gemini gateways, model tiers, guided-help sessions, history |
+| `src/main/context/` | accessibility snapshot of the app in front: `<screen_context>`, private-field boxes, control frames |
+| `src/main/screen/` | screen capture, redaction, highlight overlay that follows the real control |
+| `src/main/simplifier/` | page simplifier: LangChain pipeline, Thompson-sampling layout learner, decision log, rewards, `/simplify` of the current tab |
+| `src/main/skills/` | skill graph and Bayesian Knowledge Tracing tutor |
+| `src/main/trust/` | people & organizations list and impersonation checks |
+| `src/main/memory/` | on-device memory: LangChain vector store, retriever, embeddings |
+| `src/main/tasks/` | LangGraph refill graph, SQLite checkpointer, task runner, demo pharmacy driver |
+| `src/main/monitor/` | Learning Monitor: LangChain callback handler, event bus, window and LAN server |
+| `src/main/phishing/` | Chrome Link Warnings monitor |
+| `src/main/gestures/` | shake-to-help detector |
+| `src/main/voice/` | voice sessions, Apple on-device speech, Amazon Transcribe, Gemini final transcripts, transcript store |
 | `src/main/speech/` | Amazon Polly, voice reply settings |
-| `src/shared/destinations.ts` | the approved list of places Triage can open |
-| `src/renderer/src/` | React UI: chat, talk button, settings |
-| `src/renderer/src/voice/` | mic capture, voice shortcuts, speech player |
+| `src/main/logging/` | opt-in anonymous request log |
+| `src/shared/` | contracts between processes; `destinations.ts` is the approved list of places Triage can open, `skill-catalogue.ts` the skill graph |
+| `src/renderer/src/` | React UI: companion, chat, talk button, settings, History (memories, what I've learned), trust warnings |
+| `src/renderer/src/voice/` | mic capture, voice shortcuts, chime, speech player |
 | `src/worker/` | Playwright task browser (flight search) |
-| `docs/` | [Voice input](docs/Voice-Transcribe.md) · [Spoken replies](docs/Speech-Polly.md) · [Page navigation](docs/Page-Navigation.md) · [Screen help](docs/Screen-Help.md) · [Request logging](docs/Request-Logging.md) · [Product overview](docs/Triage-Product-Overview.md) · [Tech spec](docs/Triage-Technical-Specification.md) |
+| `native/speech/`, `native/context/`, `native/phishing/` | Swift speech helper; Objective-C++ accessibility snapshot and link scanner |
+| `demos/`, `demo/sites/` | phishing, link-warning and impersonation demo pages; cluttered news and mock pharmacy sites |
+| `scripts/` | native builds, Finder app packaging, Learning Monitor and simplifier demos, routing eval |
+| `evals/routing-cases.json` | labelled routing cases for `npm run eval:routing` |
+| `landing/` | landing page |
+| `docs/` | [Voice input](docs/Voice-Transcribe.md) · [Spoken replies](docs/Speech-Polly.md) · [Page navigation](docs/Page-Navigation.md) · [Screen help](docs/Screen-Help.md) · [Learning Monitor](docs/Learning-Monitor.md) · [Request logging](docs/Request-Logging.md) · [Memory topology (exploration)](docs/Memory-Topology-and-Mesh.md) · [User interview](docs/Skyline_Health_Transcript.md) · [Product overview](docs/Triage-Product-Overview.md) · [Tech spec](docs/Triage-Technical-Specification.md) |
 
 ## Privacy and safety
 
