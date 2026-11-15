@@ -719,7 +719,7 @@ export class AssistantCoordinator {
     const image = this.screens.take(preview.metadata.id)
     // Nobody previews this screenshot, so it is only sent when the private-field check actually ran.
     if (image.metadata.redactedRegions === null)
-      return { reply: 'I couldn’t check your screen for private fields, so I didn’t look at it. Say “next” to try again.', plan: null, outcome: 'not_sent', used }
+      return { reply: 'I didn’t look at your screen, because I couldn’t hide passwords and card numbers first. Turn on Triage in System Settings → Privacy & Security → Accessibility, then say “next”.', plan: null, outcome: 'not_sent', used }
     this.history.attachCapture(request.id, image.metadata)
     this.history.activity(request.id, 'guide_step', 'Looked at the screen for the next step.', {})
     const snapshot = this.contexts?.forCapture(image.metadata.id)
