@@ -5,7 +5,7 @@ import { AssistantPanel } from './AssistantPanel'
 import { HighlightOverlay } from './HighlightOverlay'
 
 const initialState: DesktopState = {
-  visible: true, chatOpen: false, mood: 'idle', shortcutAvailable: false, voiceShortcut: null
+  visible: true, chatOpen: false, mood: 'idle', shortcutAvailable: false, voiceShortcut: null, chromeFront: false
 }
 
 function Companion({ bridge, state }: { bridge: DesktopBridge; state: DesktopState }) {

@@ -16,6 +16,8 @@ export interface DesktopState {
   shortcutAvailable: boolean
   /** The global talk shortcut as key labels (e.g. ["⌘", "⇧", "9"]), or null if it could not be registered. */
   voiceShortcut: string[] | null
+  /** Google Chrome is the app in front and the page in front can be simplified: the companion shows a Simplify button. */
+  chromeFront: boolean
 }
 
 export const channels = {
