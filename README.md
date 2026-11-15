@@ -151,7 +151,8 @@ npm run build
 - **Voice audio** is captured only while you hold or tap the talk button and is never saved. By default it's transcribed **on this Mac** (Apple on-device speech, no server fallback). If you opt into Amazon Transcribe, it's streamed to AWS instead. Transcripts are saved on this Mac.
 - **Conversations** are saved on this Mac (unencrypted). Known API keys are removed from saved text.
 - **Help improve Triage** (off by default) keeps an anonymous log of questions only, never screenshots or audio. You can delete it in Settings at any time.
-- **Triage never buys anything, enters passwords or payment details, or picks a flight fare.** Pages open only from the approved list, over https.
+- **Memory and task progress** ("remember…", refill answers, paused tasks) are saved on this Mac (unencrypted) and never sent to an embedding service. You can see and remove memories in History.
+- **Triage never buys anything, enters passwords or payment details, or picks a flight fare.** Pages open only from the approved list, over https. The only form it fills by itself is the built-in demo pharmacy, and it always reads the details back and waits for your "yes" before sending.
 
 ## Chrome Link Warnings preview
 
@@ -161,6 +162,8 @@ npm run build
 4. For a more realistic demo, open [the demo scenarios](demos/phishing-inbox.html) and pick a scenario from the switcher in the top right: email inbox, text messages, search results, social feed, marketplace chat or a news site pop-up. Scam links show **Potential phishing**, some ordinary links show **Unencrypted HTTP**, and the harmless ones (like the team lunch email or Mom's recipe link) show no badge. All brands are fictional, and links on the page never navigate.
 
 The preview starts off each launch. It scans links with a destination and visible bounds in the active Chrome window’s accessibility tree. It checks up to 250 links per scan and shows up to 12 badges. The simulated phishing rule matches only `triage-phishing-demo.invalid`. HTTP indicates an unencrypted destination. Real-world phishing reputation, background tabs, other browsers, and links Chrome does not expose are outside this preview’s scope. Checks run locally and URLs are kept out of Triage’s Activity History.
+
+When a new phishing link appears, Triage also **says a short warning out loud** ("Be careful. This page has a link that may be a scam…"), even when the chat is closed. It waits while the microphone is on, so Triage never records its own voice.
 
 ### Rebuild the Finder app
 
@@ -249,6 +252,37 @@ When you ask how to do something, Triage skips the steps you already do comforta
 **History → What I've learned** lists the skills in three plain groups. A caregiver can tick **Practice this** to have Triage walk through a skill every time, whatever the estimate says.
 
 The page simplifier's learner now uses this per-skill knowledge instead of generic user traits. That is a new feature layout (version 2). Decisions and learned state from version 1 are kept as they were and are never trained on, loaded or evaluated together with version 2.
+
+## Memory and multi-step tasks (LangChain + LangGraph)
+
+**Memory.** Say "remember that my pharmacy is CareWell on Main Street" (or `/remember …`) and Triage saves it to `memory.sqlite` on this Mac. Memories are stored in a LangChain vector store and found with a LangChain `VectorStoreRetriever`. The embeddings are computed **on this Mac** (feature hashing with a small synonym table for health, money and errand words, so "pills" finds "medication"), because memories hold personal details. Any LangChain `Embeddings` can replace it later without changing the store or the tasks. **History** lists what Triage remembers, and you can remove any of it.
+
+**Refill a prescription.** "Refill my blood pressure medicine" (or `/refill …`) runs a LangGraph state machine against the demo pharmacy site ([demo/sites/pharmacy-refill.html](demo/sites/pharmacy-refill.html)):
+
+```
+recall → gather ⟲ → open → fill → confirm → submit → remember → END
+```
+
+- **recall** looks up your name, date of birth, prescription number, pharmacy and pickup time in memory.
+- **gather** asks for one missing detail at a time, saves the answer, and loops. The next refill needs no questions.
+- **open / fill** use the Playwright task browser to fill the form.
+- **confirm** reads every field back and pauses until you say "yes". The submit button's risk is decided by fixed rules over the page, never by the model, and anything involving money or passwords is refused.
+- **remember** saves the steps as a recipe for next time.
+
+A checkpoint is saved after every step (`tasks.sqlite`), so a task survives a restart. "Where was I?" reads it back, and the History tab shows the progress. While a task is waiting, your next chat message is its answer. These commands are recognised by fixed rules in the coordinator and never go through the model's router.
+
+## Learning Monitor
+
+A separate window (or a page on a second device) that shows live what Triage's learning parts are doing: each LangGraph node as it runs, the four traced steps of the simplifier's LangChain `RunnableSequence`, memory lookups with their match scores, the layout learner's odds and the rewards that update it. The counters come from LangChain's own callback system. Personal numbers are masked, and the page is read-only.
+
+Open it from the menu bar (**Show learning monitor**), or start Triage with `TRIAGE_MONITOR=1`. To watch from another device on the same network, start with `TRIAGE_MONITOR_SHARE=1` and open the link with the secret shown in the monitor's header. See [docs/Learning-Monitor.md](docs/Learning-Monitor.md) for the 3-minute demo script.
+
+For a scripted run with no API key (it drives the real memory, refill graph and simplifier code against the mock pharmacy, with a simulated person rating pages so the layout odds visibly shift; all data goes in a temporary folder):
+
+```bash
+node --experimental-strip-types scripts/demo-learning-monitor.ts --share
+```
+
 ## What's next
 
 - Upload the opt-in request log (API Gateway → Lambda + Amazon Comprehend → DynamoDB) and turn it into approved FAQs.
