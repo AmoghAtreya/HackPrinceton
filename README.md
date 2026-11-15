@@ -1,16 +1,32 @@
 # Triage
 
-**A calm, voice-first tutor that lives on your Mac and teaches older and less tech-confident people to use the web by pointing at the real button, explaining it in plain words, and letting them press it themselves.**
+**A calm, voice-first companion that lives on your Mac. It keeps older and less tech-confident people safe from scams, and teaches them to use the web by pointing at the real button, explaining it in plain words, and letting them press it themselves.**
 
-HackPrinceton Fall 2026 · **Main track: Education** · Special tracks: Amazon, LangChain, Peri
+HackPrinceton Fall 2026 · **Main track: Education** · Sponsor challenges: [Peri Forward Deployed Challenge](#peri-forward-deployed-challenge), [Amazon Best Practical AI Innovation](#amazon-best-practical-ai-innovation), [LangChain](#langchain)
 
 ---
 
-## The problem
+## Why we built it
 
-Many older adults know *what* they want to do: track a package, reorder pills, check Medicare. What they can't do is find *where* to click on a cluttered page. They get overwhelmed, give up, or wait for a family member or technician to do it for them. Each time someone else does it, they learn nothing for next time. They are also the people scammers target most.
+Every one of us has watched a grandparent struggle with technology. Doctor's appointments, prescription refills, Medicare and package tracking have all moved online, but most websites are built for people who already know how to use websites. Many older adults know *what* they want to do. What they can't find is *where* to click on a cluttered page. They get overwhelmed, give up, or wait for a family member or technician to do it for them, and each time someone else does it, they learn nothing for next time.
 
-We called a senior-living facility to check this ([interview transcript](docs/Skyline_Health_Transcript.md)). About half the residents use computers. Most of their questions are "where to go or what to click on", not broken machines. The technician isn't there every day, so residents often wait. Some residents follow spoken directions fine, and others need someone to point. Staff added that scam warnings should say *why* something is suspicious, not just "don't click".
+They are also the people scammers target most: phishing links, fake "your account is locked" pop-ups, texts about packages that were never sent, messages pretending to be a grandchild in trouble. In 2025, Americans 60 and older reported **$7.7 billion** in internet crime losses to the FBI, about 60% more than the year before ([FBI IC3 via AARP](https://www.aarp.org/money/scams-fraud/fbi-ftc-report-2025-losses)). Their reported fraud losses to the FTC have grown about five-fold since 2020, to over $3 billion, and losses over $100,000 are only about 6% of reports but 70% of the money lost ([FTC report to Congress](https://ppc.land/older-americans-lost-3-billion-to-fraud-in-2025-ftc-tells-congress/)). Many of these scams arrive exactly where Triage works: texts, emails, pop-ups and messages pretending to be a trusted company or agency.
+
+So Triage **keeps you safe first, then helps you get things done, and teaches you along the way.**
+
+### What a senior care facility told us
+
+A story from our own families isn't proof, so during the hackathon we called **Skyline Health Services**, a senior care facility in Seattle, and spoke with a member of the front desk staff ([full transcript](docs/Skyline_Health_Transcript.md)).
+
+> "A lot of the time it's just not knowing how to use something. Like where to go or what to click on."
+
+- **About half of residents use computers**, and comfort varies a lot. Unfamiliar tasks are where people get stuck.
+- **Help isn't always there.** The technician is "not here every day. That's kind of the problem sometimes." When nobody else knows, residents wait.
+- **Telling isn't always enough.** Some residents follow instructions, but "others might need you to actually point it out."
+- **Scams are a real but occasional worry.** A warning alone isn't enough: "they'd probably want to know why, too."
+- **Don't add another confusing app.** "If they're already having trouble with a computer, using another application would be difficult… You'd have to make it pretty simple for them."
+
+That shaped the product. Triage works **on the screen and websites residents already use**, pointing at the real button instead of sending them somewhere new. There's nothing to learn: you talk to it or shake the mouse. It covers the technician gap for "where do I click?" at any hour. Every scam warning explains why. Staff or family can set it up once, including the resident's real contacts.
 
 ## Our goal: help people learn, not just get it done
 
@@ -150,9 +166,15 @@ AWS_PROFILE=triage-dev AWS_REGION=us-east-1 npm run dev
 - **Without AWS credentials:** voice input still works (it's on-device). Spoken replies then use the Mac's built-in voice.
 
 ```bash
-npm test          # node:test suite
+npm test          # node:test suite (41 unit test files, plus browser tests)
 npm run typecheck
 npm run build
+```
+
+**Routing eval.** [evals/routing-cases.json](evals/routing-cases.json) holds 48 labelled requests phrased the way older adults actually ask ("where do I click to reply", spoken lowercase transcripts). `npm run eval:routing` sends each one through the real router and scores how often it picks the right route. It costs one small API call per case, so it is not part of `npm test`:
+
+```bash
+read -s TRIAGE_EVAL_KEY && export TRIAGE_EVAL_KEY && npm run eval:routing
 ```
 
 ## Project layout
@@ -293,6 +315,51 @@ When you ask how to do something, Triage skips the steps you already do comforta
 
 The page simplifier's learner now uses this per-skill knowledge instead of generic user traits. That is a new feature layout (version 2). Decisions and learned state from version 1 are kept as they were and are never trained on, loaded or evaluated together with version 2.
 
+## The math behind the learning
+
+### Knowing what you know: Bayesian Knowledge Tracing
+
+Each everyday skill (writing an email, choosing a file, attaching a photo…) has a probability $P(L)$ that the person knows it. After each chance to use it, Triage updates the estimate, then allows for learning:
+
+$$
+P(L \mid \text{right}) = \frac{P(L)(1-s)}{P(L)(1-s) + (1-P(L))\,g}, \qquad
+P(L) \leftarrow P(L \mid \text{obs}) + \big(1 - P(L \mid \text{obs})\big)\,t
+$$
+
+The one change from textbook BKT: slip $s$, guess $g$ and learning rate $t$ depend on the **kind of evidence** ([src/main/skills/bkt.ts](src/main/skills/bkt.ts)). Clicking a button Triage just outlined proves much less than finishing a task alone.
+
+| Evidence | What counts as right | $s$ | $g$ | $t$ |
+|---|---|---|---|---|
+| unaided | finished the task without being shown | 0.10 | 0.15 | 0.10 |
+| pointed | clicked the outlined control on the first try | 0.10 | 0.55 | 0.20 |
+| asked | did it from memory (asking how counts as wrong) | 0.15 | 0.30 | 0.10 |
+| implied | did a harder skill that needs this one | 0.05 | 0.50 | 0 |
+
+A skill counts as known at $P(L) \ge 0.85$ and as being learned at $P(L) \ge 0.45$.
+
+### A layout that fits each person: hierarchical Thompson sampling
+
+How a simplified page is shown (text size 1.25×–2×, 3 or 6 buttons, plain wording, read-aloud, terse or step-by-step) is one of 10 layouts ([src/main/simplifier/arms.ts](src/main/simplifier/arms.ts)). Triage picks one with **hierarchical Bayesian linear Thompson sampling** ([src/main/simplifier/thompson.ts](src/main/simplifier/thompson.ts)). Each layout $a$ has a population model, and each user's model starts from the population's current estimate $\hat m_a$:
+
+$$
+r \approx \theta_{u,a}^{\top} x, \qquad
+\theta_a \sim \mathcal{N}\!\left(m_a,\ \lambda_{\text{pop}}^{-1} I\right), \qquad
+\theta_{u,a} \sim \mathcal{N}\!\left(\hat m_a,\ \lambda_{\text{user}}^{-1} I\right), \qquad
+a^{*} = \arg\max_a \tilde\theta_{u,a}^{\top} x
+$$
+
+Here $x$ is an 18-number description of the situation ([features.ts](src/main/simplifier/features.ts)): page type, how complex the page is, time of day, whether voice is on, recent errors, and what the person knows about the skill this kind of page needs (from the skill graph), and $\tilde\theta_{u,a}$ is a sample from the user's posterior. A new user starts from what works for most people and drifts toward their own preferences. Only sufficient statistics are stored. In this build all data stays on one Mac, so "population" means the people who use Triage on that Mac.
+
+### The reward
+
+When a person rates a simplified page, Triage combines the rating with what it saw them do ([src/main/simplifier/reward.ts](src/main/simplifier/reward.ts)):
+
+$$
+r = \operatorname{clip}_{[0,1]}\!\Big(0.5\,c + 0.2\,(1 - \hat t) + 0.15\,b + 0.15\,h \;-\; 0.25\,o \;-\; 0.05\,\min(k, 3)\Big)
+$$
+
+$c$ is task completed, $\hat t$ is time spent relative to what's typical for that kind of page, $b$ is no backtracking (going back once counts half), $h$ is the thumbs-up (neutral if skipped), $o$ is pressing "Show original page", and $k$ counts repeat requests.
+
 ## Memory and multi-step tasks (LangChain + LangGraph)
 
 **Memory.** Say "remember that my pharmacy is CareWell on Main Street" (or `/remember …`) and Triage saves it to `memory.sqlite` on this Mac. Memories are stored in a LangChain vector store and found with a LangChain `VectorStoreRetriever`. The embeddings are computed **on this Mac** (feature hashing with a small synonym table for health, money and errand words, so "pills" finds "medication"), because memories hold personal details. Any LangChain `Embeddings` can replace it later without changing the store or the tasks. **History** lists what Triage remembers, and you can remove any of it.
@@ -323,8 +390,54 @@ For a scripted run with no API key (it drives the real memory, refill graph and 
 node --experimental-strip-types scripts/demo-learning-monitor.ts --share
 ```
 
+## Hackathon tracks
+
+### Peri Forward Deployed Challenge
+
+Like a forward deployed engineer, we didn't stop at our own assumptions. We called a business that cares for older adults every day, learned where technology breaks down for its residents and staff, and built around that.
+
+| Required | |
+|---|---|
+| **Business** | Skyline Health Services, a senior care facility in Seattle, Washington |
+| **Person consulted** | a member of the front desk staff, by phone during HackPrinceton (name not recorded on the call) |
+| **Evidence** | the [full call transcript](docs/Skyline_Health_Transcript.md), and the quote: "A lot of the time it's just not knowing how to use something. Like where to go or what to click on." |
+
+**Real-world need.** Skyline's residents get stuck on navigation, not broken computers, and the technician who helps them isn't there every day. Each thing they told us maps to something in the app:
+
+| What Skyline said | What Triage does |
+|---|---|
+| The problem is "where to go or what to click on" | points at the real control and follows it as the page scrolls; guided help one step at a time |
+| Some residents "need you to actually point it out" | outlines on the real screen instead of written instructions |
+| The technician is "not here every day" | help at any hour, by voice (⌘⇧9) or a mouse shake |
+| A warning alone isn't enough: "they'd probably want to know why" | scam and impostor warnings show the facts behind them |
+| "You'd have to make it pretty simple for them" | no new app to learn; works on the websites they already use; staff or family set it up once |
+
+**Usability: could Skyline adopt it now?** Triage runs on the Macs residents already have and the websites they already visit. A staff member or family member sets it up once (the Finder app, an AI key, Accessibility and microphone permission, and the resident's real contacts), and the resident just talks or shakes the mouse. It is safe to hand over: it never enters passwords or payment details, only opens approved sites, and hides private fields before a screenshot leaves the computer. Honest limits today: it is macOS only, setup still needs someone comfortable with System Settings, and a signed installer is [next](#whats-next).
+
+**Execution.** Everything described in this README is built into the app today, end to end: voice in and out, pointing at real controls, step-by-step guides, page simplification, impostor warnings with explanations, and link warnings. The phishing rule in Chrome Link Warnings is a preview that only matches our demo domain.
+
+### Amazon Best Practical AI Innovation
+
+- **Target user:** older adults, and the families and care staff who help them.
+- **Agentic behavior:** a model-backed router returns one validated decision per request (answer, open an approved site, point, guide, simplify, run a task, remember a contact, or ask for a screenshot). The refill task plans, asks for missing details and waits for a human "yes". The Alaska Airlines flight search drives a real browser and reports what it actually saw. Guided help looks at the new screen after each click and plans the next step.
+- **Adaptive intelligence:** Bayesian Knowledge Tracing per skill, a hierarchical Thompson-sampling layout learner, on-device memory, and a trust graph that remembers the person's own answers ([the math](#the-math-behind-the-learning)).
+- **Built on AWS:** **Amazon Polly** neural voices speak every reply, paced with SSML (80–115%, default 90%). **Amazon Transcribe** streaming is available for cloud speech recognition with live captions and per-word confidence. AWS credentials stay in the main process. See [AWS services](#aws-services).
+- **Safety by design:** nothing read from the screen can add a trusted contact, private fields are blacked out before encoding, the AI can't invent a URL, and risky steps are flagged by rules, never by the model.
+
+### LangChain
+
+- **A LangGraph agent for real tasks:** the refill `StateGraph` uses `interrupt` to ask one question at a time and to wait for "yes", and a SQLite checkpointer so "Where was I?" works after a restart.
+- **Memory through LangChain retrievers:** a LangChain vector store and `VectorStoreRetriever` with on-device `Embeddings`, because the memories hold personal health details.
+- **A traced pipeline:** page simplification is a `RunnableSequence` (classify → choose layout → rewrite → log).
+- **A live Learning Monitor:** LangChain's callback system streams every graph node, pause, retrieval and layout decision to a second screen.
+- **Safety in the graph, not the prompt:** the submit button's risk tier comes from rules over the page, and money or password steps are always refused.
+
+See [Memory and multi-step tasks](#memory-and-multi-step-tasks-langchain--langgraph) and [Learning Monitor](#learning-monitor).
+
 ## What's next
 
-- Upload the opt-in request log (API Gateway → Lambda + Amazon Comprehend → DynamoDB) and turn it into approved FAQs.
-- Caregiver mode: custom destinations and text alerts (Amazon SNS) when a scam is detected.
+- **Caregiver alerts** (Amazon SNS) when Triage spots a likely scam, plus caregiver-managed trusted sites and destinations.
+- **Real-world phishing reputation** for Chrome Link Warnings, beyond today's preview rule, and support for more browsers.
+- An opt-in, anonymized FAQ pipeline from the request log (API Gateway → Lambda + Amazon Comprehend → DynamoDB).
+- A signed, packaged installer, so a staff member or family member can set Triage up for a resident in minutes without a terminal.
 - Optional automatic safety checks while a browser is in front.
