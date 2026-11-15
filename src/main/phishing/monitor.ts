@@ -108,9 +108,9 @@ export class PhishingMonitor {
   /** Speaks up once when phishing links first appear, not on every scan while they stay visible. */
   private announceNew(urls: Set<string>): void {
     const now = Date.now()
-    const fresh = [...urls].filter((url) => now - (this.announced.get(url) ?? -Infinity) > ANNOUNCE_AGAIN_AFTER_MS)
-    const delivered = fresh.length === 0 || this.announce(fresh.length)
-    for (const url of urls) if (delivered || this.announced.has(url)) this.announced.set(url, now)
+    const fresh = new Set([...urls].filter((url) => now - (this.announced.get(url) ?? -Infinity) > ANNOUNCE_AGAIN_AFTER_MS))
+    const delivered = fresh.size === 0 || this.announce(fresh.size)
+    for (const url of urls) if (delivered || !fresh.has(url)) this.announced.set(url, now)
     for (const [url, seen] of this.announced) if (now - seen > ANNOUNCE_AGAIN_AFTER_MS) this.announced.delete(url)
   }
 }
