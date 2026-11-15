@@ -64,7 +64,9 @@ export class SqliteVectorStore extends VectorStore {
     for (const row of rows) {
       const metadata = JSON.parse(row.metadata_json) as Record<string, unknown>
       if (filter && Object.entries(filter).some(([key, value]) => metadata[key] !== value)) continue
-      scored.push([new Document({ id: row.id, pageContent: row.content, metadata }), cosine(query, JSON.parse(row.vector_json) as number[])])
+      const score = cosine(query, JSON.parse(row.vector_json) as number[])
+      // The score is also copied into metadata: plain retrievers drop it, and the learning monitor shows it.
+      scored.push([new Document({ id: row.id, pageContent: row.content, metadata: { ...metadata, score } }), score])
     }
     return scored.sort((a, b) => b[1] - a[1]).slice(0, k)
   }
