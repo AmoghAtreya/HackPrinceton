@@ -166,11 +166,16 @@ AWS_PROFILE=triage-dev AWS_REGION=us-east-1 npm run dev
 - **Without AWS credentials:** voice input still works (it's on-device). Spoken replies then use the Mac's built-in voice.
 
 ```bash
-npm test          # node:test suite
+npm test          # node:test suite (41 unit test files, plus browser tests)
 npm run typecheck
 npm run build
 ```
 
+**Routing eval.** [evals/routing-cases.json](evals/routing-cases.json) holds 48 labelled requests phrased the way older adults actually ask ("where do I click to reply", spoken lowercase transcripts). `npm run eval:routing` sends each one through the real router and scores how often it picks the right route. It costs one small API call per case, so it is not part of `npm test`:
+
+```bash
+read -s TRIAGE_EVAL_KEY && export TRIAGE_EVAL_KEY && npm run eval:routing
+```
 
 ## Project layout
 
