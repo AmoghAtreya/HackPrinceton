@@ -4,6 +4,8 @@ import { dirname } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { Command } from '@langchain/langgraph'
 import type { MemoryService } from '../memory/service.ts'
+import type { BaseCallbackHandler } from '@langchain/core/callbacks/base'
+import type { LearningMonitor } from '../monitor/bus.ts'
 import type { SqliteCheckpointer } from './checkpointer.ts'
 import type { RefillDriver } from './pharmacy-driver.ts'
 import { createRefillGraph, REFILL_STEP_COUNT, type RefillPrompt, type RefillValues } from './refill-graph.ts'
@@ -42,9 +44,17 @@ export class TaskRunner {
   private readonly db: DatabaseSync
   private readonly graph: ReturnType<typeof createRefillGraph>
   private readonly now: () => number
+  private readonly monitor?: LearningMonitor
+  private readonly callbacks: BaseCallbackHandler[]
 
-  constructor(options: { file: string; memory: MemoryService; driver: RefillDriver; checkpointer: SqliteCheckpointer; now?: () => number }) {
+  constructor(options: {
+    file: string; memory: MemoryService; driver: RefillDriver; checkpointer: SqliteCheckpointer; now?: () => number
+    /** Display-only: LangGraph runs and pauses are shown in the learning monitor. */
+    monitor?: LearningMonitor; callbacks?: BaseCallbackHandler[]
+  }) {
     this.now = options.now ?? Date.now
+    this.monitor = options.monitor
+    this.callbacks = options.callbacks ?? []
     if (options.file !== ':memory:') mkdirSync(dirname(options.file), { recursive: true, mode: 0o700 })
     this.db = new DatabaseSync(options.file)
     if (options.file !== ':memory:') chmodSync(options.file, 0o600)
@@ -86,7 +96,7 @@ export class TaskRunner {
     const config = { configurable: { thread_id: threadId } }
     let prompt: RefillPrompt | undefined
     try {
-      const stream = await this.graph.stream(input, { ...config, streamMode: 'updates' })
+      const stream = await this.graph.stream(input, { ...config, streamMode: 'updates', callbacks: this.callbacks, metadata: { graph: 'refill_prescription' } })
       for await (const chunk of stream as AsyncIterable<Record<string, unknown>>) {
         for (const [node, update] of Object.entries(chunk)) {
           if (node === '__interrupt__') {
@@ -105,6 +115,7 @@ export class TaskRunner {
     const values = (await this.graph.getState(config)).values as RefillValues
     if (prompt) {
       const question = prompt.kind === 'confirm' ? prompt.summary : prompt.question
+      this.monitor?.emit({ type: 'interrupt', graph: 'refill_prescription', kind: prompt.kind, prompt: question.split('\n')[0] })
       this.update(threadId, 'waiting', values.steps, question)
       return { reply: question + (prompt.kind === 'question' ? '\n(Say "cancel" to stop.)' : ''), status: 'waiting' }
     }

@@ -27,6 +27,11 @@ import { MemoryService } from './memory/service'
 import { SqliteCheckpointer } from './tasks/checkpointer'
 import { DemoPharmacyDriver } from './tasks/pharmacy-driver'
 import { TaskRunner } from './tasks/runner'
+import { LearningMonitor } from './monitor/bus'
+import type { PageType } from '../shared/simplifier-contracts'
+import { MonitorCallbackHandler } from './monitor/callbacks'
+import { MonitorServer } from './monitor/server'
+import { MonitorWindow } from './monitor/window'
 import { app, utilityProcess, dialog, globalShortcut, ipcMain, Menu, Tray, safeStorage, screen, powerMonitor, shell, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron'
 import { existsSync, mkdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -124,6 +129,12 @@ let closeSimplifierLog: (() => void) | undefined
 let memory: MemoryService | undefined
 let tasks: TaskRunner | undefined
 let checkpointer: SqliteCheckpointer | undefined
+// Learning monitor: shows LangChain/LangGraph runs and the layout model learning.
+// TRIAGE_MONITOR=1 opens it at launch; TRIAGE_MONITOR_SHARE=1 lets a second device watch.
+const learning = new LearningMonitor()
+const learningCallbacks = [new MonitorCallbackHandler(learning)]
+const monitorServer = new MonitorServer(learning, { share: process.env.TRIAGE_MONITOR_SHARE === '1' })
+const monitorWindow = new MonitorWindow(async () => (await monitorServer.start()).localUrl)
 let shutdownReady = false
 let removeAssistantIpc: (() => void) | undefined
 let shakeMonitor: ShakeMonitor | undefined
@@ -158,6 +169,11 @@ function buildControls(): Electron.Menu {
     { label: 'Open chat', click: () => desktop?.openChat() },
     { label: 'Hide Triage', click: () => desktop?.hide() },
     { label: 'Stop current task', click: () => assistant?.stopActive() },
+    {
+      label: 'Show learning monitor', click: () => {
+        void monitorWindow.show().catch(() => dialog.showErrorBox('Learning monitor', 'The learning monitor could not be opened.'))
+      }
+    },
     {
       // Reads the page in front and shows a simpler version. It never clicks anything on the page.
       label: 'Simplify this page', enabled: Boolean(screenSimplifier), click: () => {
@@ -250,7 +266,7 @@ if (!app.requestSingleInstanceLock()) {
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(), () => chatContexts?.dispose(), () => tabContexts?.dispose(),
       () => highlights?.dispose(), () => overlay?.dispose(),
-      () => desktop?.dispose(), () => tray?.destroy(), () => screenSimplifier?.dispose(), () => simplifiedWindow?.dispose(),
+      () => desktop?.dispose(), () => tray?.destroy(), () => screenSimplifier?.dispose(), () => simplifiedWindow?.dispose(), () => monitorWindow.dispose(), () => { void monitorServer.close() },
       () => {
         ipcMain.removeHandler(channels.getState)
         for (const channel of Object.values(channels)) ipcMain.removeAllListeners(channel)
@@ -348,7 +364,7 @@ if (!app.requestSingleInstanceLock()) {
     // Optional, like the trust graph: without it Triage explains everything and the learner sees neutral knowledge.
     try { tutor = new SkillTutor(new SkillStore(join(directory, 'skill-knowledge.sqlite'))) }
     catch { console.warn('The record of what you have learned is unavailable.') }
-    const simplifierParts = createSimplifier(directory, tutor ? { knowledge: (userId, pageType) => tutor!.features(userId, pageType) } : {})
+    const simplifierParts = createSimplifier(directory, { ...(tutor ? { knowledge: (userId: string, pageType: PageType) => tutor!.features(userId, pageType) } : {}), monitor: learning, callbacks: learningCallbacks })
     closeSimplifierLog = simplifierParts.close
     simplifiedWindow = new SimplifiedWindow((url) => {
       // A pressed link rebuilds the page it leads to; if Triage is busy, the link just opens in its browser.
@@ -379,12 +395,17 @@ if (!app.requestSingleInstanceLock()) {
     const requestLog = new LocalRequestLog(directory, app.getVersion())
     // Personal memory (LangChain vector store) and multi-step tasks (LangGraph),
     // both stored only in this Mac's Triage data folder.
-    memory = new MemoryService(join(directory, 'memory.sqlite'))
+    memory = new MemoryService(join(directory, 'memory.sqlite'), learning)
     checkpointer = new SqliteCheckpointer(join(directory, 'tasks.sqlite'))
     tasks = new TaskRunner({
-      file: join(directory, 'tasks.sqlite'), memory, checkpointer,
+      file: join(directory, 'tasks.sqlite'), memory, checkpointer, monitor: learning, callbacks: learningCallbacks,
       driver: new DemoPharmacyDriver(() => simplifier!.browserPage(), pharmacyPageHtml)
     })
+    if (process.env.TRIAGE_MONITOR === '1' || process.env.TRIAGE_MONITOR_SHARE === '1') {
+      void monitorWindow.show().then(() => monitorServer.start()).then((address) => {
+        if (address.lanUrl) console.log('Learning monitor for a second device: ' + address.lanUrl)
+      }).catch(() => console.warn('The learning monitor could not be opened.'))
+    }
     assistant = new AssistantCoordinator({
       requestLog,
       history: new HistoryStore(join(directory, 'history.sqlite')),

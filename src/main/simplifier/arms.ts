@@ -39,3 +39,11 @@ export function armById(id: string): PresentationArm {
 export function allowedArms(voiceEnabled: boolean): PresentationArm[] {
   return ARMS.filter((arm) => voiceEnabled || !arm.voiceNarration)
 }
+
+/** Plain description of a layout, e.g. "1.5× text, up to 3 buttons, plain language". */
+export function describeLayout(armId: string): string {
+  try {
+    const arm = armById(armId)
+    return `${arm.fontScale}× text, up to ${arm.maxActions} buttons${arm.plainLanguage ? ', plain language' : ''}${arm.voiceNarration ? ', read aloud' : ''}`
+  } catch { return 'Retired layout ' + armId }
+}

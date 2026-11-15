@@ -1,4 +1,4 @@
-import { Annotation, END, START, StateGraph, interrupt, type BaseCheckpointSaver } from '@langchain/langgraph'
+import { Annotation, END, START, StateGraph, interrupt, type BaseCheckpointSaver, type LangGraphRunnableConfig } from '@langchain/langgraph'
 import { RiskTier } from '../../shared/simplifier-contracts.ts'
 import type { MemoryService } from '../memory/service.ts'
 import type { RefillDriver } from './pharmacy-driver.ts'
@@ -81,10 +81,11 @@ export function createRefillGraph(deps: { memory: MemoryService; driver: RefillD
   const { memory, driver } = deps
   const today = deps.today ?? (() => new Date())
 
-  const recall = async (state: RefillValues) => {
+  const recall = async (state: RefillValues, config?: LangGraphRunnableConfig) => {
     const wanted = medicationFromRequest(state.request)
     // LangChain retriever over preference memories; scored match on the request.
-    const docs = await memory.retriever('preference', 5).invoke(state.request)
+    // Passing the node's config keeps the retrieval inside this graph run's trace.
+    const docs = await memory.retriever('preference', 5).invoke(state.request, config)
     const medications = docs.filter((doc) => String(doc.metadata.key ?? '').startsWith('medication:'))
     const match = wanted
       ? medications.find((doc) => String(doc.metadata.medication ?? '').toLowerCase().includes(wanted.toLowerCase()) || wanted.toLowerCase().includes(String(doc.metadata.medication ?? '').toLowerCase()))
@@ -199,5 +200,5 @@ export function createRefillGraph(deps: { memory: MemoryService; driver: RefillD
     .addConditionalEdges('confirm', (s) => (s.approved ? 'submit' : END), ['submit', END])
     .addConditionalEdges('submit', (s) => (s.outcome === 'submitted' ? 'remember' : 'open'), ['remember', 'open'])
     .addEdge('remember', END)
-    .compile({ checkpointer: deps.checkpointer })
+    .compile({ checkpointer: deps.checkpointer, name: 'refill_prescription' })
 }

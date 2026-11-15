@@ -34,6 +34,8 @@ export interface PresentationPolicy {
   probability(input: PolicyInput, armId: string): number
   learn(input: PolicyInput, armId: string, reward: number): void
   serialize(): string
+  /** Current chance of choosing each allowed arm here, for display (learning monitor). */
+  odds?(input: PolicyInput): Record<string, number>
 }
 
 const index = (name: typeof FEATURE_NAMES[number]) => FEATURE_NAMES.indexOf(name)

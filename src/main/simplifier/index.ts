@@ -1,3 +1,5 @@
+import type { BaseCallbackHandler } from '@langchain/core/callbacks/base'
+import type { LearningMonitor } from '../monitor/bus.ts'
 import { join } from 'node:path'
 import { DecisionLog } from './decision-log.ts'
 import { SimplificationEngine } from './engine.ts'
@@ -29,11 +31,14 @@ export function createSimplifier(dataDirectory: string, options: {
   policy?: 'thompson' | 'rules'; thompson?: Partial<ThompsonOptions>
   /** Per-skill knowledge for the learner's context; see main/skills/tutor.ts. */
   knowledge?: (userId: string, pageType: PageType) => SkillFeatures
+  /** Display-only learning monitor and the LangChain callbacks that feed it. */
+  monitor?: LearningMonitor
+  callbacks?: BaseCallbackHandler[]
 } = {}) {
   const log = new DecisionLog(join(dataDirectory, 'simplifier.sqlite'))
   const policy: PresentationPolicy = options.policy === 'rules'
     ? new RulesPolicy()
     : new ThompsonPolicy(options.thompson, Math.random, log.loadPolicy(policyStateKey('thompson')))
-  const engine = new SimplificationEngine({ log, policy, model: new ClaudeSimplifier(), knowledge: options.knowledge })
+  const engine = new SimplificationEngine({ log, policy, model: new ClaudeSimplifier(), knowledge: options.knowledge, monitor: options.monitor, callbacks: options.callbacks })
   return { engine, log, policy, close: () => log.close() }
 }

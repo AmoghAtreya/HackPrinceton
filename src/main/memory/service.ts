@@ -2,6 +2,7 @@ import { Document } from '@langchain/core/documents'
 import type { VectorStoreRetriever } from '@langchain/core/vectorstores'
 import { LocalHashEmbeddings } from './embeddings.ts'
 import { SqliteVectorStore } from './store.ts'
+import type { LearningMonitor } from '../monitor/bus.ts'
 
 export type MemoryKind = 'preference' | 'recipe' | 'fact'
 
@@ -20,9 +21,12 @@ export interface Recipe { site: string; task: string; steps: Array<{ action: str
  */
 export class MemoryService {
   readonly store: SqliteVectorStore
+  private readonly monitor?: LearningMonitor
 
-  constructor(file: string) {
+  /** `monitor` is display-only: memory writes are shown (masked) in the learning monitor. */
+  constructor(file: string, monitor?: LearningMonitor) {
     this.store = new SqliteVectorStore(new LocalHashEmbeddings(), file)
+    this.monitor = monitor
   }
 
   /** A standard LangChain retriever over one kind of memory, for use in chains and graphs. */
@@ -35,6 +39,7 @@ export class MemoryService {
     if (!clean) throw new Error('Nothing to remember.')
     const id = metadata.key ? `${kind}:${metadata.key}` : undefined
     const [saved] = await this.store.addDocuments([new Document({ pageContent: clean, metadata: { ...metadata, kind } })], id ? { ids: [id] } : undefined)
+    this.monitor?.emit({ type: 'memory', action: 'saved', kind, text: clean, ...(metadata.key ? { key: String(metadata.key) } : {}) })
     return saved
   }
 
@@ -73,7 +78,10 @@ export class MemoryService {
     }))
   }
 
-  async forget(id: string): Promise<void> { await this.store.delete({ ids: [id] }) }
+  async forget(id: string): Promise<void> {
+    await this.store.delete({ ids: [id] })
+    this.monitor?.emit({ type: 'memory', action: 'forgotten', kind: id.split(':')[0] || 'memory', text: 'A memory was removed' })
+  }
 
   close(): void { this.store.close() }
 }
