@@ -395,7 +395,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   const activity = active?.stage === 'browser' ? (active.progress ?? 'Starting flight search…') : active?.stage === 'capturing' ? 'Capturing screen…' : 'Thinking…'
   return <main className="chat-shell phase-two">
     <header className="chat-header">
-      <div className="brand"><span className="brand-mark">t</span><div><strong>Triage</strong><span><i />{active ? activity : 'On your desktop'}</span></div></div>
+      <div className="brand"><span className="brand-mark">t</span><div><strong>Triage</strong>{active && <span><i />{activity}</span>}</div></div>
       <div className="window-controls">
         <button className="icon-button" aria-label="Triage menu" title="Triage menu" onClick={() => bridge.openMenu()}>···</button>
         <button className="icon-button" aria-label="Hide Triage" title="Hide Triage" onClick={() => bridge.hide()}>−</button>
