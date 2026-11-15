@@ -463,11 +463,9 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
         </section> :
         <div className="welcome">
           <div className="welcome-character"><Character /></div>
-          <span className="eyebrow">A LITTLE COMPANY FOR YOUR COMPUTER</span>
           <h1>Hello, I'm Triage<span>.</span></h1>
-          <p>Ask a question, or ask me to search Alaska Airlines flights.</p>
-          {!ready ? <button className="primary-button welcome-connect" onClick={() => setView('settings')}>Connect your AI key</button> :
-            <div className="welcome-note"><span className="note-symbol">↗</span><div><strong>Pick up where you left off</strong><p>Your conversations are saved here.<br />Find them any time in History.</p></div></div>}
+          <p>Hold the button below and tell me what you need.</p>
+          {!ready && <button className="primary-button welcome-connect" onClick={() => setView('settings')}>Connect your AI key</button>}
         </div>}
       {view === 'chat' && <div ref={bottom} />}
     </div>
