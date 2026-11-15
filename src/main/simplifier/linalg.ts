@@ -85,3 +85,33 @@ export function seededRandom(seed: number): Random {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }
+
+/**
+ * Gamma(shape, 1) sample by Marsaglia & Tsang (2000), "A simple method for
+ * generating gamma variables". Shapes below 1 use the boost
+ * Gamma(a) = Gamma(a + 1) · U^(1/a).
+ */
+export function gammaSample(shape: number, random: Random): number {
+  if (!(shape > 0)) throw new Error('Gamma shape must be positive')
+  if (shape < 1) {
+    let u = 0
+    while (u === 0) u = random()
+    return gammaSample(shape + 1, random) * Math.pow(u, 1 / shape)
+  }
+  const d = shape - 1 / 3
+  const c = 1 / Math.sqrt(9 * d)
+  for (;;) {
+    let x: number
+    let v: number
+    do { x = gaussian(random); v = 1 + c * x } while (v <= 0)
+    v = v * v * v
+    let u = 0
+    while (u === 0) u = random()
+    if (u < 1 - 0.0331 * x * x * x * x || Math.log(u) < 0.5 * x * x + d * (1 - v + Math.log(v))) return d * v
+  }
+}
+
+/** σ² ~ Inverse-Gamma(shape, scale), as scale / Gamma(shape, 1). */
+export function inverseGammaSample(shape: number, scale: number, random: Random): number {
+  return scale / gammaSample(shape, random)
+}
