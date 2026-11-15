@@ -7,7 +7,7 @@ import { renderSimplifiedView } from './render.ts'
 import { AppProblem } from '../assistant/errors.ts'
 import type { LearningSummary } from '../../shared/assistant-contracts.ts'
 import type { PageType } from '../../shared/simplifier-contracts.ts'
-import { armById } from './arms.ts'
+import { describeLayout } from './arms.ts'
 import type { DecisionLog } from './decision-log.ts'
 import { EXPECTED_MS } from './reward.ts'
 import type { ObservedSignals } from './screen.ts'
@@ -39,12 +39,7 @@ export function parseSimplifyCommand(text: string): SimplifyCommand | null {
 /** Implicit signals gathered while a simplified page is on screen. */
 interface ViewSession { decisionId: string; shownAt: number; closedAt?: number; linksFollowed: number }
 
-export function describeLayout(armId: string): string {
-  try {
-    const arm = armById(armId)
-    return `${arm.fontScale}× text, up to ${arm.maxActions} buttons${arm.plainLanguage ? ', plain language' : ''}${arm.voiceNarration ? ', read aloud' : ''}`
-  } catch { return 'Retired layout ' + armId }
-}
+export { describeLayout }
 
 /**
  * Opens the original page in Chrome (the "before" view), distils it, runs the
