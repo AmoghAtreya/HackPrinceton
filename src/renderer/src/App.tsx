@@ -83,7 +83,7 @@ function Companion({ bridge, state }: { bridge: DesktopBridge; state: DesktopSta
       }}>
       <Character mood={state.mood} />
     </button>
-    <span className="companion-label"><i />{state.mood === 'thinking' ? 'Thinking…' : 'Triage'}</span>
+    <span className="companion-label"><i />{state.mood === 'thinking' ? 'Thinking…' : state.mood === 'listening' ? 'Listening…' : 'Triage'}</span>
   </main>
 }
 

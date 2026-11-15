@@ -172,6 +172,7 @@ button:disabled { opacity: .55; cursor: default; }
 .stop-button { border: 1px solid #d9b99b; background: #fff7e9; color: #9c613b; font-size: 10px; padding: 4px 8px; border-radius: 6px; }
 .thinking-dots { animation: thinking-pulse 1.2s ease-in-out infinite; }
 .character--thinking .character-body { animation: breathe 1.6s ease-in-out infinite; }
+.character--listening .character-body { animation: breathe 1s ease-in-out infinite; }
 .character--thinking .character-eyes { animation: thinking-eyes 1s ease-in-out infinite alternate; }
 @keyframes thinking-pulse { 50% { opacity: .25; } }
 @keyframes thinking-eyes { from { transform: translateX(-2px); } to { transform: translateX(2px); } }

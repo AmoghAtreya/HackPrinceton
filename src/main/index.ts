@@ -494,7 +494,10 @@ if (!app.requestSingleInstanceLock()) {
     })
     voice.subscribe((event: VoiceEvent) => {
       if (quitting || !desktop || desktop.chat.isDestroyed()) return
-      if (event.type === 'speech_state') desktop.chat.webContents.send(voiceChannels.state, event)
+      if (event.type === 'speech_state') {
+        desktop.setListening(event.state === 'listening')
+        desktop.chat.webContents.send(voiceChannels.state, event)
+      }
       else if (event.type === 'user_utterance') desktop.chat.webContents.send(voiceChannels.utterance, event)
       // event.type === 'transcript': a finished, stored recording. The agent layer hooks in here.
     })

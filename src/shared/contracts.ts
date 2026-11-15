@@ -5,7 +5,7 @@ import type { SkillsBridge } from './skill-contracts'
 import type { SpeechBridge } from './speech-contracts'
 import type { RequestLogBridge } from './request-log-contracts'
 
-export type CompanionMood = 'idle' | 'moving' | 'greeting' | 'thinking'
+export type CompanionMood = 'idle' | 'moving' | 'greeting' | 'thinking' | 'listening'
 
 export interface DesktopPoint { x: number; y: number }
 
