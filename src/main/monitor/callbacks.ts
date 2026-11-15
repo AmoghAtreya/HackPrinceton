@@ -31,7 +31,10 @@ export class MonitorCallbackHandler extends BaseCallbackHandler {
     const graphStep = Boolean(node) && node === name
     const pipelineStep = Boolean(tags?.includes('triage-step'))
     const topLevel = !parentRunId
-    const visible = !HIDDEN.test(name) && (graphStep || pipelineStep || topLevel)
+    // LangGraph wraps a node's function in a run of the same name; show the node once.
+    const parent = parentRunId ? this.starts.get(parentRunId) : undefined
+    const repeat = Boolean(parent?.visible && parent.name === name)
+    const visible = !HIDDEN.test(name) && !repeat && (graphStep || pipelineStep || topLevel)
     this.starts.set(runId, { at: Date.now(), name, visible })
     if (!visible) return
     this.monitor.emit({
