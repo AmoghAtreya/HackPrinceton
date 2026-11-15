@@ -18,6 +18,7 @@ test('voice shortcuts match whole commands and leave real requests to the chatbo
     ['What is on my screen?', 'explain_screen'], ['Explain this page.', 'explain_screen'],
     ['Show me where to track my package', 'show_me_where'], ['Where is the search box?', 'show_me_where'],
     ['Can you highlight the checkout button', 'show_me_where'], ['Where is my package?', 'chat'],
+    ['Show me how to attach a photo', 'chat'],
     ['Search Alaska flights from SEA to LAX next Friday', 'chat']
   ]
   for (const [text, kind] of cases) assert.equal(matchVoiceIntent(text).kind, kind, text)
@@ -37,7 +38,8 @@ test('replies are shortened for speech without links or markdown', () => {
   assert.doesNotMatch(flight, /https?:|alaskaair\.com/)
   assert.ok(flight.endsWith(REST_ON_SCREEN))
   assert.equal(prepareSpeech('## Steps\n1. Click **Your Orders**.'), 'Steps. Click Your Orders.')
-  assert.ok(prepareSpeech('x'.repeat(700)).length < 420)
+  assert.ok(prepareSpeech('x'.repeat(700)).length < 330)
+  assert.equal(prepareSpeech('Click Insert. Then choose Photo. Then pick a picture. Then press Send.'), 'Click Insert. Then choose Photo. ' + REST_ON_SCREEN, 'two sentences at most')
   assert.equal(failureSpeech(null), "Sorry, that didn't work.")
   assert.equal(failureSpeech('The reply timed out.'), "Sorry, that didn't work. The reply timed out.")
 })

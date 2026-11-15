@@ -1,5 +1,6 @@
 import type { ActivityEvent } from './flight-contracts'
 import type { HighlightState } from './highlight-contracts'
+import type { GuideState } from './guide-contracts'
 import type { ScreenPreview } from './screen-contracts'
 import type { ShakeSettings } from './shake-contracts'
 import type { ScreenAnalysis, ScreenAnalysisKind } from './screen-analysis-contracts'
@@ -25,6 +26,8 @@ export interface AssistantState {
   storageError?: string
   gestureRequest?: SendReceipt
   highlight?: HighlightState
+  /** Present while Triage is walking the person through a task step by step. */
+  guide?: GuideState
 }
 export interface ConversationSummary { id: string; title: string; updatedAt: number }
 export interface HistoryCursor { at: number; id: string }
@@ -87,6 +90,12 @@ export interface AssistantBridge {
   sendMessage(input: { conversationId?: string; text: string; captureId?: string; mode?: 'explain' | 'highlight'; source?: 'chat' | 'voice' }): Promise<Result<SendReceipt>>
   closeBrowser(): Promise<Result<void>>
   stopRequest(taskId: string): Promise<Result<void>>
+  /** Guided help: look at the screen again and show the next step. */
+  guideNext(): Promise<Result<SendReceipt>>
+  /** Guided help: outline the current step again. */
+  guideAgain(): Promise<Result<SendReceipt>>
+  /** Guided help: stop guiding and remove the outline. */
+  guideStop(): Promise<Result<void>>
   listConversations(input: { before?: HistoryCursor }): Promise<Result<ConversationPage>>
   getConversation(input: { id: string; before?: number; beforeEvent?: number }): Promise<Result<ConversationDetail>>
   deleteConversation(id: string): Promise<Result<void>>
@@ -105,6 +114,7 @@ export const assistantChannels = {
   removeKey: 'assistant:remove-key', selectModel: 'assistant:select-model', setFastModel: 'assistant:set-fast-model',
   closeBrowser: 'assistant:close-browser',
   send: 'assistant:send', stop: 'assistant:stop', list: 'assistant:list',
+  guideNext: 'assistant:guide-next', guideAgain: 'assistant:guide-again', guideStop: 'assistant:guide-stop',
   detail: 'assistant:detail', delete: 'assistant:delete', clear: 'assistant:clear',
   analyze: 'assistant:analyze',
   learning: 'assistant:learning', rate: 'assistant:rate', memory: 'assistant:memory', forget: 'assistant:forget'

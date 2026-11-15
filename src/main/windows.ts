@@ -149,6 +149,27 @@ export class DesktopWindows {
     })
   }
 
+  /**
+   * Moves Triage (companion and chat) to the other side of its display, so a
+   * control it was covering can be outlined. Returns false if there is no
+   * room to move. The new place is remembered, like a drag.
+   */
+  moveAside(): boolean {
+    if (this.quitting || this.drag || this.companion.isDestroyed()) return false
+    const bounds = this.companion.getBounds()
+    const area = screen.getDisplayMatching(bounds).workArea
+    const onRight = bounds.x + bounds.width / 2 > area.x + area.width / 2
+    const width = this.chat.isVisible() ? Math.min(CHAT_SIZE.width, area.width) + 8 : 0
+    // On the left, leave room for the chat to open to the companion's right.
+    const x = onRight ? area.x + 30 : area.x + area.width - bounds.width - 30
+    const position = clampPosition({ x, y: bounds.y }, area, COMPANION_SIZE)
+    if (Math.abs(position.x - bounds.x) < width / 2) return false
+    this.companion.setPosition(position.x, position.y, false)
+    if (this.chat.isVisible()) this.positionChat()
+    writePosition(this.positionFile, position)
+    return true
+  }
+
   get isDragging(): boolean { return Boolean(this.drag) }
 
   hideForCapture(focusAfterCapture = true): () => void {

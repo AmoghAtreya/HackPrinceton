@@ -74,7 +74,10 @@ Requirements: macOS on Apple Silicon, Node 22 (`.nvmrc`), and an **Anthropic (Cl
 npm install
 npm run browser:install     # Chromium for the flight-search task browser
 npm run speech:build        # free on-device speech helper (voice input)
+npm run context:build       # reads on-screen controls: hides private fields in screenshots, outlines real buttons
 ```
+
+Then allow Triage in **System Settings → Privacy & Security → Accessibility**. Without it (or without `context:build`), guided help and screenshots sent without a preview are refused, because private fields can't be hidden.
 
 > **After every `git pull`, run `npm install` again.** Teammates add packages (for example LangChain and LangGraph for memory and tasks); without them Triage fails to build or start. Re-run `npm run speech:build` too if `native/speech/` changed.
 
@@ -170,6 +173,11 @@ Under the big buttons, the rebuilt page keeps **the original page's links**, gro
 
 How Triage finds your page: first it reads the address of the window just behind Triage through macOS Accessibility (needs `npm run context:build` and Accessibility permission, and never asks for them). If that fails, it asks Google Chrome for its active tab, and macOS asks once whether Triage may control Chrome. Only the address is read from your browser. Triage's own browser has a separate profile, so **pages that need you to be signed in show their sign-in page** in the rebuilt view.
 
+## Guided help
+
+Ask "help me attach a photo" (or "walk me through it") and Triage guides you one step at a time: a box around the one button to press and a single short sentence, read aloud when you asked by voice. Click the outlined button, or say "next", to get the next step. See [docs/Screen-Help.md](docs/Screen-Help.md#guided-help-one-step-at-a-time).
+
+## Simplify this page
 
 Ask Triage to "simplify this page", choose **Simplify this page** in the menu bar menu, or pick it as the Shake to Help action. Triage reads the page in front (your own Chrome, or any app) through macOS Accessibility, runs the same simplifier used by `/simplify`, and shows the result in the simplified-page window. Views of windows that are not web pages are labelled **Simplified from screen**.
 

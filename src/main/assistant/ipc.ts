@@ -40,6 +40,9 @@ export function installAssistantIpc(
   register(assistantChannels.send, (input) => assistant.send(input))
   register(assistantChannels.closeBrowser, () => assistant.closeBrowser())
   register(assistantChannels.stop, (input) => assistant.stop(input))
+  register(assistantChannels.guideNext, () => assistant.guideNext())
+  register(assistantChannels.guideAgain, () => assistant.guideAgain())
+  register(assistantChannels.guideStop, () => assistant.guideStop())
   register(assistantChannels.list, (input) => assistant.history.list(validated(listSchema, input).before))
   register(assistantChannels.detail, (input) => {
     const { id, before, beforeEvent } = validated(detailSchema, input)

@@ -7,7 +7,7 @@ import type { Result } from './assistant-contracts'
  */
 
 export type RequestRoute = 'reply' | 'flight_search' | 'open_page' | 'explain' | 'highlight' | 'simplify' | 'safety'
-  | 'simplify_page' | 'needs_screenshot' | 'how_to' | 'remember_contact'
+  | 'simplify_page' | 'needs_screenshot' | 'how_to' | 'remember_contact' | 'guide'
 export type RequestOutcome = 'completed' | 'failed' | 'stopped' | 'interrupted'
 
 export interface RequestEvent {

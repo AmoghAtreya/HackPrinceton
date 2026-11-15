@@ -2,6 +2,8 @@ import type { BrowserRunner } from '../browser/supervisor.ts'
 import { validateFlight } from '../browser/validation.ts'
 import { HIGHLIGHT_LOST_MESSAGE, highlightSource, type HighlightController, type HighlightPlan } from '../screen/highlight.ts'
 import type { ElementAnchor, HighlightReply } from '../../shared/highlight-contracts.ts'
+import { GUIDE_CLICK_DELAY_MS, guideGoal, isNextStep, isShowAgain } from '../../shared/guide-contracts.ts'
+import { GuideSession } from './guide.ts'
 import { locateElements } from '../context/locate.ts'
 import type { ContextLookup } from '../context/paired-capture.ts'
 import type { ShakeTrigger } from '../../shared/shake-contracts.ts'
@@ -13,7 +15,7 @@ import type { ModelGateway } from './model.ts'
 import { AppProblem, publicProblem } from './errors.ts'
 import { analyzeSchema, connectSchema, fastModelSchema, idSchema, memoryIdSchema, modelSchema, rateSchema, sendSchema, validated } from './schemas.ts'
 import { parseScreenAnalysis, type ScreenAnalysis } from '../../shared/screen-analysis-contracts.ts'
-import { pickModel, type RequestPurpose } from './tiers.ts'
+import { pickModel, type ModelPick, type RequestPurpose } from './tiers.ts'
 import { redact } from './redaction.ts'
 import { resolveDestination } from '../../shared/destinations.ts'
 import type { RequestLog } from '../logging/request-log.ts'
@@ -59,6 +61,10 @@ interface RunningRequest extends ActiveRequest {
   simplifyScreen?: boolean
   /** A screenshot was already requested for this request; a second one is never taken. */
   escalated?: boolean
+  /** This request is the next step of the running guide, not a new question. */
+  guideStep?: boolean
+  /** A plain "help me …" request: start a guide towards this goal without asking the router. */
+  guideGoal?: string
   /** The user's own words for this request, exactly as typed or spoken. */
   text: string
 }
@@ -82,6 +88,11 @@ export class AssistantCoordinator {
   private trust?: Pick<TrustService, 'propose' | 'answer' | 'context'>
   private tutor?: Pick<SkillTutor, 'guidance' | 'asked' | 'locateGuidance' | 'pointed' | 'resolved'>
   private offClicked?: () => void
+  /** Guided help in progress: one outlined step at a time towards the person's goal. */
+  private guide: GuideSession | null = null
+  private guideTimer?: ReturnType<typeof setTimeout>
+  private guideClickDelay: number
+  private makeRoom?: () => boolean
   private contexts?: ContextLookup
   private gestureRequest?: SendReceipt
   private browser?: BrowserRunner
@@ -118,7 +129,13 @@ export class AssistantCoordinator {
     openPage?: (url: string) => Promise<void>
     /** Receives every finished request; it decides (consent) whether to keep it. */
     requestLog?: RequestLog
+    /** How long after a click on the outlined control the next guide step starts. */
+    guideClickDelay?: number
+    /** Moves Triage's own windows aside when they cover a control it wants to outline. */
+    makeRoom?: () => boolean
   }) {
+    this.makeRoom = options.makeRoom
+    this.guideClickDelay = options.guideClickDelay ?? GUIDE_CLICK_DELAY_MS
     this.simplifier = options.simplifier
     this.memory = options.memory
     this.tasks = options.tasks
@@ -127,7 +144,16 @@ export class AssistantCoordinator {
     this.trust = options.trust
     this.tutor = options.tutor
     // Clicking the outlined control first try is evidence the person can do it; losing it is evidence they could not.
-    this.offClicked = options.highlights?.onClicked((state) => this.tutor?.resolved(state.taskId, true))
+    this.offClicked = options.highlights?.onClicked((state) => {
+      this.tutor?.resolved(state.taskId, true)
+      // In a guide, clicking the outlined control is "done, what next?": look again once the screen has changed.
+      if (!this.liveGuide()?.current(state.taskId)) return
+      clearTimeout(this.guideTimer)
+      this.guideTimer = setTimeout(() => {
+        try { this.guideNext() } catch { /* Busy or over: "next" and the Next step button still work. */ }
+      }, this.guideClickDelay)
+      this.guideTimer.unref?.()
+    })
     this.screenSimplifier = options.screenSimplifier
     this.browser = options.browser
     this.openPage = options.openPage
@@ -155,7 +181,8 @@ export class AssistantCoordinator {
       active: this.active ? { id: this.active.id, conversationId: this.active.conversationId, startedAt: this.active.startedAt, stage: this.active.stage, progress: this.active.progress } : null,
       ...(this.storageError ? { storageError: this.storageError } : {}),
       ...(this.gestureRequest ? { gestureRequest: this.gestureRequest } : {}),
-      ...(this.highlights?.snapshot() ? { highlight: this.highlights.snapshot()! } : {})
+      ...(this.highlights?.snapshot() ? { highlight: this.highlights.snapshot()! } : {}),
+      ...(this.liveGuide() ? { guide: this.guide!.snapshot() } : {})
     }
   }
 
@@ -222,6 +249,44 @@ export class AssistantCoordinator {
   }
 
   clearHighlight(): void { this.highlights?.clear() }
+
+  /** The running guide, unless it has sat untouched for too long. */
+  private liveGuide(): GuideSession | null {
+    if (this.guide?.expired) this.endGuide()
+    return this.guide
+  }
+
+  private endGuide(): void {
+    clearTimeout(this.guideTimer)
+    this.guide = null
+  }
+
+  /** "Next", the Next step button, or a click on the outlined control: look at the screen again and show the next step. */
+  guideNext(): SendReceipt { return this.guideLook(false) }
+
+  /** "Show me" or "where is it?": look again and outline the current step once more. */
+  guideAgain(): SendReceipt { return this.guideLook(true) }
+
+  private guideLook(again: boolean): SendReceipt {
+    const guide = this.liveGuide()
+    if (!guide) throw new AppProblem('no_guide', 'I’m not guiding you through anything right now. Ask me for help with something to start.')
+    this.idle()
+    if (this.storageError) throw new AppProblem('storage', this.storageError)
+    const key = this.credentials.getKey()
+    const model = this.credentials.snapshot().model
+    if (!model) throw new AppProblem('missing_model', 'Connect your key and choose an available model in Settings.')
+    if (again) guide.again()
+    return this.start({ text: again ? 'Show me again' : 'Next step', conversationId: guide.conversationId }, key, model, undefined, undefined, undefined,
+      guide.spoken ? 'voice' : 'chat', undefined, false, undefined, true)
+  }
+
+  /** Stops guiding and removes the outline. A request that is already running is left to finish. */
+  guideStop(): void {
+    if (!this.guide) return
+    this.endGuide()
+    this.highlights?.clear()
+    this.emit()
+  }
 
   /**
    * "What can I do here?" or "Is this safe?" for a captured screenshot. Returns
@@ -323,9 +388,16 @@ export class AssistantCoordinator {
     }
     // Local command, handled without asking Claude to route it. Parsed here so a
     // bad address is reported immediately instead of after a model call.
+    // While guiding, a bare "next" or "done" typed in that conversation means the next step.
+    const guide = this.liveGuide()
+    if (!image && guide && request.conversationId === guide.conversationId && (isNextStep(request.text) || isShowAgain(request.text))) {
+      if (isShowAgain(request.text)) guide.again()
+      return this.start(request, key, model, undefined, undefined, undefined, request.source ?? 'chat', undefined, false, undefined, true)
+    }
     const simplify = !image && this.simplifier ? parseSimplifyCommand(request.text) : null
     const local = !image && !simplify ? this.localCommand(request.text, request.conversationId) : undefined
-    return this.start(request, key, model, image, undefined, undefined, request.source ?? 'chat', simplify ?? undefined, false, local)
+    const goal = !image && !simplify && !local ? guideGoal(request.text) : null
+    return this.start({ ...request, ...(goal ? { guideGoal: goal } : {}) }, key, model, image, undefined, undefined, request.source ?? 'chat', simplify ?? undefined, false, local)
   }
 
   /**
@@ -410,9 +482,12 @@ export class AssistantCoordinator {
     return this.start({ text: gesture.instruction, mode }, key, model, undefined, gesture, capture)
   }
 
-  private start(request: { text: string; conversationId?: string; mode?: 'explain' | 'highlight' }, key: string, model: string,
+  private start(request: { text: string; conversationId?: string; mode?: 'explain' | 'highlight'; guideGoal?: string }, key: string, model: string,
     image?: ScreenImage, gesture?: ShakeTrigger & { instruction: string }, capture?: () => Promise<ScreenPreview>, source: 'chat' | 'voice' = 'chat',
-    simplify?: SimplifyCommand, simplifyScreen = false, local?: LocalCommand): SendReceipt {
+    simplify?: SimplifyCommand, simplifyScreen = false, local?: LocalCommand, guideStep = false): SendReceipt {
+    // Anything other than "next" is a new request, so a running guide is over.
+    if (!guideStep) this.endGuide()
+    clearTimeout(this.guideTimer)
     this.highlights?.clear()
     let receipt: SendReceipt
     const logText = redact((gesture ? '[Shake to Help] ' : request.mode === 'highlight' ? '[Show me where] ' : image ? '[Screen explanation] ' : '') + request.text, [key])
@@ -430,7 +505,7 @@ export class AssistantCoordinator {
       expectedDisplayId: gesture?.displayId, highlight: request.mode === 'highlight', highlightRevision: this.highlights?.revision,
       logText, source: gesture ? 'shake' : source,
       ...(simplify ? { simplify } : {}), ...(simplifyScreen ? { simplifyScreen } : {}),
-      ...(local ? { local } : {})
+      ...(local ? { local } : {}), ...(guideStep ? { guideStep } : {}), ...(request.guideGoal ? { guideGoal: request.guideGoal } : {})
     }
     this.active = active
     if (gesture) this.gestureRequest = receipt
@@ -465,16 +540,30 @@ export class AssistantCoordinator {
       let used = pick(image ? 'vision' : 'reply')
       let escalated = false
       let local = false
-      const plainChat = !image && !capture && !request.highlight && !request.simplify && !request.simplifyScreen
+      const plainChat = !image && !capture && !request.highlight && !request.simplify && !request.simplifyScreen && !request.guideStep && !request.guideGoal
       // A yes/no to "Should I remember this?" is read by code, not by the model.
       const answered = plainChat ? this.trust?.answer(request.conversationId, request.text) ?? null : null
       // Facts from the user's own list: sent as trusted context, apart from anything read off the screen.
       const trusted = this.trust?.context(request.text)
-      let reply: string
+      let reply = ''
       let result: HighlightReply | undefined
       let plan: HighlightPlan | null = null
       let outcome = 'no_target'
-      if (request.highlight) {
+      // One guide step: sets the same locals as "Show me where". False when the request was stopped meanwhile.
+      const guideStep = async (): Promise<boolean> => {
+        const step = await this.runGuideStep(request, key, pick('locate'), context)
+        if (!step) return false
+        reply = step.reply; result = step.result; plan = step.plan; outcome = step.outcome
+        if (step.image) image = step.image
+        used = step.used
+        return true
+      }
+      if (request.guideStep) {
+        if (!await guideStep()) return
+      } else if (request.guideGoal) {
+        this.guide = new GuideSession({ conversationId: request.conversationId, goal: request.guideGoal, spoken: request.source === 'voice' })
+        if (!await guideStep()) return
+      } else if (request.highlight) {
         request.route = 'highlight'
         if (!image || !this.gateway.locate || !this.highlights) throw new AppProblem('highlight_unavailable', 'Screen highlighting is unavailable. Capture again or use Explain screen.')
         const snapshot = this.contexts?.forCapture(image.metadata.id)
@@ -484,39 +573,10 @@ export class AssistantCoordinator {
           this.tutor?.locateGuidance(LOCAL_USER, request.conversationId))
         if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
         reply = result.explanation
-        try {
-          let anchor: ElementAnchor | undefined
-          let rejected: AppProblem | undefined
-          if (result.elementId) {
-            // The id is only meaningful for the snapshot it was offered from: the
-            // lookup refuses ids that snapshot never had, and any snapshot that
-            // has since expired or been replaced by a newer generation.
-            try {
-              if (!snapshot || !this.contexts) throw new AppProblem('context_element', 'No element list was offered.')
-              const element = this.contexts.element(snapshot.id, snapshot.generation, result.elementId)
-              anchor = { frame: element.frame, pid: snapshot.app.pid, path: element.path, role: element.role }
-            } catch (error) {
-              if (!(error instanceof AppProblem)) throw error
-              rejected = error.code === 'context_expired'
-                ? new AppProblem('stale_element', 'No highlight: the view of the screen expired or was replaced. Capture again before asking where to click.')
-                : new AppProblem('unknown_element', 'No highlight: the reply named an item that is not on the captured screen. Try a fresh capture.')
-            }
-          }
-          if (anchor) {
-            try { plan = this.highlights.plan(result, image.metadata, request.id, request.highlightRevision!, anchor) }
-            // An element that is off this display can still be marked from the model's pixel box, if it gave one.
-            catch (error) { if (!(error instanceof AppProblem) || error.code !== 'invalid_target' || !result.target) throw error }
-          }
-          if (!plan) {
-            if (rejected && !result.target) throw rejected
-            plan = this.highlights.plan(result, image.metadata, request.id, request.highlightRevision!)
-          }
-          outcome = plan ? 'prepared' : 'no_target'
-        } catch (error) {
-          if (!(error instanceof AppProblem)) throw error
-          outcome = error.code
-          reply += '\n\n' + error.message
-        }
+        const pointed = this.pointAt(request, image, result, snapshot)
+        plan = pointed.plan
+        outcome = pointed.outcome
+        if (pointed.note) reply += '\n\n' + pointed.note
       } else if (request.local) {
         reply = await this.runLocal(request, request.local)
       } else if (request.simplifyScreen) {
@@ -563,6 +623,10 @@ export class AssistantCoordinator {
           reply = await this.gateway.reply(key, used.model, context, request.controller.signal, undefined, screenContext,
             [trusted, guidance].filter(Boolean).join('\n\n') || undefined)
           if (this.disposed || this.active?.id !== request.id || request.controller.signal.aborted) return
+        }
+        else if (route.kind === 'guide') {
+          this.guide = new GuideSession({ conversationId: request.conversationId, goal: route.goal, spoken: request.source === 'voice' })
+          if (!await guideStep()) return
         }
         else if (route.kind === 'needs_screenshot') {
           const vision = pick('vision')
@@ -628,6 +692,101 @@ export class AssistantCoordinator {
       // it settles so the gesture conversation can be opened without spoiling capture.
       if (capture && !this.disposed) this.emit()
     }
+  }
+
+  /**
+   * Turns the model's answer into a highlight that is ready to show: the listed
+   * element's real frame when it named one, otherwise its pixel box. A problem
+   * placing it comes back as a note for the reply, never as a failed request.
+   */
+  private pointAt(request: RunningRequest, image: ScreenImage, result: HighlightReply, snapshot: ReturnType<ContextLookup['forCapture']>):
+    { plan: HighlightPlan | null; outcome: string; note?: string } {
+    let plan: HighlightPlan | null = null
+    try {
+      let anchor: ElementAnchor | undefined
+      let rejected: AppProblem | undefined
+      if (result.elementId) {
+        // The id is only meaningful for the snapshot it was offered from: the
+        // lookup refuses ids that snapshot never had, and any snapshot that
+        // has since expired or been replaced by a newer generation.
+        try {
+          if (!snapshot || !this.contexts) throw new AppProblem('context_element', 'No element list was offered.')
+          const element = this.contexts.element(snapshot.id, snapshot.generation, result.elementId)
+          anchor = { frame: element.frame, pid: snapshot.app.pid, path: element.path, role: element.role }
+        } catch (error) {
+          if (!(error instanceof AppProblem)) throw error
+          rejected = error.code === 'context_expired'
+            ? new AppProblem('stale_element', 'No highlight: the view of the screen expired or was replaced. Capture again before asking where to click.')
+            : new AppProblem('unknown_element', 'No highlight: the reply named an item that is not on the captured screen. Try a fresh capture.')
+        }
+      }
+      if (anchor) {
+        try { plan = this.highlights!.plan(result, image.metadata, request.id, request.highlightRevision!, anchor) }
+        // An element that is off this display can still be marked from the model's pixel box, if it gave one.
+        catch (error) { if (!(error instanceof AppProblem) || error.code !== 'invalid_target' || !result.target) throw error }
+      }
+      if (!plan) {
+        if (rejected && !result.target) throw rejected
+        plan = this.highlights!.plan(result, image.metadata, request.id, request.highlightRevision!)
+      }
+      return { plan, outcome: plan ? 'prepared' : 'no_target' }
+    } catch (error) {
+      if (!(error instanceof AppProblem)) throw error
+      return { plan: null, outcome: error.code, note: error.message }
+    }
+  }
+
+  /**
+   * One step of guided help: take a fresh screenshot (private fields blacked
+   * out), ask the model for only the next thing to do towards the goal, and
+   * prepare an outline around that control. Returns null if the request was
+   * stopped meanwhile. A step that cannot be shown keeps the guide open so
+   * "next" tries again.
+   */
+  private async runGuideStep(request: RunningRequest, key: string, used: ModelPick, context: Array<{ role: 'user' | 'assistant'; content: string }>):
+    Promise<{ reply: string; result?: HighlightReply; plan: HighlightPlan | null; outcome: string; image?: ScreenImage; used: ModelPick } | null> {
+    const guide = this.guide
+    if (!guide) throw new AppProblem('no_guide', 'I’m not guiding you through anything right now. Ask me for help with something to start.')
+    request.route = 'guide'
+    if (!this.captureScreen || !this.screens || !this.gateway.locate || !this.highlights) {
+      this.endGuide()
+      throw new AppProblem('highlight_unavailable', 'I can’t point at things on the screen in this build. Use Capture screen and ask where to click.')
+    }
+    guide.attempted(request.id)
+    request.progress = 'Looking at your screen…'
+    this.emit()
+    const preview = await this.captureScreen()
+    const stopped = () => this.disposed || this.active?.id !== request.id || request.controller.signal.aborted
+    if (stopped()) { this.screens.discard?.(preview.metadata.id); return null }
+    const image = this.screens.take(preview.metadata.id)
+    // Nobody previews this screenshot, so it is only sent when the private-field check actually ran.
+    if (image.metadata.redactedRegions === null)
+      return { reply: 'I didn’t look at your screen, because I couldn’t hide passwords and card numbers first. Turn on Triage in System Settings → Privacy & Security → Accessibility, then say “next”.', plan: null, outcome: 'not_sent', used }
+    this.history.attachCapture(request.id, image.metadata)
+    this.history.activity(request.id, 'guide_step', 'Looked at the screen for the next step.', {})
+    const snapshot = this.contexts?.forCapture(image.metadata.id)
+    const candidates = snapshot ? locateElements(snapshot) : []
+    const result = await this.gateway.locate(key, used.model, context, request.controller.signal, image, candidates.length ? candidates : undefined, undefined, guide.progress())
+    if (stopped()) return null
+    if (this.guide !== guide) return { reply: result.explanation, result: { ...result, target: null, elementId: undefined }, plan: null, outcome: 'guide_ended', image, used }
+    if (result.done) {
+      console.info(`Guide finished after ${guide.stepCount} steps.`)
+      this.endGuide()
+      return { reply: result.explanation, result, plan: null, outcome: 'guide_done', image, used }
+    }
+    let pointed = this.pointAt(request, image, result, snapshot)
+    // Triage's own window is over the control: move it to the other side of the screen and try once more.
+    if (pointed.outcome === 'highlight_obscured' && this.makeRoom?.()) pointed = this.pointAt(request, image, result, snapshot)
+    const step = guide.shown(request.id, result.explanation)
+    // Shape only, never screen text: enough to see from the log whether boxes are being drawn.
+    console.info(`Guide step ${step}: ${pointed.plan ? (pointed.plan.anchor ? 'outlined a listed control' : 'outlined a pixel box') : 'nothing to outline (' + pointed.outcome + ')'}; ${candidates.length} controls offered.`)
+    let reply = `Step ${step}: ${result.explanation}`
+    if (pointed.note) reply += '\n\n' + pointed.note.replace('Capture again before asking where to click.', 'Say “next” and I’ll look again.').replace('Try a fresh capture.', 'Say “next” and I’ll look again.').replace('Move Triage aside and capture again.', 'Drag me out of the way, then say “show me”.')
+    if (guide.exhausted) {
+      this.endGuide()
+      reply += '\n\nThat’s as many steps as I can guide in one go. Ask me again if you’d like to carry on.'
+    }
+    return { reply, result, plan: pointed.plan, outcome: pointed.outcome, image, used }
   }
 
   /** What is on screen right now, as text. Chat works without it, so any failure just means no block. */
@@ -740,6 +899,7 @@ If you can’t find something on the page, ask “show me where…” and I’ll
   deleteConversation(input: unknown): void {
     if (this.disposed) throw new AppProblem('closed', 'Triage is closing.')
     const id = validated(idSchema, input)
+    if (this.guide?.conversationId === id) this.endGuide()
     if (this.active?.conversationId === id) throw new AppProblem('busy', 'Stop this conversation’s request before deleting it.')
     try { this.history.delete(id) }
     catch (error) { this.blockStorage(); throw error }
@@ -748,6 +908,7 @@ If you can’t find something on the page, ask “show me where…” and I’ll
 
   clearHistory(): void {
     this.idle()
+    this.endGuide()
     try { this.history.clear() }
     catch (error) { this.blockStorage(); throw error }
     this.emit()
@@ -758,6 +919,7 @@ If you can’t find something on the page, ask “show me where…” and I’ll
     this.disposed = true
     this.connecting?.abort()
     this.analyzing?.abort()
+    this.endGuide()
     try {
       if (this.active) this.finish(this.active, 'stopped', 'Stopped because Triage quit.')
       this.offHighlights?.()

@@ -6,7 +6,13 @@ export interface LinkWarning {
 }
 
 /** elementId is present only when the model chose a listed accessibility element. */
-export interface HighlightReply { explanation: string; captureId: string; target: Rectangle | null; elementId?: string }
+export interface HighlightReply {
+  explanation: string; captureId: string; target: Rectangle | null; elementId?: string
+  /** Guided help only: true when the person's goal is already complete on this screen. */
+  done?: boolean
+}
+/** What a guided-help step is working towards, and the steps already shown. */
+export interface GuideProgress { goal: string; done: string[] }
 /** One row of the compact element list offered to the model. No values, only labels. */
 export interface LocateElement { id: string; kind: ElementKind; label: string; region: PageRegion }
 /** How a highlight was located. Logged in history; carries no screen text. */

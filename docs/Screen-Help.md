@@ -35,6 +35,27 @@ ScreenHelpCard renders it; a button runs the existing "show me where" (arrow) or
 
 Simplify buttons never click anything themselves. They point (arrow) or explain, and the person stays in control.
 
+## Guided help: one step at a time
+
+Say or type "help me attach a photo", "walk me through sending this" or "how do I print this?". Instead of a long list of steps, Triage outlines one button at a time:
+
+1. It takes a screenshot (private fields blacked out; not sent if that check couldn't run) and reads the app's on-screen controls.
+2. The model gets the goal and the steps already given, and returns **only the next step**: one sentence of at most 14 words ("Click the paperclip button at the bottom."), the control to outline, and whether the goal is done.
+3. Triage draws the box (the same outline as "Show me where") and shows **Step 2: Click the paperclip…** in chat. When you asked by voice, it reads that one sentence aloud.
+4. **Click the outlined button** and Triage looks again about 1.5 seconds later. Saying or typing "next", "done", "okay" or "what now", or pressing **Next step**, does the same.
+
+The guide ends when the goal is done, when you press **Stop guiding** or say "stop", when you ask something else, after 12 steps, or after 10 minutes untouched.
+
+```
+router → { kind: 'guide', goal } ──▶ GuideSession (src/main/assistant/guide.ts)
+  runGuideStep(): captureScreen → locateElements → gateway.locate(…, guide: { goal, done })
+                  → parseGuideReply (src/main/screen/coordinates.ts) → pointAt → outline
+  highlights.onClicked (current step only) ──▶ guideNext() ──▶ next step
+```
+
+- **Prompt:** `guideSystemPrompt()` in `src/main/assistant/model.ts`. The goal and earlier steps are quoted as data; it never suggests typing secrets or paying.
+- **Speech:** every reply is read aloud for at most two sentences (about 15 seconds); the rest stays on screen.
+
 ## Not built yet
 
 - Automatic background checks while a browser is in front. This would need repeated screen captures, and should be opt-in with a visible indicator.
