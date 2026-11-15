@@ -19,7 +19,9 @@ const TAP_MS = 400
 /** Lets the global voice shortcut drive the button: start listening, or stop if already listening. */
 export interface VoiceButtonHandle { toggle(): void }
 
-export const VoiceButton = forwardRef<VoiceButtonHandle, { bridge: VoiceBridge; onTranscript?: (record: TranscriptRecord) => void; shortcut?: string[] | null }>(function VoiceButton({ bridge, onTranscript, shortcut }, ref) {
+export const VoiceButton = forwardRef<VoiceButtonHandle, { bridge: VoiceBridge; onTranscript?: (record: TranscriptRecord) => void; shortcut?: string[] | null
+  /** The chat is closed: problems are spoken, because nobody can see them. */
+  handsFree?: boolean }>(function VoiceButton({ bridge, onTranscript, shortcut, handsFree = false }, ref) {
   const [phase, setPhaseState] = useState<Phase>('idle')
   const [caption, setCaption] = useState('')
   const [level, setLevel] = useState(0)
@@ -38,6 +40,15 @@ export const VoiceButton = forwardRef<VoiceButtonHandle, { bridge: VoiceBridge; 
   const partial = useRef('')
   const transcriptListener = useRef(onTranscript)
   transcriptListener.current = onTranscript
+
+  const handsFreeRef = useRef(handsFree)
+  handsFreeRef.current = handsFree
+
+  /** Shows a recording problem, and says it aloud when the chat is closed. */
+  function fail(message: string) {
+    setError(message)
+    if (handsFreeRef.current) void speechPlayer.speak(message)
+  }
 
   function setPhase(next: Phase) { phaseRef.current = next; setPhaseState(next) }
 
@@ -71,7 +82,7 @@ export const VoiceButton = forwardRef<VoiceButtonHandle, { bridge: VoiceBridge; 
       if (attempt.current !== mine) return
       session.current = null; microphone.current = null
       setPhase('idle')
-      setError(problem instanceof MicrophoneProblem ? problem.message : displayError(problem))
+      fail(problem instanceof MicrophoneProblem ? problem.message : displayError(problem))
     }
   }
 
@@ -86,11 +97,11 @@ export const VoiceButton = forwardRef<VoiceButtonHandle, { bridge: VoiceBridge; 
       if (!id) return
       const record = unwrap(await bridge.finishVoice(id))
       setLast(record)
-      if (record.error) setError(record.error)
-      else if (!record.text) setError('I didn’t catch anything. Try again a little closer to the microphone.')
+      if (record.error) fail(record.error)
+      else if (!record.text) fail('I didn’t catch anything. Try again a little closer to the microphone.')
       transcriptListener.current?.(record)
     } catch (problem) {
-      setError(displayError(problem))
+      fail(displayError(problem))
     } finally {
       session.current = null
       setCaption('')

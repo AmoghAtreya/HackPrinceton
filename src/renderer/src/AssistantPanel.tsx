@@ -40,6 +40,8 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   const input = useRef<HTMLTextAreaElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const voiceButton = useRef<VoiceButtonHandle>(null)
+  const chatOpen = useRef(state.chatOpen)
+  chatOpen.current = state.chatOpen
   /** A shortcut press that arrived while another tab was open; handled once the talk button mounts. */
   const pendingVoiceToggle = useRef(false)
   const keepScroll = useRef(false)
@@ -185,16 +187,32 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     setSelected(id); setView('chat'); setError(''); setDraft('')
   }
 
+  /**
+   * The chat is closed, so this request came from the voice shortcut: answers and problems
+   * are spoken, and nothing pops the chat open. Arrows and other on-screen help still appear.
+   */
+  function handsFree(): boolean { return !chatOpen.current }
+
+  function shouldSpeak(source: 'chat' | 'voice'): boolean {
+    return handsFree() || readAloud.current === 'always' || (readAloud.current === 'voice' && source === 'voice')
+  }
+
+  function reportProblem(problem: unknown) {
+    const message = displayError(problem)
+    setError(message)
+    if (handsFree()) void speechPlayer.speak(failureSpeech(message))
+  }
+
   /** Shared by the Send button and voice input. A spoken message leaves any typed draft alone. */
   async function deliver(text: string, source: 'chat' | 'voice', shot: ScreenPreview | null, mode: 'explain' | 'highlight'): Promise<boolean> {
     setBusy(true); setError(''); setVoiceNotice('')
     try {
       const receipt = unwrap(await bridge.sendMessage({ ...(selected ? { conversationId: selected } : {}), text, source, ...(shot ? { captureId: shot.metadata.id, mode } : {}) }))
-      if (readAloud.current === 'always' || (readAloud.current === 'voice' && source === 'voice')) queueSpeech(receipt.taskId)
+      if (shouldSpeak(source)) queueSpeech(receipt.taskId)
       setSelected(receipt.conversationId); setCapture(null); setView('chat')
       if (source === 'chat') setDraft('')
       return true
-    } catch (problem) { setError(displayError(problem)); return false }
+    } catch (problem) { reportProblem(problem); return false }
     finally { setBusy(false); input.current?.focus() }
   }
 
@@ -231,9 +249,10 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   }
 
   /** Puts spoken words in the message box (after any typed text) instead of sending them. */
-  function holdForReview(text: string, notice: string) {
+  function holdForReview(text: string, notice: string, spoken: string) {
     setDraft((current) => current.trim() ? current.trimEnd() + ' ' + text : text)
     setVoiceNotice(notice)
+    if (handsFree()) void speechPlayer.speak(spoken)
     setView('chat')
     input.current?.focus()
   }
@@ -244,7 +263,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
     if (!shot) {
       setCapturing(true); setError('')
       try { shot = unwrap(await bridge.captureScreen()) }
-      catch (problem) { setError(displayError(problem)); return }
+      catch (problem) { reportProblem(problem); return }
       finally { setCapturing(false) }
     }
     await deliver(text, source, shot, mode)
@@ -260,8 +279,8 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       setCapture(null)
       const result = unwrap(await bridge.analyzeScreen({ captureId: shot.metadata.id, kind, source }))
       setScreenHelp(result)
-      if (readAloud.current === 'always' || (readAloud.current === 'voice' && source === 'voice')) void speechPlayer.speak(analysisSpeech(result))
-    } catch (problem) { setError(displayError(problem)) }
+      if (shouldSpeak(source)) void speechPlayer.speak(analysisSpeech(result))
+    } catch (problem) { reportProblem(problem) }
     finally { setAnalyzing(null) }
   }
 
@@ -278,17 +297,22 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       return
     }
     if (intent.kind === 'new_conversation') { newConversation(); return }
-    if (!assistant.config.configured) { setView('settings'); return }
+    if (!assistant.config.configured) {
+      if (handsFree()) void speechPlayer.speak('I need an AI key before I can help. Open Triage and add one in Settings.')
+      setView('settings'); return
+    }
     if (assistant.storageError) return
     if (assistant.active || busy || capturing) {
-      holdForReview(text, 'I’m still working on your last request, so I didn’t send that yet. Your words are in the message box: press Send when I’m done, or say “stop”.')
+      holdForReview(text, 'I’m still working on your last request, so I didn’t send that yet. Your words are in the message box: press Send when I’m done, or say “stop”.',
+        'I’m still working on your last request. Say stop if you want me to cancel it.')
       return
     }
     // While guiding, "next", "done" or "what now" asks for the next step (one word is enough here).
     if (assistant.guide && isShowAgain(text)) { await guideNext(true); return }
     if (assistant.guide && isNextStep(text)) { await guideNext(); return }
     if (intent.kind === 'chat' && needsConfirmation(record)) {
-      holdForReview(text, 'Did I hear that right? I put your words in the message box. Fix anything that’s wrong, then press Send.')
+      holdForReview(text, 'Did I hear that right? I put your words in the message box. Fix anything that’s wrong, then press Send.',
+        'Sorry, I didn’t quite catch that. Please say it again.')
       return
     }
     if (intent.kind === 'simplify' || intent.kind === 'safety_check') await analyzeScreen(intent.kind === 'simplify' ? 'simplify' : 'safety', 'voice')
@@ -445,7 +469,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       {view === 'chat' && <div ref={bottom} />}
     </div>
     {view === 'chat' && <footer className="chat-footer">
-      <VoiceButton ref={voiceButton} bridge={bridge} shortcut={state.voiceShortcut} onTranscript={(record) => void handleTranscript(record)} />
+      <VoiceButton ref={voiceButton} bridge={bridge} shortcut={state.voiceShortcut} handsFree={!state.chatOpen} onTranscript={(record) => void handleTranscript(record)} />
       {screenHelp && <ScreenHelpCard analysis={screenHelp} disabled={capturing || busy || Boolean(active) || Boolean(analyzing)}
         onClose={() => setScreenHelp(null)}
         onAction={(action) => void captureAndDeliver(action.instruction, action.kind === 'show_me_where' ? 'highlight' : 'explain', 'chat')} />}
