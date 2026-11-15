@@ -171,6 +171,7 @@ npm run typecheck
 npm run build
 ```
 
+
 ## Project layout
 
 | Path | What |
@@ -384,8 +385,54 @@ For a scripted run with no API key (it drives the real memory, refill graph and 
 node --experimental-strip-types scripts/demo-learning-monitor.ts --share
 ```
 
+## Hackathon tracks
+
+### Peri Forward Deployed Challenge
+
+Like a forward deployed engineer, we didn't stop at our own assumptions. We called a business that cares for older adults every day, learned where technology breaks down for its residents and staff, and built around that.
+
+| Required | |
+|---|---|
+| **Business** | Skyline Health Services, a senior care facility in Seattle, Washington |
+| **Person consulted** | a member of the front desk staff, by phone during HackPrinceton (name not recorded on the call) |
+| **Evidence** | the [full call transcript](docs/Skyline_Health_Transcript.md), and the quote: "A lot of the time it's just not knowing how to use something. Like where to go or what to click on." |
+
+**Real-world need.** Skyline's residents get stuck on navigation, not broken computers, and the technician who helps them isn't there every day. Each thing they told us maps to something in the app:
+
+| What Skyline said | What Triage does |
+|---|---|
+| The problem is "where to go or what to click on" | points at the real control and follows it as the page scrolls; guided help one step at a time |
+| Some residents "need you to actually point it out" | outlines on the real screen instead of written instructions |
+| The technician is "not here every day" | help at any hour, by voice (⌘⇧9) or a mouse shake |
+| A warning alone isn't enough: "they'd probably want to know why" | scam and impostor warnings show the facts behind them |
+| "You'd have to make it pretty simple for them" | no new app to learn; works on the websites they already use; staff or family set it up once |
+
+**Usability: could Skyline adopt it now?** Triage runs on the Macs residents already have and the websites they already visit. A staff member or family member sets it up once (the Finder app, an AI key, Accessibility and microphone permission, and the resident's real contacts), and the resident just talks or shakes the mouse. It is safe to hand over: it never enters passwords or payment details, only opens approved sites, and hides private fields before a screenshot leaves the computer. Honest limits today: it is macOS only, setup still needs someone comfortable with System Settings, and a signed installer is [next](#whats-next).
+
+**Execution.** Everything described in this README is built into the app today, end to end: voice in and out, pointing at real controls, step-by-step guides, page simplification, impostor warnings with explanations, and link warnings. The phishing rule in Chrome Link Warnings is a preview that only matches our demo domain.
+
+### Amazon Best Practical AI Innovation
+
+- **Target user:** older adults, and the families and care staff who help them.
+- **Agentic behavior:** a model-backed router returns one validated decision per request (answer, open an approved site, point, guide, simplify, run a task, remember a contact, or ask for a screenshot). The refill task plans, asks for missing details and waits for a human "yes". The Alaska Airlines flight search drives a real browser and reports what it actually saw. Guided help looks at the new screen after each click and plans the next step.
+- **Adaptive intelligence:** Bayesian Knowledge Tracing per skill, a hierarchical Thompson-sampling layout learner, on-device memory, and a trust graph that remembers the person's own answers ([the math](#the-math-behind-the-learning)).
+- **Built on AWS:** **Amazon Polly** neural voices speak every reply, paced with SSML (80–115%, default 90%). **Amazon Transcribe** streaming is available for cloud speech recognition with live captions and per-word confidence. AWS credentials stay in the main process. See [AWS services](#aws-services).
+- **Safety by design:** nothing read from the screen can add a trusted contact, private fields are blacked out before encoding, the AI can't invent a URL, and risky steps are flagged by rules, never by the model.
+
+### LangChain
+
+- **A LangGraph agent for real tasks:** the refill `StateGraph` uses `interrupt` to ask one question at a time and to wait for "yes", and a SQLite checkpointer so "Where was I?" works after a restart.
+- **Memory through LangChain retrievers:** a LangChain vector store and `VectorStoreRetriever` with on-device `Embeddings`, because the memories hold personal health details.
+- **A traced pipeline:** page simplification is a `RunnableSequence` (classify → choose layout → rewrite → log).
+- **A live Learning Monitor:** LangChain's callback system streams every graph node, pause, retrieval and layout decision to a second screen.
+- **Safety in the graph, not the prompt:** the submit button's risk tier comes from rules over the page, and money or password steps are always refused.
+
+See [Memory and multi-step tasks](#memory-and-multi-step-tasks-langchain--langgraph) and [Learning Monitor](#learning-monitor).
+
 ## What's next
 
-- Upload the opt-in request log (API Gateway → Lambda + Amazon Comprehend → DynamoDB) and turn it into approved FAQs.
-- Caregiver mode: custom destinations and text alerts (Amazon SNS) when a scam is detected.
+- **Caregiver alerts** (Amazon SNS) when Triage spots a likely scam, plus caregiver-managed trusted sites and destinations.
+- **Real-world phishing reputation** for Chrome Link Warnings, beyond today's preview rule, and support for more browsers.
+- An opt-in, anonymized FAQ pipeline from the request log (API Gateway → Lambda + Amazon Comprehend → DynamoDB).
+- A signed, packaged installer, so a staff member or family member can set Triage up for a resident in minutes without a terminal.
 - Optional automatic safety checks while a browser is in front.
