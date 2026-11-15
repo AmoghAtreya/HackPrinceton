@@ -1,3 +1,5 @@
+import { HOW_IT_WORKS } from './how-it-works.ts'
+
 /**
  * The Learning Monitor page. Served by the monitor server to the Triage
  * monitor window and, when sharing is on, to a browser on a second device.
@@ -50,6 +52,25 @@ export function monitorPage(nonce: string): string {
   ol.log time { color:var(--muted); font-variant-numeric:tabular-nums; }
   .kind { font-size:10px; font-weight:600; color:var(--muted); text-transform:uppercase; }
   .empty { color:var(--muted); font-size:12px; }
+  .tabs { display:flex; gap:4px; padding:10px 18px 0; border-bottom:1px solid var(--line); }
+  .tabs button { font:inherit; font-weight:600; font-size:12px; border:0; background:none; color:var(--muted); padding:8px 12px; border-bottom:2px solid transparent; cursor:pointer; }
+  .tabs button[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--accent); }
+  .how { max-width:860px; padding:18px 18px 40px; }
+  .how h2 { font:600 18px/1.25 Georgia, serif; text-transform:none; letter-spacing:0; color:var(--ink); margin:30px 0 8px; }
+  .how h2:first-child { margin-top:6px; }
+  .how h3 { font-size:13px; margin:18px 0 6px; }
+  .how p, .how li { font-size:13px; line-height:1.6; }
+  .how pre { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px 12px; overflow-x:auto; font:12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .how code { font:12px ui-monospace, SFMono-Regular, Menlo, monospace; background:var(--card); border:1px solid var(--line); border-radius:4px; padding:0 4px; }
+  .how pre code { border:0; padding:0; background:none; }
+  .how table { border-collapse:collapse; width:100%; font-size:12px; margin:8px 0; }
+  .how th, .how td { text-align:left; vertical-align:top; padding:6px 8px; border-bottom:1px solid var(--line); }
+  .how th { color:var(--muted); font-weight:600; }
+  .how .callout { border-left:4px solid var(--accent); background:var(--card); padding:10px 14px; border-radius:0 8px 8px 0; margin:12px 0; }
+  .how .flow-diagram { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:10px 0; }
+  .how .flow-diagram span.box { border:1px solid var(--line); background:var(--card); border-radius:8px; padding:6px 10px; font-size:12px; }
+  .how .flow-diagram span.arrow { color:var(--muted); }
+  .arm .meta { grid-column:2 / 4; font-size:10px; color:var(--muted); margin-top:-3px; }
   @media (max-width: 420px) { header { padding:12px 16px; } main, .stats { padding-left:16px; padding-right:16px; } }
 </style></head>
 <body>
@@ -58,6 +79,11 @@ export function monitorPage(nonce: string): string {
   <span class="live"><span class="dot" id="dot"></span><span id="status">Connecting…</span></span>
   <span class="share" id="share"></span>
 </header>
+<nav class="tabs" role="tablist" aria-label="Monitor views">
+  <button role="tab" id="tab-live-button" aria-selected="true" aria-controls="tab-live">Live</button>
+  <button role="tab" id="tab-how-button" aria-selected="false" aria-controls="tab-how">How it works</button>
+</nav>
+<div id="tab-live" role="tabpanel" aria-labelledby="tab-live-button">
 <div class="stats">
   <div class="stat"><b id="s-chain">0</b><span>LangChain runs</span></div>
   <div class="stat"><b id="s-graph">0</b><span>LangGraph node runs</span></div>
@@ -103,6 +129,10 @@ export function monitorPage(nonce: string): string {
     <ol class="log" id="log"></ol>
   </section>
 </main>
+</div>
+<article class="how" id="tab-how" role="tabpanel" aria-labelledby="tab-how-button" hidden>
+${HOW_IT_WORKS}
+</article>
 <script nonce="${nonce}">
 (function () {
   var token = new URLSearchParams(location.search).get('t') || ''
@@ -208,7 +238,12 @@ export function monitorPage(nonce: string): string {
         var row = el('div', 'arm' + (id === e.armId ? ' chosen' : ''))
         row.appendChild(el('b', '', id))
         var track = el('div', 'track'); var fill = el('div', 'fill'); track.appendChild(fill)
-        row.appendChild(track); row.appendChild(el('em', '', Math.round(e.shares[id] * 100) + '%')); arms.appendChild(row)
+        row.appendChild(track); row.appendChild(el('em', '', Math.round(e.shares[id] * 100) + '%'))
+        if (e.diagnostics && e.diagnostics[id]) {
+          var dg = e.diagnostics[id]
+          row.appendChild(el('span', 'meta', 'learned noise \u03c3\u00b2 \u2248 ' + dg.noiseVariance.toFixed(3) + ' \u00b7 ' + dg.evidence.toFixed(1) + ' recent ratings'))
+        }
+        arms.appendChild(row)
         requestAnimationFrame(function () { fill.style.width = Math.round(e.shares[id] * 100) + '%' })
       })
       log('bandit', 'Layout ' + e.armId + ' (' + e.mode + ', p=' + e.propensity.toFixed(2) + ') for a ' + e.pageType + ' page', e.at)
@@ -224,6 +259,16 @@ export function monitorPage(nonce: string): string {
     if (info && info.lanUrl) $('share').textContent = 'Open on another device: ' + info.lanUrl
     else if (info) $('share').textContent = 'Only on this computer'
   }).catch(function () {})
+
+  function selectTab(name) {
+    ;['live', 'how'].forEach(function (tab) {
+      var on = tab === name
+      $('tab-' + tab).hidden = !on
+      $('tab-' + tab + '-button').setAttribute('aria-selected', on ? 'true' : 'false')
+    })
+  }
+  $('tab-live-button').addEventListener('click', function () { selectTab('live') })
+  $('tab-how-button').addEventListener('click', function () { selectTab('how') })
 
   var source = new EventSource('/events?t=' + encodeURIComponent(token))
   source.onopen = function () { $('dot').className = 'dot on'; $('status').textContent = 'Live' }
