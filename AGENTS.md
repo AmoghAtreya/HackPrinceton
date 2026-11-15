@@ -1,6 +1,6 @@
 # Agent Operating Guidelines (`agents.md`)
 
-## 1. Commit Granularity Principle (Hyper-Atomic Commits)
+## 1. Commit Granularity Principle
 * **Every Change:** You are strictly required to create a Git commit for **every feature** completed by the agent.
 * **Commit Frequency:** Expect multiple commits per feature or bug fix. A standard workflow should yield a trail of granular commits representing every atomic decision and code modification.
 * **Commit Message Format:** Use clear, conventional commit prefixes (`feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`) describing the exact micro-change made.
