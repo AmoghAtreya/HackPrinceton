@@ -403,8 +403,25 @@ napi_value accessibilityTrusted(napi_env env, napi_callback_info) {
     return result;
 }
 
+// Bundle id of the app the person is looking at (see frontPid), or "" when
+// there is none. Uses no Accessibility API, so it works without permission.
+napi_value frontBundleId(napi_env env, napi_callback_info) {
+    NSString *bundleId = @"";
+    @autoreleasepool {
+        const pid_t pid = frontPid();
+        NSRunningApplication *app = pid > 0 ? [NSRunningApplication runningApplicationWithProcessIdentifier:pid] : nil;
+        NSString *found = app.bundleIdentifier;
+        if (found.length && found.length <= 255) bundleId = [found copy];
+    }
+    napi_value result;
+    napi_create_string_utf8(env, bundleId.UTF8String, NAPI_AUTO_LENGTH, &result);
+    return result;
+}
+
 napi_value initialize(napi_env env, napi_value exports) {
     napi_value function;
+    napi_create_function(env, "frontBundleId", NAPI_AUTO_LENGTH, frontBundleId, nullptr, &function);
+    napi_set_named_property(env, exports, "frontBundleId", function);
     napi_create_function(env, "snapshot", NAPI_AUTO_LENGTH, snapshot, nullptr, &function);
     napi_set_named_property(env, exports, "snapshot", function);
     napi_create_function(env, "frameOf", NAPI_AUTO_LENGTH, frameOf, nullptr, &function);

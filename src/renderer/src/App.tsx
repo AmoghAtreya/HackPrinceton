@@ -5,7 +5,7 @@ import { AssistantPanel } from './AssistantPanel'
 import { HighlightOverlay } from './HighlightOverlay'
 
 const initialState: DesktopState = {
-  visible: true, chatOpen: false, mood: 'idle', shortcutAvailable: false, voiceShortcut: null
+  visible: true, chatOpen: false, mood: 'idle', shortcutAvailable: false, voiceShortcut: null, chromeFront: false
 }
 
 function Companion({ bridge, state }: { bridge: DesktopBridge; state: DesktopState }) {
@@ -67,6 +67,12 @@ function Companion({ bridge, state }: { bridge: DesktopBridge; state: DesktopSta
   }
 
   return <main className="companion-stage">
+    {/* Always takes its space, so Triage does not jump when the button comes and goes. */}
+    <div className="companion-actions">
+      {state.chromeFront && <button type="button" className="companion-simplify" data-interactive
+        title="Show a simpler version of this page" disabled={state.mood === 'thinking'}
+        onClick={() => bridge.simplifyPage()}>Simplify</button>}
+    </div>
     <button className="companion-button" data-interactive
       aria-label="Open Triage chat. Drag to move. Right-click for controls."
       aria-expanded={state.chatOpen}

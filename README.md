@@ -268,7 +268,7 @@ Ask "help me attach a photo" (or "walk me through it") and Triage guides you one
 
 ## Simplify this page
 
-Ask Triage to "simplify this page", choose **Simplify this page** in the menu bar menu, or pick it as the Shake to Help action. Triage reads the page in front (your own Chrome, or any app) through macOS Accessibility, runs the same simplifier used by `/simplify`, and shows the result in the simplified-page window. Views of windows that are not web pages are labelled **Simplified from screen**.
+Ask Triage to "simplify this page", choose **Simplify this page** in the menu bar menu, pick it as the Shake to Help action, or press the small **Simplify** button that appears above Triage while Google Chrome is in front (it checks only which app is in front, about once a second; after pulling, run `npm run context:build` again so the button can appear). Triage reads the page in front (your own Chrome, or any app) through macOS Accessibility, runs the same simplifier used by `/simplify`, and shows the result in the simplified-page window. Views of windows that are not web pages are labelled **Simplified from screen**.
 
 Buttons in that view never act on the real page. Pressing one highlights the real control and says "This is the button to press"; actions that submit, pay or sign in add a warning line. You press the real button yourself. Rating a page in History trains the layout policy using what Triage observed: whether you clicked the highlighted control, whether you chose **Show original page**, and whether you went back to an earlier page of the same site.
 

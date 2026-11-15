@@ -203,8 +203,7 @@ export const VoiceButton = forwardRef<VoiceButtonHandle, { bridge: VoiceBridge; 
     {recording && tapMode.current && shortcut && <p className="voice-shortcut shortcut">Press {shortcut.map((key) => <kbd key={key}>{key}</kbd>)} again to stop</p>}
     {recording && <div className="talk-level" aria-hidden="true"><span style={{ width: Math.min(100, Math.round(level * 400)) + '%' }} /></div>}
     {(phase !== 'idle' || caption) && <p className="voice-caption" aria-live="polite">{caption || (recording ? 'Go ahead, I’m listening.' : '')}</p>}
-    {phase === 'idle' && last?.text && !error && <p className="voice-last">Heard: “{last.text}”
-      <span className="voice-engine">{last.transcribedBy === 'gemini' ? ' · Gemini' : last.transcribedBy === 'transcribe' ? ' · Amazon Transcribe' : ' · on this Mac'}</span></p>}
+    {phase === 'idle' && last?.text && !error && <p className="voice-last">Heard: “{last.text}”</p>}
     {error && <p className="voice-error" role="alert">{error}</p>}
     {phase !== 'idle' && <button type="button" className="text-button" onClick={() => void cancel()}>Cancel · Esc</button>}
     {phase === 'idle' && playback.state !== 'idle' && <div className="speaking-status" role="status">

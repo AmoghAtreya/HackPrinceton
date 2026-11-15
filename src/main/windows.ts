@@ -3,7 +3,8 @@ import { join } from 'node:path'
 import { channels, type CompanionMood, type DesktopState } from '../shared/contracts'
 import { clampPosition, readPosition, writePosition } from './position-store'
 
-const COMPANION_SIZE = { width: 128, height: 144 }
+// The top 32 DIPs hold the Simplify button shown while Chrome is in front.
+const COMPANION_SIZE = { width: 128, height: 176 }
 const CHAT_SIZE = { width: 392, height: 640 }
 
 interface DragSession {
@@ -21,6 +22,7 @@ export class DesktopWindows {
   private listening = false
   private shortcutAvailable = false
   private voiceShortcut: string[] | null = null
+  private chromeFront = false
   private drag?: DragSession
   private dragTimer?: ReturnType<typeof setInterval>
   private greetingTimer?: ReturnType<typeof setTimeout>
@@ -121,7 +123,8 @@ export class DesktopWindows {
       chatOpen: this.chat.isVisible(),
       mood: this.mood,
       shortcutAvailable: this.shortcutAvailable,
-      voiceShortcut: this.voiceShortcut
+      voiceShortcut: this.voiceShortcut,
+      chromeFront: this.chromeFront
     }
   }
 
@@ -132,6 +135,12 @@ export class DesktopWindows {
 
   setVoiceShortcut(keys: string[] | null): void {
     this.voiceShortcut = keys
+    this.publish()
+  }
+
+  setChromeFront(value: boolean): void {
+    if (this.chromeFront === value) return
+    this.chromeFront = value
     this.publish()
   }
 
