@@ -30,28 +30,39 @@ Triage is a small companion character that runs in the background on your Mac. I
 | You… | Triage… |
 |---|---|
 | **Hold the talk button** and say "take me to my Amazon orders" | opens that page in **your own browser**, already signed in, and says so aloud |
+| press **⌘⇧9** from any app and just talk | listens without opening the chat, and **answers out loud**: hands-free help on top of whatever you're doing |
 | say "**where's the track package button?**" | takes a screenshot and **draws an arrow on the real control** |
+| say "**help me attach a photo**" or "walk me through it" | **guided help**: boxes one button at a time with one short sentence; click it (or say "next") for the next step |
+| say "**how do I…?**" | explains only the steps you don't already know, in order (the **skill graph**) |
 | say "**what's on my screen?**" | explains the screen in plain language, out loud |
 | **shake the mouse** over something confusing | explains what's under the cursor, hands-free |
-| press **Simplify this screen**, or say "what can I do here?" | turns a cluttered page into **3–5 big task buttons** ("Track my package") that point or explain |
-| browse in Chrome with **Chrome Link Warnings** on (menu bar) | badges risky links right on the page: **Potential phishing** / **Unencrypted HTTP** (see below) |
+| press **Simplify this screen**, say "simplify this page", or type `/simplify` | rebuilds a cluttered page as **3–5 big task buttons** ("Track my package") plus its real links, in large print; each button points at the real control |
+| browse in Chrome with **Chrome Link Warnings** on (menu bar) | badges risky links right on the page (**Potential phishing** / **Unencrypted HTTP**) and **says a warning out loud** when a scam link appears |
 | press **Is this safe?**, or say "is this a scam?" | checks the screen for scam and dark-pattern signs and shows a green, amber or red verdict with a plain next step |
+| get an email that claims to be from someone you know | compares it with your **people & organizations** list and warns, with reasons, when the address doesn't match |
+| say "**remember my pharmacy is CareWell on Main Street**" | saves it **on this Mac**; you can see or remove it in History |
+| say "**refill my blood pressure medicine**" | runs a step-by-step refill on the demo pharmacy, asks for anything it doesn't know, and **reads everything back and waits for your "yes"** before sending |
+| say "**where was I?**" | tells you which step a paused task is on |
 | ask anything else by voice or text | answers briefly and reads the answer aloud |
 | say "**stop**" or "**start over**" | stops instantly / starts a fresh conversation |
 
 Built for older users:
-- **Push-to-talk:** hold to talk, or tap to start and tap again to stop.
+- **Push-to-talk:** hold to talk, or tap to start and tap again to stop. From any app, **⌘⇧9** starts and stops listening (Control+Option+Space if ⌘⇧9 is taken), with a soft chime each way and a **Listening** look on the companion. The shortcut is shown under the talk button.
 - **Live captions** as you speak, on-device. When you let go, **Google Gemini** writes the final transcript for accuracy, falling back to the on-device text when offline.
-- **Read-back:** a slow (90%), clear neural voice reads short answers, and you can replay them.
+- **Read-back:** a slow (90%), clear neural voice reads short answers, and you can replay them. Speeds: Slower (80%), Relaxed (90%, default), Normal (100%) and Faster (115%).
+- **Hands-free when the chat is closed:** answers, problems and "Sorry, I didn't quite catch that" are spoken instead of popping the chat open. Arrows and boxes still appear on screen.
 - **"Did I hear that right?"** Unclear speech is put in the message box to check, never sent blindly.
 - **Safe by design:** Triage only opens pages from a fixed list of approved sites, never a website address the AI makes up, so a misheard word can't send someone to a lookalike scam site.
 
 ## Demo flow (2 minutes)
 
-1. Hold **Hold to talk**: "Take me to my Amazon orders." Your Amazon order history opens in Chrome, and Triage says "Opening your Amazon orders…".
-2. "Where's the track package button?" An arrow appears on the button, and Triage explains the next step.
+1. Press **⌘⇧9**: "Take me to my Amazon orders." Your Amazon order history opens in Chrome, and Triage says "Opening your Amazon orders…".
+2. "Where's the track package button?" An arrow appears on the button, and Triage explains the next step. You click it yourself.
 3. Shake the mouse over a confusing pop-up. Triage explains what it is, out loud.
-4. "Stop." It goes quiet immediately.
+4. Open [the phishing demo](demos/phishing-inbox.html) with Chrome Link Warnings on. The scam link gets a badge and Triage says to be careful.
+5. "Stop." It goes quiet immediately.
+
+For the learning side (memory, the refill task graph and the layout learner, shown live on a second screen), follow the [Learning Monitor demo script](docs/Learning-Monitor.md#demo-script-about-3-minutes).
 
 ## How it works
 
