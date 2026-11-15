@@ -192,6 +192,15 @@ export class ThompsonPolicy implements PresentationPolicy {
     return (this.users[input.userId]?.counts[input.pageType] ?? 0) < this.options.warmup
   }
 
+  odds(input: PolicyInput): Record<string, number> {
+    const frozen = this.users[input.userId]?.frozen[input.pageType]
+    if ((frozen && input.arms.some((arm) => arm.id === frozen)) || input.sensitive || this.warmingUp(input)) {
+      const chosen = frozen && input.arms.some((arm) => arm.id === frozen) ? frozen : this.greedy(input)
+      return Object.fromEntries(input.arms.map((arm) => [arm.id, arm.id === chosen ? 1 : 0]))
+    }
+    return Object.fromEntries(this.winShares(input))
+  }
+
   /** Stability rule from the doc: once confident on a page type, stop reshuffling the layout. */
   private maybeFreeze(input: PolicyInput, leader: string, share: number): void {
     const user = this.users[input.userId]
