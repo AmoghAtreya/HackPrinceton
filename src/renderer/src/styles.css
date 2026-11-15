@@ -172,6 +172,7 @@ button:disabled { opacity: .55; cursor: default; }
 .stop-button { border: 1px solid #d9b99b; background: #fff7e9; color: #9c613b; font-size: 10px; padding: 4px 8px; border-radius: 6px; }
 .thinking-dots { animation: thinking-pulse 1.2s ease-in-out infinite; }
 .character--thinking .character-body { animation: breathe 1.6s ease-in-out infinite; }
+.character--listening .character-body { animation: breathe 1s ease-in-out infinite; }
 .character--thinking .character-eyes { animation: thinking-eyes 1s ease-in-out infinite alternate; }
 @keyframes thinking-pulse { 50% { opacity: .25; } }
 @keyframes thinking-eyes { from { transform: translateX(-2px); } to { transform: translateX(2px); } }
@@ -206,6 +207,7 @@ button:disabled { opacity: .55; cursor: default; }
 .talk-level { height: 4px; border-radius: 2px; background: #eee6dc; overflow: hidden; }
 .talk-level > span { display: block; height: 100%; background: var(--accent); transition: width 80ms linear; }
 .voice-caption { margin: 0; padding: 6px 10px; border-left: 3px solid var(--accent); color: var(--ink); font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; max-height: 84px; overflow-y: auto; }
+.voice-shortcut { margin: 0; justify-content: center; color: var(--muted); font-size: 12px; }
 .voice-last { margin: 0; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .voice-error { margin: 0; color: #a3341a; font-size: 12px; }
 .voice-input > .text-button { align-self: flex-start; }

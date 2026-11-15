@@ -77,6 +77,8 @@ export interface VoiceBridge {
   listTranscripts(): Promise<Result<TranscriptRecord[]>>
   onSpeechState(listener: (message: SpeechStateMessage) => void): () => void
   onUtterance(listener: (utterance: UserUtterance) => void): () => void
+  /** The global voice shortcut was pressed: start listening, or stop if already listening. */
+  onVoiceShortcut(listener: () => void): () => void
 }
 
 export const voiceChannels = {
@@ -86,5 +88,6 @@ export const voiceChannels = {
   cancel: 'voice:cancel',
   list: 'voice:list',
   state: 'voice:state',
-  utterance: 'voice:utterance'
+  utterance: 'voice:utterance',
+  shortcut: 'voice:shortcut'
 } as const

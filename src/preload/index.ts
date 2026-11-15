@@ -32,6 +32,11 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(voiceChannels.utterance, receive)
     return () => { ipcRenderer.removeListener(voiceChannels.utterance, receive) }
   },
+  onVoiceShortcut: (listener) => {
+    const receive = (): void => listener()
+    ipcRenderer.on(voiceChannels.shortcut, receive)
+    return () => { ipcRenderer.removeListener(voiceChannels.shortcut, receive) }
+  },
   getShakeSettings: () => ipcRenderer.invoke(assistantChannels.getShake),
   saveShakeSettings: (input) => ipcRenderer.invoke(assistantChannels.saveShake, input),
   captureScreen: () => ipcRenderer.invoke(assistantChannels.capture),
@@ -84,6 +89,13 @@ const bridge: DesktopBridge = {
     const receive = (_event: Electron.IpcRendererEvent, state: DesktopState): void => listener(state)
     ipcRenderer.on(channels.state, receive)
     return () => { ipcRenderer.removeListener(channels.state, receive) }
+  },
+  onLinkWarning: (listener) => {
+    const receive = (_event: Electron.IpcRendererEvent, count: unknown): void => {
+      if (typeof count === 'number' && Number.isInteger(count) && count > 0) listener(count)
+    }
+    ipcRenderer.on(channels.linkWarning, receive)
+    return () => { ipcRenderer.removeListener(channels.linkWarning, receive) }
   },
   toggleChat: () => ipcRenderer.send(channels.toggleChat),
   closeChat: () => ipcRenderer.send(channels.closeChat),
