@@ -32,6 +32,11 @@ const bridge: DesktopBridge = {
     ipcRenderer.on(voiceChannels.utterance, receive)
     return () => { ipcRenderer.removeListener(voiceChannels.utterance, receive) }
   },
+  onVoiceShortcut: (listener) => {
+    const receive = (): void => listener()
+    ipcRenderer.on(voiceChannels.shortcut, receive)
+    return () => { ipcRenderer.removeListener(voiceChannels.shortcut, receive) }
+  },
   getShakeSettings: () => ipcRenderer.invoke(assistantChannels.getShake),
   saveShakeSettings: (input) => ipcRenderer.invoke(assistantChannels.saveShake, input),
   captureScreen: () => ipcRenderer.invoke(assistantChannels.capture),

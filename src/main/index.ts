@@ -10,6 +10,12 @@ import { LocalTranscriptStore } from './voice/transcript-store'
 import { ensureMicrophoneAccess } from './voice/microphone'
 import { installVoiceIpc } from './voice/ipc'
 import { voiceChannels } from '../shared/voice-contracts'
+
+/** Global talk shortcuts, tried in order; the first one macOS lets Triage register wins. */
+const VOICE_SHORTCUTS = [
+  { accelerator: 'Alt+Space', keys: ['⌥', 'space'] },
+  { accelerator: 'Control+Alt+Space', keys: ['⌃', '⌥', 'space'] }
+] as const
 import { PollyService } from './speech/polly'
 import { SpeechPreferences } from './speech/settings'
 import { installSpeechIpc } from './speech/ipc'
@@ -557,6 +563,18 @@ if (!app.requestSingleInstanceLock()) {
     const registered = globalShortcut.register('CommandOrControl+Shift+Space', () => desktop?.openChat())
     desktop.setShortcutAvailable(registered)
     if (!registered) console.warn('Triage shortcut is unavailable; use the menu bar or Dock to restore it.')
+
+    // Talk from anywhere: press once to start listening, press again to stop. Global shortcuts only
+    // report key-down, so this is tap-to-toggle rather than hold-to-talk. The chat opens without
+    // taking focus, so the page the user asks about stays in front.
+    const toggleVoice = (): void => {
+      if (!desktop) return
+      desktop.openChat(false)
+      desktop.chat.webContents.send(voiceChannels.shortcut)
+    }
+    const voiceShortcut = VOICE_SHORTCUTS.find((candidate) => globalShortcut.register(candidate.accelerator, toggleVoice))
+    desktop.setVoiceShortcut(voiceShortcut ? [...voiceShortcut.keys] : null)
+    if (!voiceShortcut) console.warn('Voice shortcut is unavailable; use Hold to talk in the chat.')
   }).catch((error: unknown) => {
     console.error('Triage startup failed:', error instanceof AppProblem ? error.code : 'startup')
     dialog.showErrorBox('Triage could not start', error instanceof AppProblem ? error.message :

@@ -19,6 +19,7 @@ export class DesktopWindows {
   private mood: CompanionMood = 'greeting'
   private thinking = false
   private shortcutAvailable = false
+  private voiceShortcut: string[] | null = null
   private drag?: DragSession
   private dragTimer?: ReturnType<typeof setInterval>
   private greetingTimer?: ReturnType<typeof setTimeout>
@@ -117,12 +118,18 @@ export class DesktopWindows {
       visible: this.companion.isVisible(),
       chatOpen: this.chat.isVisible(),
       mood: this.mood,
-      shortcutAvailable: this.shortcutAvailable
+      shortcutAvailable: this.shortcutAvailable,
+      voiceShortcut: this.voiceShortcut
     }
   }
 
   setShortcutAvailable(value: boolean): void {
     this.shortcutAvailable = value
+    this.publish()
+  }
+
+  setVoiceShortcut(keys: string[] | null): void {
+    this.voiceShortcut = keys
     this.publish()
   }
 
@@ -207,11 +214,12 @@ export class DesktopWindows {
     this.publish()
   }
 
-  openChat(): void {
+  /** focus: false shows the chat without taking focus from the app the user is working in. */
+  openChat(focus = true): void {
     this.show()
     this.positionChat()
-    this.chat.show()
-    this.chat.focus()
+    if (focus) { this.chat.show(); this.chat.focus() }
+    else if (!this.chat.isVisible()) this.chat.showInactive()
     this.publish()
   }
 
