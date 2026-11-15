@@ -1,14 +1,27 @@
 # Triage
 
-**A calm, voice-first helper that lives on your Mac and helps older and less tech-confident people get things done on the web, by pointing, explaining and talking them through it.**
+**A calm, voice-first tutor that lives on your Mac and teaches older and less tech-confident people to use the web by pointing at the real button, explaining it in plain words, and letting them press it themselves.**
 
-HackPrinceton Fall 2026 · Tracks: Amazon *Best Practical AI*, Education
+HackPrinceton Fall 2026 · **Main track: Education** · Special tracks: Amazon, LangChain, Peri
 
 ---
 
 ## The problem
 
-Many older adults know *what* they want to do: track a package, reorder pills, check Medicare. What they can't do is find *where* to click on a cluttered page. They get overwhelmed, give up, or call a family member. They are also the people scammers target most.
+Many older adults know *what* they want to do: track a package, reorder pills, check Medicare. What they can't do is find *where* to click on a cluttered page. They get overwhelmed, give up, or wait for a family member or technician to do it for them. Each time someone else does it, they learn nothing for next time. They are also the people scammers target most.
+
+We called a senior-living facility to check this ([interview transcript](docs/Skyline_Health_Transcript.md)). About half the residents use computers. Most of their questions are "where to go or what to click on", not broken machines. The technician isn't there every day, so residents often wait. Some residents follow spoken directions fine, and others need someone to point. Staff added that scam warnings should say *why* something is suspicious, not just "don't click".
+
+## Our goal: help people learn, not just get it done
+
+Triage is built to make people **more confident and more independent with technology over time**, not to keep doing things for them. Every feature leans the same way:
+
+- **Show, don't take over.** Triage draws a box or an arrow on the real control and lets the person click it. Guided help gives one step at a time. On a simplified page, the buttons point at the real control instead of pressing it.
+- **Explain why.** Answers are short and plain, read aloud, and give the next step instead of a wall of instructions. Scam warnings come with the facts behind them, so the person learns what a scam looks like.
+- **Meet people where they are.** A **skill graph** keeps track of what each person already does well, using Bayesian Knowledge Tracing. Explanations skip what they already know and start with what's missing. A caregiver can mark a skill **Practice this** so Triage walks through it every time.
+- **Learn from what actually happens.** Clicking the highlighted control on the first try counts as a skill shown. Losing the highlight or going back counts against it. Ratings of simplified pages teach the layout chooser which layouts work for this person.
+
+The aim is that, over weeks, a person needs Triage less: first it points, then it reminds, and eventually they just do it.
 
 ## What Triage does
 
@@ -17,49 +30,83 @@ Triage is a small companion character that runs in the background on your Mac. I
 | You… | Triage… |
 |---|---|
 | **Hold the talk button** and say "take me to my Amazon orders" | opens that page in **your own browser**, already signed in, and says so aloud |
+| press **⌘⇧9** from any app and just talk | listens without opening the chat, and **answers out loud**: hands-free help on top of whatever you're doing |
 | say "**where's the track package button?**" | takes a screenshot and **draws an arrow on the real control** |
+| say "**help me attach a photo**" or "walk me through it" | **guided help**: boxes one button at a time with one short sentence; click it (or say "next") for the next step |
+| say "**how do I…?**" | explains only the steps you don't already know, in order (the **skill graph**) |
 | say "**what's on my screen?**" | explains the screen in plain language, out loud |
 | **shake the mouse** over something confusing | explains what's under the cursor, hands-free |
-| press **Simplify this screen**, or say "what can I do here?" | turns a cluttered page into **3–5 big task buttons** ("Track my package") that point or explain |
-| browse in Chrome with **Chrome Link Warnings** on (menu bar) | badges risky links right on the page: **Potential phishing** / **Unencrypted HTTP** (see below) |
+| press **Simplify this screen**, say "simplify this page", or type `/simplify` | rebuilds a cluttered page as **3–5 big task buttons** ("Track my package") plus its real links, in large print; each button points at the real control |
+| browse in Chrome with **Chrome Link Warnings** on (menu bar) | badges risky links right on the page (**Potential phishing** / **Unencrypted HTTP**) and **says a warning out loud** when a scam link appears |
 | press **Is this safe?**, or say "is this a scam?" | checks the screen for scam and dark-pattern signs and shows a green, amber or red verdict with a plain next step |
+| get an email that claims to be from someone you know | compares it with your **people & organizations** list and warns, with reasons, when the address doesn't match |
+| say "**remember my pharmacy is CareWell on Main Street**" | saves it **on this Mac**; you can see or remove it in History |
+| say "**refill my blood pressure medicine**" | runs a step-by-step refill on the demo pharmacy, asks for anything it doesn't know, and **reads everything back and waits for your "yes"** before sending |
+| say "**where was I?**" | tells you which step a paused task is on |
 | ask anything else by voice or text | answers briefly and reads the answer aloud |
 | say "**stop**" or "**start over**" | stops instantly / starts a fresh conversation |
 
 Built for older users:
-- **Push-to-talk:** hold to talk, or tap to start and tap again to stop.
+- **Push-to-talk:** hold to talk, or tap to start and tap again to stop. From any app, **⌘⇧9** starts and stops listening (Control+Option+Space if ⌘⇧9 is taken), with a soft chime each way and a **Listening** look on the companion. The shortcut is shown under the talk button.
 - **Live captions** as you speak, on-device. When you let go, **Google Gemini** writes the final transcript for accuracy, falling back to the on-device text when offline.
-- **Read-back:** a slow (90%), clear neural voice reads short answers, and you can replay them.
+- **Read-back:** a slow (90%), clear neural voice reads short answers, and you can replay them. Speeds: Slower (80%), Relaxed (90%, default), Normal (100%) and Faster (115%).
+- **Hands-free when the chat is closed:** answers, problems and "Sorry, I didn't quite catch that" are spoken instead of popping the chat open. Arrows and boxes still appear on screen.
 - **"Did I hear that right?"** Unclear speech is put in the message box to check, never sent blindly.
 - **Safe by design:** Triage only opens pages from a fixed list of approved sites, never a website address the AI makes up, so a misheard word can't send someone to a lookalike scam site.
 
 ## Demo flow (2 minutes)
 
-1. Hold **Hold to talk**: "Take me to my Amazon orders." Your Amazon order history opens in Chrome, and Triage says "Opening your Amazon orders…".
-2. "Where's the track package button?" An arrow appears on the button, and Triage explains the next step.
+1. Press **⌘⇧9**: "Take me to my Amazon orders." Your Amazon order history opens in Chrome, and Triage says "Opening your Amazon orders…".
+2. "Where's the track package button?" An arrow appears on the button, and Triage explains the next step. You click it yourself.
 3. Shake the mouse over a confusing pop-up. Triage explains what it is, out loud.
-4. "Stop." It goes quiet immediately.
+4. Open [the phishing demo](demos/phishing-inbox.html) with Chrome Link Warnings on. The scam link gets a badge and Triage says to be careful.
+5. "Stop." It goes quiet immediately.
+
+For the learning side (memory, the refill task graph and the layout learner, shown live on a second screen), follow the [Learning Monitor demo script](docs/Learning-Monitor.md#demo-script-about-3-minutes).
 
 ## How it works
 
 ```
-             ┌──────────────────────── Electron app (runs in the background) ─────────────────────────┐
- mic ──▶ chat window: AudioWorklet → 16 kHz PCM ──IPC──▶ main process ──▶ Apple on-device speech (free) or Amazon Transcribe
-                     live captions ◀───────────────────── partial / final text
-                     voice shortcuts (stop, explain, show-me-where) ─┐
-                     "Did I hear that right?" check                  │
-                                                                     ▼
-                                                   Assistant coordinator ──▶ Claude or Gemini (routes the request)
-                                                     ├─ reply ............ answer in chat
-                                                     ├─ open_page ........ approved list → your default browser
-                                                     ├─ flight_search .... Playwright task browser (Alaska Air)
-                                                     ├─ screenshot + highlight → arrow overlay on the real screen
-                                                     └─ screenshot → simplify (task buttons) / safety check (verdict card)
- speaker ◀── Web Audio ◀── mp3 ◀──IPC── main process ◀── Amazon Polly (neural, SSML prosody 90%)
+             ┌──────────────────────────── Electron app (runs in the background) ─────────────────────────────┐
+ ⌘⇧9 / talk button ─▶ chat window (may stay hidden): AudioWorklet → 16 kHz PCM ──IPC──▶ main process
+                                                      ──▶ Apple on-device speech (free) or Amazon Transcribe
+                      live captions ◀──────────────── partial text;  on release: Gemini writes the final transcript
+                      voice shortcuts (stop, start over, explain, show me where) ──────┐
+                      "Did I hear that right?" check                                   │
+                                                                                       ▼
+ macOS Accessibility (native AXSnapshot) ──▶ <screen_context> labels ──▶  Assistant coordinator
+   also: private-field boxes for redaction,                                 │
+   real control frames for highlights                                       ├─ fixed rules first (no model): "remember…", "refill my…",
+                                                                            │   "where was I?", answers to a paused task
+                                                                            │     ├─ memory ......... LangChain vector store + retriever (memory.sqlite)
+                                                                            │     └─ refill task .... LangGraph graph → Playwright (demo pharmacy),
+                                                                            │                         checkpoints in tasks.sqlite, pauses for "yes"
+                                                                            │
+                                                                            └─ router: Claude (Haiku tier for simple requests) or Gemini
+                                                                                  ├─ reply .............. answer (+ trust check, + screenshot if needed)
+                                                                                  ├─ open_page .......... approved list → your default browser
+                                                                                  ├─ how_to ............. skill graph (BKT) → explain only what's missing
+                                                                                  ├─ guide .............. one boxed step at a time on the real screen
+                                                                                  ├─ simplify_page ...... simplifier (LangChain RunnableSequence +
+                                                                                  │                       Thompson-sampling layout learner) → big-button window
+                                                                                  ├─ remember_contact ... trust graph (people & organizations)
+                                                                                  └─ flight_search ...... Playwright task browser (Alaska Air)
+     screenshot (private fields blacked out) ──▶ highlight → arrow / box overlay;  simplify / safety → card
+
+ Chrome Link Warnings: native link scanner over Chrome's accessibility tree → badges + spoken warning
+ Learning Monitor: LangChain callbacks → event bus → monitor window / LAN page (read-only, masked)
+
+ speaker ◀── Web Audio ◀── mp3 ◀──IPC── main process ◀── Amazon Polly (neural, SSML prosody 80–115%)
              (fallback: the macOS built-in voice)
 ```
 
-AWS credentials stay in the main process. The chat window never sees them.
+API keys and AWS credentials stay in the main process. The chat window never sees them. Everything Triage keeps lives in SQLite files in its data folder on this Mac: `history.sqlite` (conversations and activity), `memory.sqlite`, `tasks.sqlite`, `simplifier.sqlite` (layout decisions and rewards), `skill-knowledge.sqlite` and `trust-graph.sqlite`.
+
+### LangChain and LangGraph
+- **LangGraph `StateGraph`** for multi-step tasks (the prescription refill), with `interrupt` to pause for the person and a SQLite checkpointer so tasks survive a restart.
+- **LangChain vector store and `VectorStoreRetriever`** over on-device memory, with on-device `Embeddings`.
+- **LangChain `RunnableSequence`** for the page simplifier: classify → choose layout → rewrite → log.
+- **LangChain callbacks** feed the Learning Monitor, so every node and step it shows is a real run.
 
 ### AWS services
 - **Amazon Transcribe (streaming):** optional cloud speech-to-text with live partial captions and per-word confidence. It needs an AWS account on the Paid plan. By default Triage uses **free on-device Apple speech** instead (no audio leaves the Mac).
@@ -72,9 +119,10 @@ Requirements: macOS on Apple Silicon, Node 22 (`.nvmrc`), and an **Anthropic (Cl
 
 ```bash
 npm install
-npm run browser:install     # Chromium for the flight-search task browser
+npm run browser:install     # Chromium for the task browser (flight search, prescription refill, /simplify)
 npm run speech:build        # free on-device speech helper (voice input)
 npm run context:build       # reads on-screen controls: hides private fields in screenshots, outlines real buttons
+npm run phishing:build      # link scanner for Chrome Link Warnings
 ```
 
 Then allow Triage in **System Settings → Privacy & Security → Accessibility**. Without it (or without `context:build`), guided help and screenshots sent without a preview are refused, because private fields can't be hidden.
@@ -111,15 +159,31 @@ npm run build
 
 | Path | What |
 |---|---|
-| `src/main/` | Electron main process: windows, assistant coordinator, screen capture and highlight overlay, gestures |
-| `src/main/voice/` | voice sessions, Apple on-device speech and Amazon Transcribe backends, audio queue, transcript store |
-| `native/speech/` | Swift helper app for free on-device speech recognition |
+| `src/main/index.ts`, `src/main/windows.ts` | Electron main process: tray menu, global shortcuts (⌘⇧9 talk, ⌘⇧Space chat, ⌘⇧Esc stop), windows |
+| `src/main/assistant/` | coordinator, Claude and Gemini gateways, model tiers, guided-help sessions, history |
+| `src/main/context/` | accessibility snapshot of the app in front: `<screen_context>`, private-field boxes, control frames |
+| `src/main/screen/` | screen capture, redaction, highlight overlay that follows the real control |
+| `src/main/simplifier/` | page simplifier: LangChain pipeline, Thompson-sampling layout learner, decision log, rewards, `/simplify` of the current tab |
+| `src/main/skills/` | skill graph and Bayesian Knowledge Tracing tutor |
+| `src/main/trust/` | people & organizations list and impersonation checks |
+| `src/main/memory/` | on-device memory: LangChain vector store, retriever, embeddings |
+| `src/main/tasks/` | LangGraph refill graph, SQLite checkpointer, task runner, demo pharmacy driver |
+| `src/main/monitor/` | Learning Monitor: LangChain callback handler, event bus, window and LAN server |
+| `src/main/phishing/` | Chrome Link Warnings monitor |
+| `src/main/gestures/` | shake-to-help detector |
+| `src/main/voice/` | voice sessions, Apple on-device speech, Amazon Transcribe, Gemini final transcripts, transcript store |
 | `src/main/speech/` | Amazon Polly, voice reply settings |
-| `src/shared/destinations.ts` | the approved list of places Triage can open |
-| `src/renderer/src/` | React UI: chat, talk button, settings |
-| `src/renderer/src/voice/` | mic capture, voice shortcuts, speech player |
+| `src/main/logging/` | opt-in anonymous request log |
+| `src/shared/` | contracts between processes; `destinations.ts` is the approved list of places Triage can open, `skill-catalogue.ts` the skill graph |
+| `src/renderer/src/` | React UI: companion, chat, talk button, settings, History (memories, what I've learned), trust warnings |
+| `src/renderer/src/voice/` | mic capture, voice shortcuts, chime, speech player |
 | `src/worker/` | Playwright task browser (flight search) |
-| `docs/` | [Voice input](docs/Voice-Transcribe.md) · [Spoken replies](docs/Speech-Polly.md) · [Page navigation](docs/Page-Navigation.md) · [Screen help](docs/Screen-Help.md) · [Request logging](docs/Request-Logging.md) · [Product overview](docs/Triage-Product-Overview.md) · [Tech spec](docs/Triage-Technical-Specification.md) |
+| `native/speech/`, `native/context/`, `native/phishing/` | Swift speech helper; Objective-C++ accessibility snapshot and link scanner |
+| `demos/`, `demo/sites/` | phishing, link-warning and impersonation demo pages; cluttered news and mock pharmacy sites |
+| `scripts/` | native builds, Finder app packaging, Learning Monitor and simplifier demos, routing eval |
+| `evals/routing-cases.json` | labelled routing cases for `npm run eval:routing` |
+| `landing/` | landing page |
+| `docs/` | [Voice input](docs/Voice-Transcribe.md) · [Spoken replies](docs/Speech-Polly.md) · [Page navigation](docs/Page-Navigation.md) · [Screen help](docs/Screen-Help.md) · [Learning Monitor](docs/Learning-Monitor.md) · [Request logging](docs/Request-Logging.md) · [Memory topology (exploration)](docs/Memory-Topology-and-Mesh.md) · [User interview](docs/Skyline_Health_Transcript.md) · [Product overview](docs/Triage-Product-Overview.md) · [Tech spec](docs/Triage-Technical-Specification.md) |
 
 ## Privacy and safety
 
@@ -127,7 +191,8 @@ npm run build
 - **Voice audio** is captured only while you hold or tap the talk button and is never saved. By default it's transcribed **on this Mac** (Apple on-device speech, no server fallback). If you opt into Amazon Transcribe, it's streamed to AWS instead. Transcripts are saved on this Mac.
 - **Conversations** are saved on this Mac (unencrypted). Known API keys are removed from saved text.
 - **Help improve Triage** (off by default) keeps an anonymous log of questions only, never screenshots or audio. You can delete it in Settings at any time.
-- **Triage never buys anything, enters passwords or payment details, or picks a flight fare.** Pages open only from the approved list, over https.
+- **Memory and task progress** ("remember…", refill answers, paused tasks) are saved on this Mac (unencrypted) and never sent to an embedding service. You can see and remove memories in History.
+- **Triage never buys anything, enters passwords or payment details, or picks a flight fare.** Pages open only from the approved list, over https. The only form it fills by itself is the built-in demo pharmacy, and it always reads the details back and waits for your "yes" before sending.
 
 ## Chrome Link Warnings preview
 
@@ -137,6 +202,8 @@ npm run build
 4. For a more realistic demo, open [the demo scenarios](demos/phishing-inbox.html) and pick a scenario from the switcher in the top right: email inbox, text messages, search results, social feed, marketplace chat or a news site pop-up. Scam links show **Potential phishing**, some ordinary links show **Unencrypted HTTP**, and the harmless ones (like the team lunch email or Mom's recipe link) show no badge. All brands are fictional, and links on the page never navigate.
 
 The preview starts off each launch. It scans links with a destination and visible bounds in the active Chrome window’s accessibility tree. It checks up to 250 links per scan and shows up to 12 badges. The simulated phishing rule matches only `triage-phishing-demo.invalid`. HTTP indicates an unencrypted destination. Real-world phishing reputation, background tabs, other browsers, and links Chrome does not expose are outside this preview’s scope. Checks run locally and URLs are kept out of Triage’s Activity History.
+
+When a new phishing link appears, Triage also **says a short warning out loud** ("Be careful. This page has a link that may be a scam…"), even when the chat is closed. It waits while the microphone is on, so Triage never records its own voice.
 
 ### Rebuild the Finder app
 
@@ -225,6 +292,37 @@ When you ask how to do something, Triage skips the steps you already do comforta
 **History → What I've learned** lists the skills in three plain groups. A caregiver can tick **Practice this** to have Triage walk through a skill every time, whatever the estimate says.
 
 The page simplifier's learner now uses this per-skill knowledge instead of generic user traits. That is a new feature layout (version 2). Decisions and learned state from version 1 are kept as they were and are never trained on, loaded or evaluated together with version 2.
+
+## Memory and multi-step tasks (LangChain + LangGraph)
+
+**Memory.** Say "remember that my pharmacy is CareWell on Main Street" (or `/remember …`) and Triage saves it to `memory.sqlite` on this Mac. Memories are stored in a LangChain vector store and found with a LangChain `VectorStoreRetriever`. The embeddings are computed **on this Mac** (feature hashing with a small synonym table for health, money and errand words, so "pills" finds "medication"), because memories hold personal details. Any LangChain `Embeddings` can replace it later without changing the store or the tasks. **History** lists what Triage remembers, and you can remove any of it.
+
+**Refill a prescription.** "Refill my blood pressure medicine" (or `/refill …`) runs a LangGraph state machine against the demo pharmacy site ([demo/sites/pharmacy-refill.html](demo/sites/pharmacy-refill.html)):
+
+```
+recall → gather ⟲ → open → fill → confirm → submit → remember → END
+```
+
+- **recall** looks up your name, date of birth, prescription number, pharmacy and pickup time in memory.
+- **gather** asks for one missing detail at a time, saves the answer, and loops. The next refill needs no questions.
+- **open / fill** use the Playwright task browser to fill the form.
+- **confirm** reads every field back and pauses until you say "yes". The submit button's risk is decided by fixed rules over the page, never by the model, and anything involving money or passwords is refused.
+- **remember** saves the steps as a recipe for next time.
+
+A checkpoint is saved after every step (`tasks.sqlite`), so a task survives a restart. "Where was I?" reads it back, and the History tab shows the progress. While a task is waiting, your next chat message is its answer. These commands are recognised by fixed rules in the coordinator and never go through the model's router.
+
+## Learning Monitor
+
+A separate window (or a page on a second device) that shows live what Triage's learning parts are doing: each LangGraph node as it runs, the four traced steps of the simplifier's LangChain `RunnableSequence`, memory lookups with their match scores, the layout learner's odds and the rewards that update it. The counters come from LangChain's own callback system. Personal numbers are masked, and the page is read-only.
+
+Open it from the menu bar (**Show learning monitor**), or start Triage with `TRIAGE_MONITOR=1`. To watch from another device on the same network, start with `TRIAGE_MONITOR_SHARE=1` and open the link with the secret shown in the monitor's header. See [docs/Learning-Monitor.md](docs/Learning-Monitor.md) for the 3-minute demo script.
+
+For a scripted run with no API key (it drives the real memory, refill graph and simplifier code against the mock pharmacy, with a simulated person rating pages so the layout odds visibly shift; all data goes in a temporary folder):
+
+```bash
+node --experimental-strip-types scripts/demo-learning-monitor.ts --share
+```
+
 ## What's next
 
 - Upload the opt-in request log (API Gateway → Lambda + Amazon Comprehend → DynamoDB) and turn it into approved FAQs.
