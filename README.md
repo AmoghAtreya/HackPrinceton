@@ -1,8 +1,8 @@
 # Triage
 
-**A calm, voice-first tutor that lives on your Mac and teaches older and less tech-confident people to use the web by pointing at the real button, explaining it in plain words, and letting them press it themselves.**
+**A calm, voice-first companion that lives on your Mac. It keeps older and less tech-confident people safe from scams, and teaches them to use the web by pointing at the real button, explaining it in plain words, and letting them press it themselves.**
 
-HackPrinceton Fall 2026 · **Main track: Education** · Special tracks: Amazon, LangChain, Peri
+HackPrinceton Fall 2026 · **Main track: Education** · Sponsor challenges: [Peri Forward Deployed Challenge](#peri-forward-deployed-challenge), [Amazon Best Practical AI Innovation](#amazon-best-practical-ai-innovation), [LangChain](#langchain)
 
 ---
 
