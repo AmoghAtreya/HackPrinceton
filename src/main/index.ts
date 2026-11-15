@@ -13,7 +13,7 @@ import { voiceChannels } from '../shared/voice-contracts'
 
 /** Global talk shortcuts, tried in order; the first one macOS lets Triage register wins. */
 const VOICE_SHORTCUTS = [
-  { accelerator: 'Alt+Space', keys: ['⌥', 'space'] },
+  { accelerator: 'Command+Shift+9', keys: ['⌘', '⇧', '9'] },
   { accelerator: 'Control+Alt+Space', keys: ['⌃', '⌥', 'space'] }
 ] as const
 import { PollyService } from './speech/polly'

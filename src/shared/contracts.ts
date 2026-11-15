@@ -14,7 +14,7 @@ export interface DesktopState {
   chatOpen: boolean
   mood: CompanionMood
   shortcutAvailable: boolean
-  /** The global talk shortcut as key labels (e.g. ["⌥", "space"]), or null if it could not be registered. */
+  /** The global talk shortcut as key labels (e.g. ["⌘", "⇧", "9"]), or null if it could not be registered. */
   voiceShortcut: string[] | null
 }
 
