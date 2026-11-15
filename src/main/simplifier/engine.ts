@@ -169,7 +169,8 @@ export class SimplificationEngine {
       this.monitor.emit({
         type: 'bandit', pageType: result.pageType, armId: result.arm.id, layout: describeLayout(result.arm.id),
         propensity: state.decision!.propensity, mode: result.mode, shares: this.policy.odds?.(state.policyInput!) ?? { [result.arm.id]: 1 },
-        source: result.view.source
+        source: result.view.source,
+        ...(this.policy.diagnostics ? { diagnostics: this.policy.diagnostics(input.userId, state.policyInput!.arms.map((arm) => arm.id)) } : {})
       })
     }
     return result

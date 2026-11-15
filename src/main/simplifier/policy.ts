@@ -36,6 +36,8 @@ export interface PresentationPolicy {
   serialize(): string
   /** Current chance of choosing each allowed arm here, for display (learning monitor). */
   odds?(input: PolicyInput): Record<string, number>
+  /** Learned reward noise E[σ²] and effective number of ratings per arm, for display. */
+  diagnostics?(userId: string, armIds: string[]): Record<string, { noiseVariance: number; evidence: number }>
 }
 
 const index = (name: typeof FEATURE_NAMES[number]) => FEATURE_NAMES.indexOf(name)

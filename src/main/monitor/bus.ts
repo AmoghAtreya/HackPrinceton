@@ -14,7 +14,9 @@ export type MonitorEvent =
   | { type: 'retrieval'; runId: string; query: string; durationMs: number; hits: Array<{ text: string; kind: string; score?: number }> }
   | { type: 'memory'; action: 'saved' | 'forgotten'; kind: string; key?: string; text: string }
   | { type: 'interrupt'; graph: string; kind: string; prompt: string }
-  | { type: 'bandit'; pageType: string; armId: string; layout: string; propensity: number; mode: string; shares: Record<string, number>; source: 'llm' | 'rules' }
+  | { type: 'bandit'; pageType: string; armId: string; layout: string; propensity: number; mode: string; shares: Record<string, number>; source: 'llm' | 'rules'
+      /** Per arm: learned reward noise E[σ²] and discounted number of ratings. */
+      diagnostics?: Record<string, { noiseVariance: number; evidence: number }> }
   | { type: 'reward'; armId: string; layout: string; pageType: string; reward: number; rated: number; averageReward: number | null }
   | { type: 'note'; text: string }
 
