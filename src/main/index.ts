@@ -56,6 +56,7 @@ import { ScreenService } from './screen/service'
 import { ContextService } from './context/service'
 import { PairedCapture } from './context/paired-capture'
 import { electronContext } from './context/electron-context'
+import { ChromeFrontWatcher } from './chrome-front'
 import { screenContextBlock } from './context/chat-context'
 import { TrustStore } from './trust/store'
 import { TrustService } from './trust/service'
@@ -131,6 +132,8 @@ let browser: BrowserSupervisor | undefined
 let simplifier: SimplifierService | undefined
 let simplifiedWindow: SimplifiedWindow | undefined
 let screenSimplifier: ScreenSimplifier | undefined
+/** Shows the companion's Simplify button while Chrome is in front. */
+let chromeFront: ChromeFrontWatcher | undefined
 let closeSimplifierLog: (() => void) | undefined
 let memory: MemoryService | undefined
 let tasks: TaskRunner | undefined
@@ -278,7 +281,7 @@ if (!app.requestSingleInstanceLock()) {
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
       () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(), () => chatContexts?.dispose(), () => tabContexts?.dispose(),
       () => highlights?.dispose(), () => overlay?.dispose(),
-      () => desktop?.dispose(), () => tray?.destroy(), () => screenSimplifier?.dispose(), () => simplifiedWindow?.dispose(), () => monitorWindow.dispose(), () => { void monitorServer.close() },
+      () => chromeFront?.stop(), () => desktop?.dispose(), () => tray?.destroy(), () => screenSimplifier?.dispose(), () => simplifiedWindow?.dispose(), () => monitorWindow.dispose(), () => { void monitorServer.close() },
       () => {
         ipcMain.removeHandler(channels.getState)
         for (const channel of Object.values(channels)) ipcMain.removeAllListeners(channel)
@@ -538,6 +541,16 @@ if (!app.requestSingleInstanceLock()) {
     powerMonitor.on('resume', wake)
     powerMonitor.on('lock-screen', lock)
     powerMonitor.on('unlock-screen', unlock)
+    // Needs the page simplifier and a context module new enough to name the front app; otherwise no button.
+    const frontBundleId = accessibility?.frontBundleId
+    if (frontBundleId && screenSimplifier) {
+      chromeFront = new ChromeFrontWatcher({
+        read: frontBundleId,
+        changed: (inFront) => desktop?.setChromeFront(inFront),
+        enabled: () => Boolean(!quitting && !paused.size && desktop?.getState().visible && !desktop.isCapturing)
+      })
+      chromeFront.start()
+    }
     screen.on('display-added', reset)
     screen.on('display-removed', reset)
     screen.on('display-metrics-changed', reset)
