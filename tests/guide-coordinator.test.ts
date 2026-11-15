@@ -15,7 +15,8 @@ import type { AssistantRoute } from '../src/shared/flight-contracts.ts'
 const target = { x: 0.1, y: 0.2, width: 0.2, height: 0.1 }
 
 /** A coordinator whose model starts a guide and then answers each step from `steps`. */
-async function fixture(steps: Array<Omit<HighlightReply, 'captureId'>>, route: AssistantRoute = { kind: 'guide', goal: 'attach a photo' }) {
+async function fixture(steps: Array<Omit<HighlightReply, 'captureId'>>, route: AssistantRoute = { kind: 'guide', goal: 'attach a photo' },
+  options: { covered?: () => boolean; makeRoom?: () => boolean } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'triage-guide-'))
   const history = new HistoryStore(join(directory, 'history.sqlite'))
   const credentials = new Credentials(directory, {
@@ -27,7 +28,7 @@ async function fixture(steps: Array<Omit<HighlightReply, 'captureId'>>, route: A
   let drawn = 0
   const asked: GuideProgress[] = []
   const highlights = new HighlightController({
-    display: () => ({ bounds }), hide: () => {}, draw: () => { drawn++ },
+    display: () => ({ bounds }), hide: () => {}, draw: () => { drawn++ }, blocked: () => options.covered?.() ?? false,
     observeClick: (_target, clicked) => { click = clicked; return () => { click = undefined } }
   })
   const screens = new ScreenService({
@@ -37,7 +38,7 @@ async function fixture(steps: Array<Omit<HighlightReply, 'captureId'>>, route: A
     })
   })
   const coordinator = new AssistantCoordinator({
-    history, credentials, screens, highlights, changed: () => {}, guideClickDelay: 5,
+    history, credentials, screens, highlights, changed: () => {}, guideClickDelay: 5, makeRoom: options.makeRoom,
     captureScreen: () => screens.capture(),
     gateway: {
       models: async () => [], reply: async () => 'Text reply',
@@ -125,5 +126,32 @@ test('"help me …" starts a guide without asking the router, so a long answer c
     await f.settle()
     assert.equal(f.coordinator.snapshot().guide?.goal, 'attach a photo to this email')
     assert.deepEqual(f.replies(receipt.conversationId), ['Step 1: Click Compose.'])
+  } finally { f.close() }
+})
+
+test('when Triage covers the button, it moves aside and outlines it anyway', async () => {
+  let covering = true
+  let moves = 0
+  const f = await fixture([{ explanation: 'Click Settings.', target }], undefined,
+    { covered: () => covering, makeRoom: () => { moves++; covering = false; return true } })
+  try {
+    const receipt = f.coordinator.send({ text: 'help me change my model' })
+    await f.settle()
+    assert.equal(moves, 1)
+    assert.equal(f.drawn(), 1)
+    assert.deepEqual(f.replies(receipt.conversationId), ['Step 1: Click Settings.'])
+  } finally { f.close() }
+})
+
+test('"show me" during a guide outlines the same step again instead of ending the guide', async () => {
+  const f = await fixture([{ explanation: 'Click Settings.', target: null }, { explanation: 'Click Settings.', target }])
+  try {
+    const receipt = f.coordinator.send({ text: 'help me change my model' })
+    await f.settle()
+    f.coordinator.send({ text: 'Can you show me?', conversationId: receipt.conversationId })
+    await f.settle()
+    assert.deepEqual(f.asked[1], { goal: 'change my model', done: [] }, 'the step on screen is asked for again, not the next one')
+    assert.equal(f.coordinator.snapshot().guide?.step, 1)
+    assert.equal(f.drawn(), 1)
   } finally { f.close() }
 })

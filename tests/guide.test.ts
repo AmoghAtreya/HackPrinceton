@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { GuideSession } from '../src/main/assistant/guide.ts'
-import { GUIDE_IDLE_MS, GUIDE_MAX_STEPS, guideGoal, isNextStep } from '../src/shared/guide-contracts.ts'
+import { GUIDE_IDLE_MS, GUIDE_MAX_STEPS, guideGoal, isNextStep, isShowAgain } from '../src/shared/guide-contracts.ts'
 
 test('a guide remembers its steps in order and which request is on screen', () => {
   const guide = new GuideSession({ conversationId: 'c1', goal: 'attach a photo', spoken: true })
@@ -44,4 +44,11 @@ test('plain requests for step-by-step help start a guide; explanations and vague
   assert.equal(guideGoal('Okay help me to change my password'), 'change my password')
   for (const text of ['help me', 'help me with this', 'help me understand this page', 'how do I print this', 'help me print', 'what is this'])
     assert.equal(guideGoal(text), null, text)
+})
+
+test('"show me", "where is it" and "give me an arrow" ask for the current box again', () => {
+  for (const text of ['Show me', 'can you show me?', 'Where is it?', 'give me an arrow please', 'I can\'t see it', 'point to it'])
+    assert.equal(isShowAgain(text), true, text)
+  for (const text of ['show me my orders', 'next', 'where is my package', 'help me print this'])
+    assert.equal(isShowAgain(text), false, text)
 })

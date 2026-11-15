@@ -92,6 +92,8 @@ export interface AssistantBridge {
   stopRequest(taskId: string): Promise<Result<void>>
   /** Guided help: look at the screen again and show the next step. */
   guideNext(): Promise<Result<SendReceipt>>
+  /** Guided help: outline the current step again. */
+  guideAgain(): Promise<Result<SendReceipt>>
   /** Guided help: stop guiding and remove the outline. */
   guideStop(): Promise<Result<void>>
   listConversations(input: { before?: HistoryCursor }): Promise<Result<ConversationPage>>
@@ -112,7 +114,7 @@ export const assistantChannels = {
   removeKey: 'assistant:remove-key', selectModel: 'assistant:select-model', setFastModel: 'assistant:set-fast-model',
   closeBrowser: 'assistant:close-browser',
   send: 'assistant:send', stop: 'assistant:stop', list: 'assistant:list',
-  guideNext: 'assistant:guide-next', guideStop: 'assistant:guide-stop',
+  guideNext: 'assistant:guide-next', guideAgain: 'assistant:guide-again', guideStop: 'assistant:guide-stop',
   detail: 'assistant:detail', delete: 'assistant:delete', clear: 'assistant:clear',
   analyze: 'assistant:analyze',
   learning: 'assistant:learning', rate: 'assistant:rate', memory: 'assistant:memory', forget: 'assistant:forget'

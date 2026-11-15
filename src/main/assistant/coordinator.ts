@@ -2,7 +2,7 @@ import type { BrowserRunner } from '../browser/supervisor.ts'
 import { validateFlight } from '../browser/validation.ts'
 import { HIGHLIGHT_LOST_MESSAGE, highlightSource, type HighlightController, type HighlightPlan } from '../screen/highlight.ts'
 import type { ElementAnchor, HighlightReply } from '../../shared/highlight-contracts.ts'
-import { GUIDE_CLICK_DELAY_MS, guideGoal, isNextStep } from '../../shared/guide-contracts.ts'
+import { GUIDE_CLICK_DELAY_MS, guideGoal, isNextStep, isShowAgain } from '../../shared/guide-contracts.ts'
 import { GuideSession } from './guide.ts'
 import { locateElements } from '../context/locate.ts'
 import type { ContextLookup } from '../context/paired-capture.ts'
@@ -85,6 +85,7 @@ export class AssistantCoordinator {
   private guide: GuideSession | null = null
   private guideTimer?: ReturnType<typeof setTimeout>
   private guideClickDelay: number
+  private makeRoom?: () => boolean
   private contexts?: ContextLookup
   private gestureRequest?: SendReceipt
   private browser?: BrowserRunner
@@ -121,7 +122,10 @@ export class AssistantCoordinator {
     requestLog?: RequestLog
     /** How long after a click on the outlined control the next guide step starts. */
     guideClickDelay?: number
+    /** Moves Triage's own windows aside when they cover a control it wants to outline. */
+    makeRoom?: () => boolean
   }) {
+    this.makeRoom = options.makeRoom
     this.guideClickDelay = options.guideClickDelay ?? GUIDE_CLICK_DELAY_MS
     this.simplifier = options.simplifier
     this.memory = options.memory
@@ -249,7 +253,12 @@ export class AssistantCoordinator {
   }
 
   /** "Next", the Next step button, or a click on the outlined control: look at the screen again and show the next step. */
-  guideNext(): SendReceipt {
+  guideNext(): SendReceipt { return this.guideLook(false) }
+
+  /** "Show me" or "where is it?": look again and outline the current step once more. */
+  guideAgain(): SendReceipt { return this.guideLook(true) }
+
+  private guideLook(again: boolean): SendReceipt {
     const guide = this.liveGuide()
     if (!guide) throw new AppProblem('no_guide', 'I’m not guiding you through anything right now. Ask me for help with something to start.')
     this.idle()
@@ -257,7 +266,8 @@ export class AssistantCoordinator {
     const key = this.credentials.getKey()
     const model = this.credentials.snapshot().model
     if (!model) throw new AppProblem('missing_model', 'Connect your key and choose an available model in Settings.')
-    return this.start({ text: 'Next step', conversationId: guide.conversationId }, key, model, undefined, undefined, undefined,
+    if (again) guide.again()
+    return this.start({ text: again ? 'Show me again' : 'Next step', conversationId: guide.conversationId }, key, model, undefined, undefined, undefined,
       guide.spoken ? 'voice' : 'chat', undefined, false, undefined, true)
   }
 
@@ -351,8 +361,10 @@ export class AssistantCoordinator {
     // bad address is reported immediately instead of after a model call.
     // While guiding, a bare "next" or "done" typed in that conversation means the next step.
     const guide = this.liveGuide()
-    if (!image && guide && request.conversationId === guide.conversationId && isNextStep(request.text))
+    if (!image && guide && request.conversationId === guide.conversationId && (isNextStep(request.text) || isShowAgain(request.text))) {
+      if (isShowAgain(request.text)) guide.again()
       return this.start(request, key, model, undefined, undefined, undefined, request.source ?? 'chat', undefined, false, undefined, true)
+    }
     const simplify = !image && this.simplifier ? parseSimplifyCommand(request.text) : null
     const local = !image && !simplify ? this.localCommand(request.text, request.conversationId) : undefined
     const goal = !image && !simplify && !local ? guideGoal(request.text) : null
@@ -732,12 +744,14 @@ export class AssistantCoordinator {
       this.endGuide()
       return { reply: result.explanation, result, plan: null, outcome: 'guide_done', image, used }
     }
-    const pointed = this.pointAt(request, image, result, snapshot)
+    let pointed = this.pointAt(request, image, result, snapshot)
+    // Triage's own window is over the control: move it to the other side of the screen and try once more.
+    if (pointed.outcome === 'highlight_obscured' && this.makeRoom?.()) pointed = this.pointAt(request, image, result, snapshot)
     const step = guide.shown(request.id, result.explanation)
     // Shape only, never screen text: enough to see from the log whether boxes are being drawn.
     console.info(`Guide step ${step}: ${pointed.plan ? (pointed.plan.anchor ? 'outlined a listed control' : 'outlined a pixel box') : 'nothing to outline (' + pointed.outcome + ')'}; ${candidates.length} controls offered.`)
     let reply = `Step ${step}: ${result.explanation}`
-    if (pointed.note) reply += '\n\n' + pointed.note.replace('Capture again before asking where to click.', 'Say “next” and I’ll look again.').replace('Try a fresh capture.', 'Say “next” and I’ll look again.')
+    if (pointed.note) reply += '\n\n' + pointed.note.replace('Capture again before asking where to click.', 'Say “next” and I’ll look again.').replace('Try a fresh capture.', 'Say “next” and I’ll look again.').replace('Move Triage aside and capture again.', 'Drag me out of the way, then say “show me”.')
     if (guide.exhausted) {
       this.endGuide()
       reply += '\n\nThat’s as many steps as I can guide in one go. Ask me again if you’d like to carry on.'

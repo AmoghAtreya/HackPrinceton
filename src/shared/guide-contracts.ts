@@ -35,6 +35,15 @@ export function guideGoal(text: string): string | null {
   return goal
 }
 
+const SHOW_AGAIN = /^(?:show me|show me again|show me where|show me where it is|where is it|where|where's that|point to it|point at it|point it out|show it to me|highlight it|draw it|draw the box|give me an arrow|give me the arrow|arrow|show me the arrow|show the arrow|again|say that again|i can't see it|i don't see it|i can't find it|i don't see the box|which one|where do i click|where should i click)$/
+
+/** True when a message asks to see the current step's box again ("show me", "where is it", "give me an arrow"). */
+export function isShowAgain(text: string): boolean {
+  const normalized = text.toLowerCase().replace(/[’‘]/g, "'").replace(/[^\p{L}\p{N}'\s]/gu, ' ').replace(/\s+/g, ' ').trim()
+    .replace(/^(?:(?:hey|ok|okay|so|um+|uh+|please|triage|can you|could you|would you|just)\s+)+(?=\S)/, '').replace(/\s+(?:please|for me|again please|thanks|triage)$/, '')
+  return SHOW_AGAIN.test(normalized)
+}
+
 /** True when a whole message only means "show me the next step" ("next", "done", "what now"). */
 export function isNextStep(text: string): boolean {
   const normalized = text.toLowerCase().replace(/[’‘]/g, "'").replace(/[^\p{L}\p{N}'\s]/gu, ' ').replace(/\s+/g, ' ').trim()

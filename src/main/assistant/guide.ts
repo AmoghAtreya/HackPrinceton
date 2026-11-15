@@ -34,6 +34,12 @@ export class GuideSession {
     return this.steps.length
   }
 
+  /** "Show me again": forget the step on screen so the next look gives the same step, freshly placed. */
+  again(): void {
+    if (this.steps.length) this.steps.pop()
+    this.touchedAt = this.now()
+  }
+
   /** A step that could not be shown still counts as activity, and its request becomes the current one. */
   attempted(taskId: string): void {
     this.taskId = taskId

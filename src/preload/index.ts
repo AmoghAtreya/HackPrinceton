@@ -51,6 +51,7 @@ const bridge: DesktopBridge = {
   closeBrowser: () => ipcRenderer.invoke(assistantChannels.closeBrowser),
   stopRequest: (id) => ipcRenderer.invoke(assistantChannels.stop, id),
   guideNext: () => ipcRenderer.invoke(assistantChannels.guideNext),
+  guideAgain: () => ipcRenderer.invoke(assistantChannels.guideAgain),
   guideStop: () => ipcRenderer.invoke(assistantChannels.guideStop),
   listConversations: (input) => ipcRenderer.invoke(assistantChannels.list, input),
   getConversation: (input) => ipcRenderer.invoke(assistantChannels.detail, input),

@@ -11,7 +11,7 @@ import { VoiceButton } from './VoiceButton'
 import { matchVoiceIntent, needsConfirmation } from './voice/intents'
 import { speechPlayer } from './voice/speech-player'
 import { failureSpeech, prepareSpeech } from '../../shared/speech-text'
-import { isNextStep } from '../../shared/guide-contracts'
+import { isNextStep, isShowAgain } from '../../shared/guide-contracts'
 import type { ReadAloud } from '../../shared/speech-contracts'
 import { analysisSpeech, type ScreenAnalysis, type ScreenAnalysisKind } from '../../shared/screen-analysis-contracts'
 import { ScreenHelpCard } from './ScreenHelpCard'
@@ -198,9 +198,9 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
   }
 
   /** Guided help: look at the screen again for the next step. */
-  async function guideNext() {
+  async function guideNext(again = false) {
     setError(''); setVoiceNotice('')
-    try { unwrap(await bridge.guideNext()); setView('chat') }
+    try { unwrap(again ? await bridge.guideAgain() : await bridge.guideNext()); setView('chat') }
     catch (problem) { setError(displayError(problem)) }
   }
 
@@ -270,6 +270,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       return
     }
     // While guiding, "next", "done" or "what now" asks for the next step (one word is enough here).
+    if (assistant.guide && isShowAgain(text)) { await guideNext(true); return }
     if (assistant.guide && isNextStep(text)) { await guideNext(); return }
     if (intent.kind === 'chat' && needsConfirmation(record)) {
       holdForReview(text, 'Did I hear that right? I put your words in the message box. Fix anything that’s wrong, then press Send.')
@@ -374,6 +375,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       <span className="guide-hint">{assistant.highlight ? 'Click the outlined button, or press Next step when you’ve done it.' : 'Press Next step when you’ve done it, or say “next”.'}</span>
       <div className="guide-actions">
         <button type="button" className="primary-button" disabled={Boolean(active) || busy || capturing} onClick={() => void guideNext()}>Next step</button>
+        <button type="button" className="secondary-button" disabled={Boolean(active) || busy || capturing} onClick={() => void guideNext(true)}>Show me again</button>
         <button type="button" className="text-button" onClick={guideStop}>Stop guiding</button>
       </div>
     </div> : assistant?.highlight && <div className="highlight-status" role="status">
