@@ -10,6 +10,12 @@ import { LocalTranscriptStore } from './voice/transcript-store'
 import { ensureMicrophoneAccess } from './voice/microphone'
 import { installVoiceIpc } from './voice/ipc'
 import { voiceChannels } from '../shared/voice-contracts'
+
+/** Global talk shortcuts, tried in order; the first one macOS lets Triage register wins. */
+const VOICE_SHORTCUTS = [
+  { accelerator: 'Command+Shift+9', keys: ['⌘', '⇧', '9'] },
+  { accelerator: 'Control+Alt+Space', keys: ['⌃', '⌥', 'space'] }
+] as const
 import { PollyService } from './speech/polly'
 import { SpeechPreferences } from './speech/settings'
 import { installSpeechIpc } from './speech/ipc'
@@ -17,6 +23,7 @@ import { LocalRequestLog } from './logging/request-log'
 import { installRequestLogIpc } from './logging/ipc'
 import { createSimplifier } from './simplifier/index'
 import { SimplifierService } from './simplifier/service'
+import { chromeActiveTabUrl, currentTabReader } from './simplifier/current-tab'
 import { SimplifiedWindow } from './simplifier/window'
 import { ScreenSimplifier } from './simplifier/screen'
 import { ThompsonPolicy } from './simplifier/thompson'
@@ -89,6 +96,7 @@ let screens: ScreenService | undefined
 let contexts: ContextService | undefined
 let captures: PairedCapture | undefined
 let chatContexts: ContextService | undefined
+let tabContexts: ContextService | undefined
 let trust: TrustService | undefined
 let trustContexts: ContextService | undefined
 let trustTimer: ReturnType<typeof setInterval> | undefined
@@ -262,7 +270,7 @@ if (!app.requestSingleInstanceLock()) {
       () => removeSpeechIpc?.(), () => polly?.dispose(), () => removeRequestLogIpc?.(),
       () => globalShortcut.unregisterAll(), () => shakeMonitor?.dispose(),
       () => removeShakeListeners?.(), () => removeAssistantIpc?.(),
-      () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(), () => chatContexts?.dispose(),
+      () => assistant?.dispose(), () => screens?.dispose(), () => contexts?.dispose(), () => chatContexts?.dispose(), () => tabContexts?.dispose(),
       () => highlights?.dispose(), () => overlay?.dispose(),
       () => desktop?.dispose(), () => tray?.destroy(), () => screenSimplifier?.dispose(), () => simplifiedWindow?.dispose(), () => monitorWindow.dispose(), () => { void monitorServer.close() },
       () => {
@@ -315,6 +323,12 @@ if (!app.requestSingleInstanceLock()) {
           dialog.showErrorBox('Chrome Link Warnings paused', permissionDenied
             ? 'In System Settings → Privacy & Security → Accessibility, enable Triage, then turn Link Warnings back on.'
             : 'Run npm run phishing:build. If using Triage.app, rebuild the bundle before turning Link Warnings back on.')
+        }, (count) => {
+          // Spoken by the chat window. Wait while the user is talking, so Triage never records itself.
+          if (quitting || !desktop || desktop.chat.isDestroyed()) return false
+          if (voice && voice.snapshot().state !== 'idle') return false
+          desktop.chat.webContents.send(channels.linkWarning, count)
+          return true
         })
     }
     // Optional: without this module (or without Accessibility access) highlights use pixel boxes.
@@ -325,6 +339,8 @@ if (!app.requestSingleInstanceLock()) {
     // Its own instance: a chat message must not replace the snapshot paired with a pending screenshot.
     chatContexts = accessibility ? new ContextService(accessibility.port) : undefined
     trustContexts = accessibility ? new ContextService(accessibility.port) : undefined
+    // Reads only the address of the page behind Triage, for a bare "/simplify".
+    tabContexts = accessibility ? new ContextService(accessibility.port) : undefined
     // The trust graph is optional equipment: if it cannot be opened, everything else still works.
     try {
       const store = new TrustStore(join(directory, 'trust-graph.sqlite'))
@@ -362,14 +378,27 @@ if (!app.requestSingleInstanceLock()) {
     catch { console.warn('The record of what you have learned is unavailable.') }
     const simplifierParts = createSimplifier(directory, { ...(tutor ? { knowledge: (userId: string, pageType: PageType) => tutor!.features(userId, pageType) } : {}), monitor: learning, callbacks: learningCallbacks })
     closeSimplifierLog = simplifierParts.close
-    simplifiedWindow = new SimplifiedWindow((url) => { void simplifier?.open(url) },
+    simplifiedWindow = new SimplifiedWindow((url) => {
+      // A pressed link rebuilds the page it leads to; if Triage is busy, the link just opens in its browser.
+      simplifier?.linkFollowed()
+      try { if (!assistant) throw new Error('not ready'); assistant.simplifyLink(url) }
+      catch { void simplifier?.open(url) }
+    },
       () => { simplifier?.viewClosed(); screenSimplifier?.viewClosed() }, (link) => screenSimplifier?.handle(link))
     const policy = simplifierParts.policy
     simplifier = new SimplifierService({
       engine: simplifierParts.engine, presenter: simplifiedWindow, channel: configuredBrowserChannel(), demoHtml: demoPageHtml,
       log: simplifierParts.log, lockedLayouts: (userId) => (policy instanceof ThompsonPolicy ? policy.frozenArms(userId) : {}),
       observed: (decisionId) => screenSimplifier?.signals(decisionId),
-      reported: (userId, pageType, signals) => tutor?.observePage(userId, pageType, signals)
+      reported: (userId, pageType, signals) => tutor?.observePage(userId, pageType, signals),
+      // The window behind Triage (accessibility, no prompt), else Chrome's active tab (asks once to control Chrome).
+      currentTab: currentTabReader([
+        async () => {
+          if (!tabContexts) return undefined
+          try { return (await tabContexts.capture()).url } finally { tabContexts.clear() }
+        },
+        chromeActiveTabUrl()
+      ])
     })
     // Needs the accessibility module; its only powers over the real page are reading it and drawing a highlight.
     screenSimplifier = contexts && accessibility ? new ScreenSimplifier({
@@ -471,7 +500,10 @@ if (!app.requestSingleInstanceLock()) {
     })
     voice.subscribe((event: VoiceEvent) => {
       if (quitting || !desktop || desktop.chat.isDestroyed()) return
-      if (event.type === 'speech_state') desktop.chat.webContents.send(voiceChannels.state, event)
+      if (event.type === 'speech_state') {
+        desktop.setListening(event.state === 'listening')
+        desktop.chat.webContents.send(voiceChannels.state, event)
+      }
       else if (event.type === 'user_utterance') desktop.chat.webContents.send(voiceChannels.utterance, event)
       // event.type === 'transcript': a finished, stored recording. The agent layer hooks in here.
     })
@@ -540,6 +572,17 @@ if (!app.requestSingleInstanceLock()) {
     const registered = globalShortcut.register('CommandOrControl+Shift+Space', () => desktop?.openChat())
     desktop.setShortcutAvailable(registered)
     if (!registered) console.warn('Triage shortcut is unavailable; use the menu bar or Dock to restore it.')
+
+    // Talk from anywhere: press once to start listening, press again to stop. Global shortcuts only
+    // report key-down, so this is tap-to-toggle rather than hold-to-talk. The chat stays as it is:
+    // when it is closed, the hidden chat window records and answers out loud, hands-free.
+    const toggleVoice = (): void => {
+      if (!desktop || desktop.chat.isDestroyed()) return
+      desktop.chat.webContents.send(voiceChannels.shortcut)
+    }
+    const voiceShortcut = VOICE_SHORTCUTS.find((candidate) => globalShortcut.register(candidate.accelerator, toggleVoice))
+    desktop.setVoiceShortcut(voiceShortcut ? [...voiceShortcut.keys] : null)
+    if (!voiceShortcut) console.warn('Voice shortcut is unavailable; use Hold to talk in the chat.')
   }).catch((error: unknown) => {
     console.error('Triage startup failed:', error instanceof AppProblem ? error.code : 'startup')
     dialog.showErrorBox('Triage could not start', error instanceof AppProblem ? error.message :

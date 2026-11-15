@@ -4,9 +4,10 @@ import type { SimplifyResult } from './engine.ts'
 import type { SimplificationEngine } from './engine.ts'
 import { distillPage } from './distill.ts'
 import { renderSimplifiedView } from './render.ts'
+import { pageLinks } from './links.ts'
 import { AppProblem } from '../assistant/errors.ts'
 import type { LearningSummary } from '../../shared/assistant-contracts.ts'
-import type { PageType } from '../../shared/simplifier-contracts.ts'
+import type { DistilledPage, PageType } from '../../shared/simplifier-contracts.ts'
 import { describeLayout } from './arms.ts'
 import type { DecisionLog } from './decision-log.ts'
 import { EXPECTED_MS } from './reward.ts'
@@ -18,23 +19,105 @@ export interface SimplifiedPresenter {
   show(html: string, title: string): void
 }
 
-export interface SimplifyCommand {
-  /** An http(s) URL, or null for the built-in demo page. */
-  url: string | null
-}
+/**
+ * What to simplify:
+ * - current: the page open in the person's own browser right now ("/simplify")
+ * - url: a typed address ("/simplify example.com")
+ * - demo: the built-in example page ("/examplesimplify")
+ */
+export type SimplifyCommand = { kind: 'current' } | { kind: 'url'; url: string } | { kind: 'demo' }
 
-/** Parse "/simplify <url>" or "/simplify demo". Returns null when the text is not a simplify command. */
+export const NO_CURRENT_TAB = 'I couldn’t tell which web page you have open. Open the page in Chrome, click on it, then type /simplify again. You can also type /simplify followed by a web address.'
+
+/**
+ * Parse "/simplify", "/simplify <url>" or "/examplesimplify".
+ * Returns null when the text is not a simplify command.
+ */
 export function parseSimplifyCommand(text: string): SimplifyCommand | null {
-  const match = /^\/simplify(?:\s+(\S+))?\s*$/i.exec(text.trim())
+  const trimmed = text.trim()
+  if (/^\/examplesimplify\s*$/i.test(trimmed)) return { kind: 'demo' }
+  const match = /^\/simplify(?:\s+(\S+))?\s*$/i.exec(trimmed)
   if (!match) return null
   const target = match[1]
-  if (!target || target.toLowerCase() === 'demo') return { url: null }
+  if (!target) return { kind: 'current' }
+  // The old spelling of /examplesimplify, kept so it never tries to open https://demo/.
+  if (target.toLowerCase() === 'demo') return { kind: 'demo' }
   let url: URL
   try { url = new URL(/^[a-z][a-z0-9+.-]*:/i.test(target) ? target : 'https://' + target) }
-  catch { throw new AppProblem('invalid_url', 'That does not look like a web address. Try /simplify example.com or /simplify demo.') }
+  catch { throw new AppProblem('invalid_url', 'That does not look like a web address. Type /simplify on its own for the page you have open, /simplify example.com, or /examplesimplify for the example page.') }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new AppProblem('invalid_url', 'Only http and https pages can be simplified.')
-  return { url: url.href }
+  return { kind: 'url', url: url.href }
 }
+
+/**
+ * Opens a real website in Triage's Chromium. Busy sites (ads, trackers) may
+ * never fire "load", so the page is used once its HTML is ready and has had a
+ * few seconds to finish drawing. A failure becomes a plain message.
+ */
+async function loadPage(page: Page, url: string): Promise<void> {
+  try { await page.goto(url, { waitUntil: 'domcontentloaded' }) }
+  catch { throw new AppProblem('page_load', 'I couldn’t open ' + hostOf(url) + ' in Triage’s browser. Check your internet connection, then try /simplify again.') }
+  await page.waitForLoadState('load', { timeout: 8000 }).catch(() => {})
+  // Sites that redirect or draw everything with JavaScript can still be blank here.
+  const drawn = await page.waitForFunction(hasContent, undefined, { timeout: CONTENT_WAIT_MS }).then(() => true, () => false)
+  // Shops like Amazon blank and redraw the page after "load", then fill in product cards over a few seconds.
+  if (drawn) await page.waitForFunction(isSettled, SETTLE_QUIET_MS, { timeout: SETTLE_WAIT_MS, polling: 300 }).catch(() => {})
+}
+
+const SETTLE_QUIET_MS = 1200
+const SETTLE_WAIT_MS = 8000
+
+/**
+ * Runs inside the page, polled: true once it has links or controls and their
+ * number has not changed for `quietMs`. The running count is kept on window.
+ */
+function isSettled(quietMs: number): boolean {
+  const state = window as unknown as { __triageCount?: number; __triageSince?: number }
+  const count = document.querySelectorAll('a[href], button, input, select, textarea, h1, h2, h3').length
+  const now = Date.now()
+  if (state.__triageCount !== count) { state.__triageCount = count; state.__triageSince = now; return false }
+  return count > 0 && now - (state.__triageSince ?? now) >= quietMs
+}
+
+const CONTENT_WAIT_MS = 10000
+const READ_ATTEMPTS = 3
+const RETRY_WAIT_MS = 3000
+
+/** Runs inside the page: true once there is something a person could read or press. */
+function hasContent(): boolean {
+  const body = document.body
+  return Boolean(body && (body.innerText.trim().length > 0 || body.querySelector('a[href], button, input, select, textarea')))
+}
+
+const isEmpty = (page: DistilledPage) => page.elements.length === 0 && !page.mainText.trim()
+
+/**
+ * Reads the page, retrying when it is blank or a redirect replaces it
+ * mid-read ("Execution context was destroyed"). A page that stays blank is
+ * reported instead of being handed to the model, which would only describe
+ * an empty page.
+ */
+async function readPage(page: Page, signal: AbortSignal): Promise<DistilledPage> {
+  for (let attempt = 1; ; attempt++) {
+    let distilled: DistilledPage | undefined
+    try { distilled = await distillPage(page, PAGE_ELEMENT_LIMIT) }
+    catch (error) { if (attempt >= READ_ATTEMPTS) throw error }
+    if (distilled && !isEmpty(distilled)) return distilled
+    if (signal.aborted) throw new AppProblem('stopped', 'Simplification stopped.')
+    if (attempt >= READ_ATTEMPTS) {
+      throw new AppProblem('empty_page', 'The page from ' + hostOf(page.url()) + ' was still blank in Triage’s browser, so there was nothing to rebuild. It may still be loading, or the site may be asking Triage’s browser to prove it is a person. Look at the Triage browser window, then type /simplify again.')
+    }
+    await page.waitForLoadState('domcontentloaded', { timeout: RETRY_WAIT_MS }).catch(() => {})
+    await page.waitForFunction(hasContent, undefined, { timeout: RETRY_WAIT_MS }).catch(() => {})
+  }
+}
+
+function hostOf(url: string): string {
+  try { return new URL(url).host } catch { return 'that page' }
+}
+
+/** How many headings, links and controls are read from a page opened in Triage's browser (the schema allows 400). */
+const PAGE_ELEMENT_LIMIT = 400
 
 /** Implicit signals gathered while a simplified page is on screen. */
 interface ViewSession { decisionId: string; shownAt: number; closedAt?: number; linksFollowed: number }
@@ -57,6 +140,7 @@ export class SimplifierService {
   private readonly observed: (decisionId: string) => ObservedSignals | undefined
   private readonly reported: (userId: string, pageType: PageType, signals: ObservedSignals) => void
   private readonly now: () => number
+  private readonly currentTab: (own?: string) => Promise<string | undefined>
   private readonly sessions = new Map<string, ViewSession>()
   private current?: ViewSession
 
@@ -67,7 +151,11 @@ export class SimplifierService {
     observed?: (decisionId: string) => ObservedSignals | undefined
     /** Told what was observed on a page once its outcome is reported, e.g. to update the skill graph. */
     reported?: (userId: string, pageType: PageType, signals: ObservedSignals) => void
+    /** The address open in the person's own browser, for a bare "/simplify". */
+    /** `own` is the address already open in Triage's browser, which the person is probably not asking about. */
+    currentTab?: (own?: string) => Promise<string | undefined>
   }) {
+    this.currentTab = options.currentTab ?? (async () => undefined)
     this.reported = options.reported ?? (() => {})
     this.observed = options.observed ?? (() => undefined)
     this.log = options.log
@@ -98,22 +186,35 @@ export class SimplifierService {
   }
 
   async simplify(command: SimplifyCommand, userId: string, credentials: { key: string; model: string } | undefined, signal: AbortSignal): Promise<SimplifyResult> {
+    // Read the address before Triage's Chromium opens, so its window is never mistaken for the person's page.
+    const url = command.kind === 'url' ? command.url : command.kind === 'current' ? await this.currentTab(this.ownUrl()) : undefined
+    if (command.kind === 'current' && !url) throw new AppProblem('no_current_page', NO_CURRENT_TAB)
+    if (signal.aborted) throw new AppProblem('stopped', 'Simplification stopped.')
     const page = await this.page()
-    if (command.url) await page.goto(command.url, { waitUntil: 'load' })
+    if (url) await loadPage(page, url)
     else await page.setContent(this.demoHtml, { waitUntil: 'load' })
     if (signal.aborted) throw new AppProblem('stopped', 'Simplification stopped.')
     await page.bringToFront().catch(() => {})
-    const distilled = await distillPage(page)
+    // Busy sites (shops, portals) have hundreds of links; read up to the schema's limit so footer and menu links survive.
+    const distilled = await readPage(page, signal)
     const result = await this.engine.simplify({ page: distilled, userId, voiceEnabled: false, credentials, signal })
     const html = renderSimplifiedView(result.view, result.arm, distilled, {
       pageType: result.pageType, policyMode: result.mode, hiddenRemoved: distilled.stats.hiddenRemoved,
-      originalElements: distilled.stats.interactiveElements
+      originalElements: distilled.stats.interactiveElements,
+      links: pageLinks(distilled, result.view.actions.map((action) => action.elementId))
     })
     this.presenter.show(html, result.view.title)
     if (this.current && !this.current.closedAt) this.current.closedAt = this.now()
     this.current = { decisionId: result.decisionId, shownAt: this.now(), linksFollowed: 0 }
     this.sessions.set(result.decisionId, this.current)
     return result
+  }
+
+  /** What Triage's own browser page shows now, if it is a real site. */
+  private ownUrl(): string | undefined {
+    if (!this.before || this.before.isClosed()) return undefined
+    const url = this.before.url()
+    return /^https?:/i.test(url) ? url : undefined
   }
 
   /** Triage's own Chrome page, shared with task drivers (e.g. the pharmacy refill). */
@@ -166,9 +267,13 @@ export class SimplifierService {
     return this.learning(userId)
   }
 
-  /** Follow a link from the simplified view in the Chrome window. */
-  async open(url: string): Promise<void> {
+  /** A link in the simplified view was pressed (counted as a learning signal for the page it was on). */
+  linkFollowed(): void {
     if (this.current && !this.current.closedAt) this.current.linksFollowed++
+  }
+
+  /** Open a link in the Chrome window without rebuilding it (used when Triage is busy with another request). */
+  async open(url: string): Promise<void> {
     const page = await this.page()
     await page.goto(url, { waitUntil: 'load' }).catch(() => {})
     await page.bringToFront().catch(() => {})

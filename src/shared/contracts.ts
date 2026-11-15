@@ -5,7 +5,7 @@ import type { SkillsBridge } from './skill-contracts'
 import type { SpeechBridge } from './speech-contracts'
 import type { RequestLogBridge } from './request-log-contracts'
 
-export type CompanionMood = 'idle' | 'moving' | 'greeting' | 'thinking'
+export type CompanionMood = 'idle' | 'moving' | 'greeting' | 'thinking' | 'listening'
 
 export interface DesktopPoint { x: number; y: number }
 
@@ -14,6 +14,8 @@ export interface DesktopState {
   chatOpen: boolean
   mood: CompanionMood
   shortcutAvailable: boolean
+  /** The global talk shortcut as key labels (e.g. ["⌘", "⇧", "9"]), or null if it could not be registered. */
+  voiceShortcut: string[] | null
 }
 
 export const channels = {
@@ -26,7 +28,8 @@ export const channels = {
   menu: 'desktop:menu',
   dragStart: 'desktop:drag-start',
   dragEnd: 'desktop:drag-end',
-  pointer: 'desktop:pointer'
+  pointer: 'desktop:pointer',
+  linkWarning: 'desktop:link-warning'
 } as const
 
 export interface DesktopBridge extends AssistantBridge, VoiceBridge, SpeechBridge, RequestLogBridge, TrustBridge, SkillsBridge {
@@ -40,4 +43,6 @@ export interface DesktopBridge extends AssistantBridge, VoiceBridge, SpeechBridg
   beginDrag(point: DesktopPoint): void
   endDrag(allowClick?: boolean, point?: DesktopPoint): void
   setPointerInteractive(interactive: boolean): void
+  /** Chrome Link Warnings found phishing links that just appeared on screen (how many). */
+  onLinkWarning(listener: (count: number) => void): () => void
 }

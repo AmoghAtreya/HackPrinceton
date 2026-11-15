@@ -37,6 +37,13 @@ export function prepareSpeech(text: string, targetChars = SPEECH_TARGET_CHARS): 
   return used < sentences.length || spoken.endsWith('…') ? `${spoken} ${REST_ON_SCREEN}` : spoken
 }
 
+/** Chrome Link Warnings found phishing links on the page, said out loud. */
+export function phishingSpeech(count: number): string {
+  return count === 1
+    ? 'Be careful. This page has a link that may be a scam. I’ve marked it on your screen. Please don’t click it.'
+    : `Be careful. This page has ${count} links that may be scams. I’ve marked them on your screen. Please don’t click them.`
+}
+
 /** A failed request, spoken briefly. */
 export function failureSpeech(reason: string | null | undefined): string {
   const detail = reason ? prepareSpeech(reason, 160) : ''

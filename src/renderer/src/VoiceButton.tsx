@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type KeyboardEvent } from 'react'
 import type { TranscriptRecord, VoiceBridge } from '../../shared/voice-contracts'
 import { displayError, unwrap } from './assistant-ui'
 import { MicrophoneCapture, MicrophoneProblem } from './voice/microphone'
 import { speechPlayer, type PlaybackSnapshot } from './voice/speech-player'
+import { chime } from './voice/chime'
 
 type Phase = 'idle' | 'starting' | 'recording' | 'finishing'
 
@@ -15,7 +16,12 @@ const TAP_MS = 400
  * The finished transcript is stored by the main process; nothing is sent to
  * the assistant yet.
  */
-export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onTranscript?: (record: TranscriptRecord) => void }) {
+/** Lets the global voice shortcut drive the button: start listening, or stop if already listening. */
+export interface VoiceButtonHandle { toggle(): void }
+
+export const VoiceButton = forwardRef<VoiceButtonHandle, { bridge: VoiceBridge; onTranscript?: (record: TranscriptRecord) => void; shortcut?: string[] | null
+  /** The chat is closed: problems are spoken, because nobody can see them. */
+  handsFree?: boolean }>(function VoiceButton({ bridge, onTranscript, shortcut, handsFree = false }, ref) {
   const [phase, setPhaseState] = useState<Phase>('idle')
   const [caption, setCaption] = useState('')
   const [level, setLevel] = useState(0)
@@ -34,6 +40,15 @@ export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onT
   const partial = useRef('')
   const transcriptListener = useRef(onTranscript)
   transcriptListener.current = onTranscript
+
+  const handsFreeRef = useRef(handsFree)
+  handsFreeRef.current = handsFree
+
+  /** Shows a recording problem, and says it aloud when the chat is closed. */
+  function fail(message: string) {
+    setError(message)
+    if (handsFreeRef.current) void speechPlayer.speak(message)
+  }
 
   function setPhase(next: Phase) { phaseRef.current = next; setPhaseState(next) }
 
@@ -67,7 +82,7 @@ export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onT
       if (attempt.current !== mine) return
       session.current = null; microphone.current = null
       setPhase('idle')
-      setError(problem instanceof MicrophoneProblem ? problem.message : displayError(problem))
+      fail(problem instanceof MicrophoneProblem ? problem.message : displayError(problem))
     }
   }
 
@@ -82,11 +97,11 @@ export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onT
       if (!id) return
       const record = unwrap(await bridge.finishVoice(id))
       setLast(record)
-      if (record.error) setError(record.error)
-      else if (!record.text) setError('I didn’t catch anything. Try again a little closer to the microphone.')
+      if (record.error) fail(record.error)
+      else if (!record.text) fail('I didn’t catch anything. Try again a little closer to the microphone.')
       transcriptListener.current?.(record)
     } catch (problem) {
-      setError(displayError(problem))
+      fail(displayError(problem))
     } finally {
       session.current = null
       setCaption('')
@@ -121,6 +136,15 @@ export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onT
     if (Date.now() - pressedAt.current < TAP_MS) { tapMode.current = true; return }
     void end()
   }
+
+  /** The keyboard shortcut works like a tap: press once to start, press again to stop. */
+  function toggle() {
+    speechPlayer.stop()
+    if (phaseRef.current === 'idle') { tapMode.current = true; chime('start'); void begin() }
+    else if (phaseRef.current === 'recording' || phaseRef.current === 'starting') { chime('stop'); void end() }
+  }
+
+  useImperativeHandle(ref, () => ({ toggle }))
 
   useEffect(() => speechPlayer.subscribe(setPlayback), [])
 
@@ -175,6 +199,8 @@ export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onT
       onKeyDown={onKeyDown} onKeyUp={onKeyUp}>
       <span className="talk-icon" aria-hidden="true">{recording ? '■' : '●'}</span>{label}
     </button>
+    {phase === 'idle' && shortcut && <p className="voice-shortcut shortcut">or press {shortcut.map((key) => <kbd key={key}>{key}</kbd>)} from any app</p>}
+    {recording && tapMode.current && shortcut && <p className="voice-shortcut shortcut">Press {shortcut.map((key) => <kbd key={key}>{key}</kbd>)} again to stop</p>}
     {recording && <div className="talk-level" aria-hidden="true"><span style={{ width: Math.min(100, Math.round(level * 400)) + '%' }} /></div>}
     {(phase !== 'idle' || caption) && <p className="voice-caption" aria-live="polite">{caption || (recording ? 'Go ahead, I’m listening.' : '')}</p>}
     {phase === 'idle' && last?.text && !error && <p className="voice-last">Heard: “{last.text}”
@@ -191,4 +217,4 @@ export function VoiceButton({ bridge, onTranscript }: { bridge: VoiceBridge; onT
     {playback.notice && <p className="notice warning voice-notice" role="status">{playback.notice}
       <button type="button" className="text-button" onClick={() => speechPlayer.dismissNotice()}>Dismiss</button></p>}
   </section>
-}
+})

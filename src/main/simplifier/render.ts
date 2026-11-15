@@ -1,3 +1,4 @@
+import type { LinkGroup } from './links.ts'
 import { RiskTier, type DistilledPage, type PresentationArm, type SimplifiedView } from '../../shared/simplifier-contracts.ts'
 
 const escape = (text: string) => text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
@@ -50,6 +51,8 @@ export interface RenderMeta {
   hiddenRemoved: number
   originalElements: number
   originalUrl?: string
+  /** The original page's links, grouped (pages opened in Triage's own browser only). */
+  links?: LinkGroup[]
 }
 
 /** Only http(s) links from the original page become clickable; everything else renders as a plain button. */
@@ -59,6 +62,20 @@ function safeHref(href: string | undefined): string | undefined {
     const url = new URL(href)
     return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : undefined
   } catch { return undefined }
+}
+
+/** Groups people need straight away start open; long lists start folded so the page stays calm. */
+const OPEN_GROUPS = new Set<LinkGroup['id']>(['account', 'menu'])
+
+function renderLinks(groups: LinkGroup[] | undefined): string {
+  if (!groups?.length) return ''
+  return `<section class="links" aria-label="Links from the original page">
+  <h2>Links from the original page</h2>
+  ${groups.map((group) => `<details class="group"${OPEN_GROUPS.has(group.id) ? ' open' : ''}>
+    <summary>${escape(group.title)} <span class="count">(${group.links.length})</span></summary>
+    <ul>${group.links.map((link) => `<li><a class="link" href="${escape(link.href)}">${escape(link.label)}${link.externalHost ? `<span class="away">Goes to another website: ${escape(link.externalHost)}</span>` : ''}</a></li>`).join('')}</ul>
+  </details>`).join('\n  ')}
+</section>`
 }
 
 /**
@@ -109,6 +126,16 @@ export function renderSimplifiedView(view: SimplifiedView, arm: PresentationArm,
   .warn { font-weight: 700; font-size: 0.8em; background: var(--warnbg); color: var(--warn); border-radius: 10px; padding: 6px 12px; align-self: flex-start; }
   .tier { font-weight: 600; font-size: 0.7em; background: #ffffff26; border-radius: 999px; padding: 2px 10px; align-self: flex-start; }
   .help { position: fixed; right: 24px; bottom: 24px; background: #b3261e; color: #fff; border: 0; border-radius: 999px; padding: 16px 28px; font: inherit; font-weight: 700; }
+  .links { margin-top: 36px; }
+  .links h2 { font-size: 1.15em; margin: 0 0 12px; }
+  .group { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 4px 20px; margin-bottom: 14px; }
+  .group summary { cursor: pointer; font-weight: 700; padding: 14px 0; }
+  .group .count { font-weight: 400; color: var(--muted); }
+  .group ul { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 8px; }
+  .link { display: flex; flex-direction: column; gap: 2px; color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; padding: 10px 12px; border-radius: 10px; }
+  .link:hover { background: var(--bg); }
+  .link:focus-visible { outline: 4px solid #f2b705; outline-offset: 2px; }
+  .away { font-size: 0.75em; font-weight: 600; color: var(--warn); text-decoration: none; }
   .meta { margin-top: 40px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 12px; }
   .meta a { color: var(--accent); }
 </style></head>
@@ -120,6 +147,7 @@ export function renderSimplifiedView(view: SimplifiedView, arm: PresentationArm,
   ${view.concerns.length ? `<div class="concerns"><strong>Be careful:</strong><ul>${view.concerns.map((c) => `<li>${escape(c)}</li>`).join('')}</ul></div>` : ''}
   ${view.narration ? `<div class="narration">${escape(view.narration)}</div>` : ''}
   <div class="actions">${actions}</div>
+  ${screen ? '' : renderLinks(meta.links)}
   <div class="meta">
     Layout ${escape(arm.id)}: ${arm.fontScale}× text, up to ${arm.maxActions} buttons, plain language ${arm.plainLanguage ? 'on' : 'off'}, voice ${arm.voiceNarration ? 'on' : 'off'} ·
     chosen by policy (${escape(meta.policyMode)}) · page type: ${escape(meta.pageType)} · written by: ${view.source === 'llm' ? 'Claude' : 'rules (no AI)'} ·

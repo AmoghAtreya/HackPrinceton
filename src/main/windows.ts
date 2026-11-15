@@ -18,7 +18,9 @@ export class DesktopWindows {
   readonly chat: BrowserWindow
   private mood: CompanionMood = 'greeting'
   private thinking = false
+  private listening = false
   private shortcutAvailable = false
+  private voiceShortcut: string[] | null = null
   private drag?: DragSession
   private dragTimer?: ReturnType<typeof setInterval>
   private greetingTimer?: ReturnType<typeof setTimeout>
@@ -57,7 +59,8 @@ export class DesktopWindows {
       title: 'Triage — Chat', show: false, frame: false, transparent: true,
       resizable: false, maximizable: false, minimizable: false,
       fullscreenable: false, hasShadow: false, alwaysOnTop: true,
-      webPreferences
+      // The voice shortcut records, answers and speaks from the chat window while it is hidden.
+      webPreferences: { ...webPreferences, backgroundThrottling: false }
     })
     for (const window of [this.companion, this.chat]) {
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -92,7 +95,7 @@ export class DesktopWindows {
     ])
     this.show()
     this.greetingTimer = setTimeout(() => {
-      this.mood = this.thinking ? 'thinking' : 'idle'
+      this.mood = this.restingMood()
       this.publish()
     }, 1800)
   }
@@ -117,7 +120,8 @@ export class DesktopWindows {
       visible: this.companion.isVisible(),
       chatOpen: this.chat.isVisible(),
       mood: this.mood,
-      shortcutAvailable: this.shortcutAvailable
+      shortcutAvailable: this.shortcutAvailable,
+      voiceShortcut: this.voiceShortcut
     }
   }
 
@@ -126,10 +130,27 @@ export class DesktopWindows {
     this.publish()
   }
 
+  setVoiceShortcut(keys: string[] | null): void {
+    this.voiceShortcut = keys
+    this.publish()
+  }
+
   setThinking(value: boolean): void {
     this.thinking = value
-    if (!this.drag?.moved) this.mood = value ? 'thinking' : 'idle'
+    if (!this.drag?.moved) this.mood = this.restingMood()
     this.publish()
+  }
+
+  /** The microphone is on: the companion shows it, since the chat may be closed. */
+  setListening(value: boolean): void {
+    if (this.listening === value) return
+    this.listening = value
+    if (!this.drag?.moved) this.mood = this.restingMood()
+    this.publish()
+  }
+
+  private restingMood(): CompanionMood {
+    return this.listening ? 'listening' : this.thinking ? 'thinking' : 'idle'
   }
 
   private publish(): void {
@@ -267,7 +288,7 @@ export class DesktopWindows {
     this.dragTimer = undefined
     this.drag = undefined
     if (!drag) return
-    this.mood = this.thinking ? 'thinking' : 'idle'
+    this.mood = this.restingMood()
     const [x, y] = this.companion.getPosition()
     const cursor = finalPoint ?? screen.getCursorScreenPoint()
     const inside = allowClick && cursor.x >= x && cursor.x < x + COMPANION_SIZE.width &&
