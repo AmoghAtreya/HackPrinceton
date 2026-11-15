@@ -3,6 +3,7 @@ import type { TranscriptRecord, VoiceBridge } from '../../shared/voice-contracts
 import { displayError, unwrap } from './assistant-ui'
 import { MicrophoneCapture, MicrophoneProblem } from './voice/microphone'
 import { speechPlayer, type PlaybackSnapshot } from './voice/speech-player'
+import { chime } from './voice/chime'
 
 type Phase = 'idle' | 'starting' | 'recording' | 'finishing'
 
@@ -128,8 +129,8 @@ export const VoiceButton = forwardRef<VoiceButtonHandle, { bridge: VoiceBridge; 
   /** The keyboard shortcut works like a tap: press once to start, press again to stop. */
   function toggle() {
     speechPlayer.stop()
-    if (phaseRef.current === 'idle') { tapMode.current = true; void begin() }
-    else if (phaseRef.current === 'recording' || phaseRef.current === 'starting') void end()
+    if (phaseRef.current === 'idle') { tapMode.current = true; chime('start'); void begin() }
+    else if (phaseRef.current === 'recording' || phaseRef.current === 'starting') { chime('stop'); void end() }
   }
 
   useImperativeHandle(ref, () => ({ toggle }))
