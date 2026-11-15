@@ -104,7 +104,8 @@ const bridge: DesktopBridge = {
   openMenu: () => ipcRenderer.send(channels.menu),
   beginDrag: (point) => ipcRenderer.send(channels.dragStart, point),
   endDrag: (allowClick = true, point) => ipcRenderer.send(channels.dragEnd, allowClick, point),
-  setPointerInteractive: (interactive) => ipcRenderer.send(channels.pointer, interactive)
+  setPointerInteractive: (interactive) => ipcRenderer.send(channels.pointer, interactive),
+  simplifyPage: () => ipcRenderer.send(channels.simplifyPage)
 }
 
 if (process.argv.includes('--triage-overlay')) {

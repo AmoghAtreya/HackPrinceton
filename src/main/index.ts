@@ -169,6 +169,12 @@ function trusted(event: IpcMainEvent | IpcMainInvokeEvent): boolean {
   }
 }
 
+/** "Simplify this page" from the menu bar or the companion's Simplify button. It never clicks anything on the page. */
+function simplifyPageInFront(): void {
+  try { assistant?.simplifyPage() }
+  catch (error) { dialog.showErrorBox('Triage could not simplify this page', publicProblem(error).message) }
+}
+
 function buildControls(): Electron.Menu {
   return Menu.buildFromTemplate([
     { label: 'Show Triage', click: () => desktop?.show() },
@@ -182,10 +188,7 @@ function buildControls(): Electron.Menu {
     },
     {
       // Reads the page in front and shows a simpler version. It never clicks anything on the page.
-      label: 'Simplify this page', enabled: Boolean(screenSimplifier), click: () => {
-        try { assistant?.simplifyPage() }
-        catch (error) { dialog.showErrorBox('Triage could not simplify this page', publicProblem(error).message) }
-      }
+      label: 'Simplify this page', enabled: Boolean(screenSimplifier), click: simplifyPageInFront
     },
     {
       label: 'Chrome Link Warnings (Preview)', type: 'checkbox', checked: phishingEnabled,
@@ -238,6 +241,9 @@ function installIpc(): void {
         (point === undefined || isPoint(point))) {
       desktop?.finishDrag(allowClick, point)
     }
+  })
+  ipcMain.on(channels.simplifyPage, (event) => {
+    if (trusted(event) && event.sender === desktop?.companion.webContents) simplifyPageInFront()
   })
   ipcMain.on(channels.pointer, (event, interactive: unknown) => {
     if (trusted(event) && event.sender === desktop?.companion.webContents && typeof interactive === 'boolean') {
