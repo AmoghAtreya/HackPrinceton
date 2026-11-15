@@ -50,3 +50,12 @@ test('Claude is asked for only the next step, with the goal and earlier steps qu
   assert.equal(reply.elementId, 'e1')
   assert.equal(reply.done, false)
 })
+
+test('router JSON wrapped in a sentence or fences is still read; bad shapes still fail', async () => {
+  const { parseRoute } = await import('../src/main/assistant/model.ts')
+  assert.deepEqual(parseRoute('{"kind":"guide","goal":"open the terminal"}'), { kind: 'guide', goal: 'open the terminal' })
+  assert.deepEqual(parseRoute('Here you go:\n```json\n{"kind":"guide","goal":"open the {terminal}"}\n```'), { kind: 'guide', goal: 'open the {terminal}' })
+  assert.deepEqual(parseRoute('Sure! {"kind":"reply","text":"Hi \\"there\\" {x}"} Hope that helps.'), { kind: 'reply', text: 'Hi "there" {x}' })
+  assert.throws(() => parseRoute('no json here'))
+  assert.throws(() => parseRoute('{"kind":"guide","goal":"x","steps":["a"]}'), 'extra fields are still refused')
+})

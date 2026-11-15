@@ -1,11 +1,11 @@
 import { z } from 'zod'
-import { routeSchema, type AssistantRoute } from '../../shared/flight-contracts.ts'
+import type { AssistantRoute } from '../../shared/flight-contracts.ts'
 import type { ModelChoice } from '../../shared/assistant-contracts.ts'
 import type { GuideProgress, HighlightReply, LocateElement } from '../../shared/highlight-contracts.ts'
 import type { ScreenImage } from '../../shared/screen-contracts.ts'
 import { parseGuideReply, parseHighlightReply } from '../screen/coordinates.ts'
 import { AppProblem } from './errors.ts'
-import { SYSTEM, analysisSystemPrompt, guideSystemPrompt, routeSystemPrompt, screenSystemPrompt, screenUserText, withScreenContext, withTrustedContext, type DialogueTurn, type ModelGateway } from './model.ts'
+import { SYSTEM, analysisSystemPrompt, guideSystemPrompt, parseRoute, routeSystemPrompt, screenSystemPrompt, screenUserText, withScreenContext, withTrustedContext, type DialogueTurn, type ModelGateway } from './model.ts'
 import type { ScreenAnalysisKind } from '../../shared/screen-analysis-contracts.ts'
 import { modelSchema } from './schemas.ts'
 
@@ -190,7 +190,7 @@ export class GeminiGateway implements ModelGateway {
   async route(key: string, model: string, messages: DialogueTurn[], signal: AbortSignal, screenContext?: string, trustedContext?: string): Promise<AssistantRoute> {
     const { text, finishReason } = await this.generate(key, model, withTrustedContext(routeSystemPrompt(), trustedContext), withScreenContext(messages, screenContext), signal, { json: true })
     if (finishReason && finishReason !== 'STOP') throw new AppProblem('invalid_route', 'The reply was incomplete. Please try again.')
-    try { return routeSchema.parse(JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, ''))) }
+    try { return parseRoute(text) }
     catch { throw new AppProblem('invalid_route', 'Gemini returned an invalid request. No browser action was started. Please rephrase.') }
   }
 
