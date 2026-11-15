@@ -458,7 +458,7 @@ export function AssistantPanel({ bridge, state }: { bridge: DesktopBridge; state
       <form className="composer" onSubmit={submit}>
         <label className="sr-only" htmlFor="message">Message Triage</label>
         <textarea ref={input} id="message" value={draft} maxLength={4000} rows={2}
-          placeholder={capture && highlightMode ? 'Which control should I find?' : 'Ask Triage anything, or /simplify a web address…'} disabled={Boolean(active) || busy}
+          placeholder={capture && highlightMode ? 'Which control should I find?' : 'Ask Triage anything, or /simplify the page you have open…'} disabled={Boolean(active) || busy}
           onChange={(event) => { setDraft(event.target.value); if (!event.target.value.trim()) setVoiceNotice('') }}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {

@@ -41,7 +41,7 @@ export function LearningHistory({ bridge, revision }: { bridge: AssistantBridge;
       {summary.locked.length > 0 && <ul className="learning-locked">
         {summary.locked.map((item) => <li key={item.pageType}>Settled on for {PAGE_TYPES[item.pageType] ?? item.pageType}: {item.layout}</li>)}
       </ul>}
-      {!summary.entries.length && <div className="empty-history">No simplified pages yet.<br />Try <code>/simplify demo</code> in the chat.</div>}
+      {!summary.entries.length && <div className="empty-history">No simplified pages yet.<br />Open a page in Chrome and type <code>/simplify</code> in the chat, or try <code>/examplesimplify</code>.</div>}
       <div className="history-list">
         {summary.entries.map((entry) => <div className="history-card learning-card" key={entry.decisionId}>
           <div className="learning-body">
