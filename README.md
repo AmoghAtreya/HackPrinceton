@@ -6,11 +6,27 @@ HackPrinceton Fall 2026 · **Main track: Education** · Sponsor challenges: [Per
 
 ---
 
-## The problem
+## Why we built it
 
-Many older adults know *what* they want to do: track a package, reorder pills, check Medicare. What they can't do is find *where* to click on a cluttered page. They get overwhelmed, give up, or wait for a family member or technician to do it for them. Each time someone else does it, they learn nothing for next time. They are also the people scammers target most.
+Every one of us has watched a grandparent struggle with technology. Doctor's appointments, prescription refills, Medicare and package tracking have all moved online, but most websites are built for people who already know how to use websites. Many older adults know *what* they want to do. What they can't find is *where* to click on a cluttered page. They get overwhelmed, give up, or wait for a family member or technician to do it for them, and each time someone else does it, they learn nothing for next time.
 
-We called a senior-living facility to check this ([interview transcript](docs/Skyline_Health_Transcript.md)). About half the residents use computers. Most of their questions are "where to go or what to click on", not broken machines. The technician isn't there every day, so residents often wait. Some residents follow spoken directions fine, and others need someone to point. Staff added that scam warnings should say *why* something is suspicious, not just "don't click".
+They are also the people scammers target most: phishing links, fake "your account is locked" pop-ups, texts about packages that were never sent, messages pretending to be a grandchild in trouble. In 2025, Americans 60 and older reported **$7.7 billion** in internet crime losses to the FBI, about 60% more than the year before ([FBI IC3 via AARP](https://www.aarp.org/money/scams-fraud/fbi-ftc-report-2025-losses)). Their reported fraud losses to the FTC have grown about five-fold since 2020, to over $3 billion, and losses over $100,000 are only about 6% of reports but 70% of the money lost ([FTC report to Congress](https://ppc.land/older-americans-lost-3-billion-to-fraud-in-2025-ftc-tells-congress/)). Many of these scams arrive exactly where Triage works: texts, emails, pop-ups and messages pretending to be a trusted company or agency.
+
+So Triage **keeps you safe first, then helps you get things done, and teaches you along the way.**
+
+### What a senior care facility told us
+
+A story from our own families isn't proof, so during the hackathon we called **Skyline Health Services**, a senior care facility in Seattle, and spoke with a member of the front desk staff ([full transcript](docs/Skyline_Health_Transcript.md)).
+
+> "A lot of the time it's just not knowing how to use something. Like where to go or what to click on."
+
+- **About half of residents use computers**, and comfort varies a lot. Unfamiliar tasks are where people get stuck.
+- **Help isn't always there.** The technician is "not here every day. That's kind of the problem sometimes." When nobody else knows, residents wait.
+- **Telling isn't always enough.** Some residents follow instructions, but "others might need you to actually point it out."
+- **Scams are a real but occasional worry.** A warning alone isn't enough: "they'd probably want to know why, too."
+- **Don't add another confusing app.** "If they're already having trouble with a computer, using another application would be difficult… You'd have to make it pretty simple for them."
+
+That shaped the product. Triage works **on the screen and websites residents already use**, pointing at the real button instead of sending them somewhere new. There's nothing to learn: you talk to it or shake the mouse. It covers the technician gap for "where do I click?" at any hour. Every scam warning explains why. Staff or family can set it up once, including the resident's real contacts.
 
 ## Our goal: help people learn, not just get it done
 
