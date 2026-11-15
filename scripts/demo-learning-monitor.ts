@@ -28,7 +28,10 @@ import { DecisionLog } from '../src/main/simplifier/decision-log.ts'
 import { ThompsonPolicy } from '../src/main/simplifier/thompson.ts'
 import { SimplificationEngine } from '../src/main/simplifier/engine.ts'
 import { distillPage } from '../src/main/simplifier/distill.ts'
-import { armById } from '../src/main/simplifier/arms.ts'
+import { armById, describeLayout } from '../src/main/simplifier/arms.ts'
+import { classifyPage, rankElements } from '../src/main/simplifier/classify.ts'
+import { rulesView } from '../src/main/simplifier/view.ts'
+import { renderSimplifiedView } from '../src/main/simplifier/render.ts'
 
 const { values: args } = parseArgs({ options: {
   share: { type: 'boolean', default: false },
@@ -103,6 +106,8 @@ const likes = (armId: string) => {
   const arm = armById(armId)
   return (arm.fontScale === 2 ? 0.45 : arm.fontScale === 1.5 ? 0.2 : 0) + (arm.maxActions === 3 ? 0.3 : 0) + (arm.plainLanguage ? 0.1 : 0)
 }
+let latestShares: Record<string, number> = {}
+const stopWatching = monitor.subscribe((event) => { if (event.type === 'bandit') latestShares = event.shares })
 for (let round = 1; round <= 12; round++) {
   const result = await engine.simplify({ page: distilled, userId: 'margaret', voiceEnabled: false })
   const helpful = Math.random() < 0.15 + likes(result.arm.id)
@@ -113,6 +118,17 @@ for (let round = 1; round <= 12; round++) {
   console.log(`  round ${String(round).padStart(2)}: layout ${result.arm.id} (${result.mode}) → ${helpful ? 'helpful' : 'not helpful'}, reward ${Math.round((reward ?? 0) * 100)}%`)
   await pause(2200)
 }
+
+// 4. Show the news page in the layout the learner now favours: the arm with
+// the largest share of posterior draws, the same odds the monitor's bars show.
+const odds = Object.entries(latestShares).sort((a, b) => b[1] - a[1])
+const favourite = armById(odds[0]?.[0] ?? 'a01')
+say(`Showing the news page as Margaret will now see it: ${favourite.id} (${describeLayout(favourite.id)}), ${Math.round((odds[0]?.[1] ?? 0) * 100)}% of the learner's odds`)
+await taskPage.setContent(renderSimplifiedView(rulesView(distilled, rankElements(distilled), favourite), favourite, distilled, {
+  pageType: classifyPage(distilled), policyMode: 'exploit', hiddenRemoved: distilled.stats.hiddenRemoved,
+  originalElements: distilled.stats.interactiveElements
+}))
+stopWatching()
 
 say('Done. The monitor stays open; press Ctrl+C or close the windows to finish.')
 const finish = async () => {
