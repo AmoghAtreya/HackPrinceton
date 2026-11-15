@@ -67,6 +67,12 @@ function Companion({ bridge, state }: { bridge: DesktopBridge; state: DesktopSta
   }
 
   return <main className="companion-stage">
+    {/* Always takes its space, so Triage does not jump when the button comes and goes. */}
+    <div className="companion-actions">
+      {state.chromeFront && <button type="button" className="companion-simplify" data-interactive
+        title="Show a simpler version of this page" disabled={state.mood === 'thinking'}
+        onClick={() => bridge.simplifyPage()}>Simplify</button>}
+    </div>
     <button className="companion-button" data-interactive
       aria-label="Open Triage chat. Drag to move. Right-click for controls."
       aria-expanded={state.chatOpen}

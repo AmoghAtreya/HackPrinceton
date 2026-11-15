@@ -16,6 +16,11 @@ button { cursor: pointer; }
 button:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 button:disabled { cursor: default; }
 .companion-stage { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; user-select: none; }
+.companion-actions { display: flex; align-items: flex-end; justify-content: center; height: 30px; flex-shrink: 0; }
+.companion-simplify { padding: 5px 13px; border: 0; border-radius: 999px; background: var(--accent); color: #fffaf3; font-size: 12px; font-weight: 650; box-shadow: 0 2px 6px #502a172e; animation: simplify-in .18s ease-out; }
+.companion-simplify:not(:disabled):hover { background: #c65730; }
+.companion-simplify:disabled { opacity: .55; }
+@keyframes simplify-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .companion-button { display: block; width: 112px; height: 110px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: grab; touch-action: none; }
 .companion-button:active { cursor: grabbing; }
 .companion-button:hover .character { filter: drop-shadow(0 3px 4px #502a1720); }
