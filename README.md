@@ -309,6 +309,51 @@ When you ask how to do something, Triage skips the steps you already do comforta
 
 The page simplifier's learner now uses this per-skill knowledge instead of generic user traits. That is a new feature layout (version 2). Decisions and learned state from version 1 are kept as they were and are never trained on, loaded or evaluated together with version 2.
 
+## The math behind the learning
+
+### Knowing what you know: Bayesian Knowledge Tracing
+
+Each everyday skill (writing an email, choosing a file, attaching a photo…) has a probability $P(L)$ that the person knows it. After each chance to use it, Triage updates the estimate, then allows for learning:
+
+$$
+P(L \mid \text{right}) = \frac{P(L)(1-s)}{P(L)(1-s) + (1-P(L))\,g}, \qquad
+P(L) \leftarrow P(L \mid \text{obs}) + \big(1 - P(L \mid \text{obs})\big)\,t
+$$
+
+The one change from textbook BKT: slip $s$, guess $g$ and learning rate $t$ depend on the **kind of evidence** ([src/main/skills/bkt.ts](src/main/skills/bkt.ts)). Clicking a button Triage just outlined proves much less than finishing a task alone.
+
+| Evidence | What counts as right | $s$ | $g$ | $t$ |
+|---|---|---|---|---|
+| unaided | finished the task without being shown | 0.10 | 0.15 | 0.10 |
+| pointed | clicked the outlined control on the first try | 0.10 | 0.55 | 0.20 |
+| asked | did it from memory (asking how counts as wrong) | 0.15 | 0.30 | 0.10 |
+| implied | did a harder skill that needs this one | 0.05 | 0.50 | 0 |
+
+A skill counts as known at $P(L) \ge 0.85$ and as being learned at $P(L) \ge 0.45$.
+
+### A layout that fits each person: hierarchical Thompson sampling
+
+How a simplified page is shown (text size 1.25×–2×, 3 or 6 buttons, plain wording, read-aloud, terse or step-by-step) is one of 10 layouts ([src/main/simplifier/arms.ts](src/main/simplifier/arms.ts)). Triage picks one with **hierarchical Bayesian linear Thompson sampling** ([src/main/simplifier/thompson.ts](src/main/simplifier/thompson.ts)). Each layout $a$ has a population model, and each user's model starts from the population's current estimate $\hat m_a$:
+
+$$
+r \approx \theta_{u,a}^{\top} x, \qquad
+\theta_a \sim \mathcal{N}\!\left(m_a,\ \lambda_{\text{pop}}^{-1} I\right), \qquad
+\theta_{u,a} \sim \mathcal{N}\!\left(\hat m_a,\ \lambda_{\text{user}}^{-1} I\right), \qquad
+a^{*} = \arg\max_a \tilde\theta_{u,a}^{\top} x
+$$
+
+Here $x$ is an 18-number description of the situation ([features.ts](src/main/simplifier/features.ts)): page type, how complex the page is, time of day, whether voice is on, recent errors, and what the person knows about the skill this kind of page needs (from the skill graph), and $\tilde\theta_{u,a}$ is a sample from the user's posterior. A new user starts from what works for most people and drifts toward their own preferences. Only sufficient statistics are stored. In this build all data stays on one Mac, so "population" means the people who use Triage on that Mac.
+
+### The reward
+
+When a person rates a simplified page, Triage combines the rating with what it saw them do ([src/main/simplifier/reward.ts](src/main/simplifier/reward.ts)):
+
+$$
+r = \operatorname{clip}_{[0,1]}\!\Big(0.5\,c + 0.2\,(1 - \hat t) + 0.15\,b + 0.15\,h \;-\; 0.25\,o \;-\; 0.05\,\min(k, 3)\Big)
+$$
+
+$c$ is task completed, $\hat t$ is time spent relative to what's typical for that kind of page, $b$ is no backtracking (going back once counts half), $h$ is the thumbs-up (neutral if skipped), $o$ is pressing "Show original page", and $k$ counts repeat requests.
+
 ## Memory and multi-step tasks (LangChain + LangGraph)
 
 **Memory.** Say "remember that my pharmacy is CareWell on Main Street" (or `/remember …`) and Triage saves it to `memory.sqlite` on this Mac. Memories are stored in a LangChain vector store and found with a LangChain `VectorStoreRetriever`. The embeddings are computed **on this Mac** (feature hashing with a small synonym table for health, money and errand words, so "pills" finds "medication"), because memories hold personal details. Any LangChain `Embeddings` can replace it later without changing the store or the tasks. **History** lists what Triage remembers, and you can remove any of it.
