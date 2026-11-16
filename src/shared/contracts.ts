@@ -16,6 +16,8 @@ export interface DesktopState {
   shortcutAvailable: boolean
   /** The global talk shortcut as key labels (e.g. ["⌘", "⇧", "9"]), or null if it could not be registered. */
   voiceShortcut: string[] | null
+  /** Google Chrome is the app in front and the page in front can be simplified: the companion shows a Simplify button. */
+  chromeFront: boolean
 }
 
 export const channels = {
@@ -29,6 +31,7 @@ export const channels = {
   dragStart: 'desktop:drag-start',
   dragEnd: 'desktop:drag-end',
   pointer: 'desktop:pointer',
+  simplifyPage: 'desktop:simplify-page',
   linkWarning: 'desktop:link-warning'
 } as const
 
@@ -43,6 +46,8 @@ export interface DesktopBridge extends AssistantBridge, VoiceBridge, SpeechBridg
   beginDrag(point: DesktopPoint): void
   endDrag(allowClick?: boolean, point?: DesktopPoint): void
   setPointerInteractive(interactive: boolean): void
+  /** The companion's Simplify button: the same flow as typing "simplify this page". */
+  simplifyPage(): void
   /** Chrome Link Warnings found phishing links that just appeared on screen (how many). */
   onLinkWarning(listener: (count: number) => void): () => void
 }

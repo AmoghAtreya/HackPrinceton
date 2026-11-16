@@ -8,11 +8,15 @@ import type { ContextPort } from './service'
 interface NativeContext {
   snapshot(): Promise<string> | string
   frameOf(pid: number, path: number[]): Promise<string>
+  /** Missing from builds made before it was added. */
+  frontBundleId?(): string
 }
 
 export interface ElectronContext {
   port: ContextPort
   frameOf(pid: number, path: number[]): Promise<FrameReading>
+  /** Bundle id of the app the person is looking at ("" when none); undefined when the module predates it. */
+  frontBundleId?: () => string
 }
 
 /**
@@ -32,6 +36,7 @@ export function electronContext(modulePath: string): ElectronContext | undefined
       snapshot: () => native.snapshot(),
       displayIdFor: (frame, cursor) => String((cursor ? screen.getDisplayNearestPoint(cursor) : screen.getDisplayMatching(frame)).id)
     },
-    frameOf: async (pid, path) => readFrame(await native.frameOf(pid, path))
+    frameOf: async (pid, path) => readFrame(await native.frameOf(pid, path)),
+    ...(typeof native.frontBundleId === 'function' ? { frontBundleId: () => String(native.frontBundleId!()) } : {})
   }
 }
